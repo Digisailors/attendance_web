@@ -29,6 +29,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -47,6 +48,9 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
+  Calendar,
+  Settings,
+  Save,
 } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import Link from "next/link"
@@ -89,6 +93,12 @@ interface ApiResponse {
   pagination: PaginationInfo
 }
 
+interface MonthlySettings {
+  month: number
+  year: number
+  totalDays: number
+}
+
 const getWorkModeBadge = (mode: WorkMode): string => {
   const colors: Record<WorkMode, string> = {
     Office: "bg-blue-100 text-blue-800",
@@ -107,6 +117,11 @@ const getStatusBadge = (status: Status): string => {
   return colors[status] || "bg-gray-100 text-gray-800"
 }
 
+const monthNames = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+]
+
 export default function AttendanceOverview() {
   const [attendanceData, setAttendanceData] = useState<Employee[]>([])
   const [pagination, setPagination] = useState<PaginationInfo>({
@@ -123,7 +138,7 @@ export default function AttendanceOverview() {
   const [selectedMode, setSelectedMode] = useState<string>("All Modes")
   const [selectedStatus, setSelectedStatus] = useState<string>("All Status")
   const [selectedMonth, setSelectedMonth] = useState<string>("6")
-  const [selectedYear, setSelectedYear] = useState<string>("2024")
+  const [selectedYear, setSelectedYear] = useState<string>("2025")
   const [currentPage, setCurrentPage] = useState(1)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -131,7 +146,84 @@ export default function AttendanceOverview() {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
+  
+  // New states for total days management
+  const [totalDaysDialogOpen, setTotalDaysDialogOpen] = useState(false)
+  const [currentMonthTotalDays, setCurrentMonthTotalDays] = useState<number>(28)
+  const [newTotalDays, setNewTotalDays] = useState<number>(28)
+  const [totalDaysLoading, setTotalDaysLoading] = useState(false)
+  
   const router = useRouter()
+
+  // Fetch current month's total days setting
+  const fetchMonthTotalDays = async () => {
+    try {
+      const response = await fetch(`/api/monthly-settings?month=${selectedMonth}&year=${selectedYear}`)
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentMonthTotalDays(data.totalDays || 28)
+        setNewTotalDays(data.totalDays || 28)
+      }
+    } catch (err) {
+      console.error("Error fetching monthly settings:", err)
+    }
+  }
+
+  // Update total days for the current month
+  const updateMonthTotalDays = async () => {
+    if (newTotalDays < 1 || newTotalDays > 31) {
+      toast({
+        title: "Invalid Days",
+        description: "Total days must be between 1 and 31",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setTotalDaysLoading(true)
+      
+      const response = await fetch(`/api/monthly-settings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          month: parseInt(selectedMonth),
+          year: parseInt(selectedYear),
+          totalDays: newTotalDays,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to update total days")
+      }
+
+      toast({
+        title: "Success",
+        description: `Total days for ${monthNames[parseInt(selectedMonth) - 1]} ${selectedYear} updated to ${newTotalDays} days`,
+        variant: "default",
+      })
+
+      setCurrentMonthTotalDays(newTotalDays)
+      setTotalDaysDialogOpen(false)
+      
+      // Refresh the employee list to reflect the changes
+      await fetchEmployees(currentPage)
+      
+    } catch (err) {
+      console.error("Error updating total days:", err)
+      const errorMessage = err instanceof Error ? err.message : "Failed to update total days"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setTotalDaysLoading(false)
+    }
+  }
 
   // Fetch employees data
   const fetchEmployees = async (page = 1) => {
@@ -193,6 +285,7 @@ export default function AttendanceOverview() {
 
   useEffect(() => {
     fetchEmployees(1)
+    fetchMonthTotalDays()
     setCurrentPage(1)
   }, [selectedMonth, selectedYear])
 
@@ -215,21 +308,18 @@ export default function AttendanceOverview() {
         throw new Error(errorData.error || "Failed to add employee")
       }
 
-      // Show success toast
       toast({
         title: "Success",
         description: "Employee added successfully",
         variant: "default",
       })
 
-      // Refresh the employee list to show the new employee
       await fetchEmployees(currentPage)
     } catch (err) {
       console.error("Error adding employee:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to add employee"
       setError(errorMessage)
       
-      // Show error toast
       toast({
         title: "Error",
         description: errorMessage,
@@ -248,7 +338,6 @@ export default function AttendanceOverview() {
     setDeleteDialogOpen(true)
   }
 
-  // Enhanced delete function with better error handling and UX
   const confirmDelete = async () => {
     if (!selectedEmployee) return
 
@@ -272,7 +361,6 @@ export default function AttendanceOverview() {
           const errorData = await response.json()
           errorMessage = errorData.error || errorData.message || errorData.details || errorMessage
         } catch (e) {
-          // If response is not JSON, try to get text
           try {
             const errorText = await response.text()
             errorMessage = errorText || errorMessage
@@ -284,7 +372,6 @@ export default function AttendanceOverview() {
         throw new Error(errorMessage)
       }
 
-      // Check if response has content
       let responseData = null
       try {
         const responseText = await response.text()
@@ -292,24 +379,20 @@ export default function AttendanceOverview() {
           responseData = JSON.parse(responseText)
         }
       } catch (e) {
-        // Response might be empty, which is fine for DELETE
         console.log("Empty response body, assuming successful deletion")
       }
 
       console.log("Delete response:", responseData)
 
-      // Show success toast
       toast({
         title: "Success",
         description: `Employee ${selectedEmployee.name} has been deleted successfully`,
         variant: "default",
       })
 
-      // Close dialog first
       setDeleteDialogOpen(false)
       setSelectedEmployee(null)
 
-      // Refresh the employee list
       await fetchEmployees(currentPage)
       
     } catch (err) {
@@ -317,7 +400,6 @@ export default function AttendanceOverview() {
       const errorMessage = err instanceof Error ? err.message : "Failed to delete employee"
       setError(errorMessage)
       
-      // Show error toast
       toast({
         title: "Delete Failed",
         description: errorMessage,
@@ -329,7 +411,6 @@ export default function AttendanceOverview() {
     }
   }
 
-  // Cancel delete operation
   const cancelDelete = () => {
     setDeleteDialogOpen(false)
     setSelectedEmployee(null)
@@ -352,14 +433,12 @@ export default function AttendanceOverview() {
         throw new Error(errorData.error || "Failed to update employee")
       }
 
-      // Show success toast
       toast({
         title: "Success",
         description: "Employee updated successfully",
         variant: "default",
       })
 
-      // Refresh the employee list
       await fetchEmployees(currentPage)
       setEditModalOpen(false)
       setSelectedEmployee(null)
@@ -368,7 +447,6 @@ export default function AttendanceOverview() {
       const errorMessage = err instanceof Error ? err.message : "Failed to update employee"
       setError(errorMessage)
       
-      // Show error toast
       toast({
         title: "Error",
         description: errorMessage,
@@ -540,10 +618,74 @@ export default function AttendanceOverview() {
                         )}
                         {" • "}
                         {pagination.totalCount} total employees
+                        {" • "}
+                        <span className="text-blue-600 font-medium">{currentMonthTotalDays} total days</span>
                       </CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
+                    <Dialog open={totalDaysDialogOpen} onOpenChange={setTotalDaysDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Settings className="w-4 h-4 mr-2" />
+                          Set Total Days
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Set Total Days for {monthNames[parseInt(selectedMonth) - 1]} {selectedYear}</DialogTitle>
+                          <DialogDescription>
+                            Configure the total working days for this month. This will affect all employee attendance calculations.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <label htmlFor="total-days" className="text-right text-sm font-medium">
+                              Total Days
+                            </label>
+                            <div className="col-span-3">
+                              <Input
+                                id="total-days"
+                                type="number"
+                                min="1"
+                                max="31"
+                                value={newTotalDays}
+                                onChange={(e) => setNewTotalDays(parseInt(e.target.value) || 0)}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            <p>Current setting: <span className="font-medium">{currentMonthTotalDays} days</span></p>
+                            <p>Common values: 28 days (February), 30 days (April, June, September, November), 31 days (January, March, May, July, August, October, December)</p>
+                          </div>
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => setTotalDaysDialogOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={updateMonthTotalDays}
+                            disabled={totalDaysLoading}
+                          >
+                            {totalDaysLoading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Updating...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-4 h-4 mr-2" />
+                                Update
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                     <Button variant="outline" size="sm" onClick={handleExportCSV}>
                       <Download className="w-4 h-4 mr-2" />
                       Export CSV
@@ -596,12 +738,13 @@ export default function AttendanceOverview() {
                         <TableHead className="w-[200px]">👤 Employee Name</TableHead>
                         <TableHead className="w-[150px]">Designation</TableHead>
                         <TableHead className="w-[120px]">Work Mode</TableHead>
-                        <TableHead className="w-[100px] text-center">🔸 Total Days</TableHead>
-                        <TableHead className="w-[100px] text-center">✅ Working Days</TableHead>
-                        <TableHead className="w-[100px] text-center">🕐 Permissions</TableHead>
-                        <TableHead className="w-[100px] text-center">🏖️ Leaves</TableHead>
-                        <TableHead className="w-[100px] text-center">❌ Missed Days</TableHead>
-                        <TableHead className="w-[100px] text-center">🟢 Status</TableHead>
+                        <TableHead className="w-[100px] text-center"> Total Days</TableHead>
+                        <TableHead className="w-[100px] text-center"> Working Days</TableHead>
+                        <TableHead className="w-[100px] text-center"> Permissions</TableHead>
+                        <TableHead className="w-[100px] text-center"> Leaves</TableHead>
+                        <TableHead className="w-[100px] text-center"> Missed Days</TableHead>
+                        <TableHead className="w-[100px] text-center">
+                           Status</TableHead>
                         <TableHead className="w-[80px] text-center">Actions</TableHead>
                       </TableRow>
                     </TableHeader>

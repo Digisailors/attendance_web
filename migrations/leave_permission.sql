@@ -210,3 +210,9 @@ ON DELETE SET NULL;
 -- UPDATE public.permission_requests pr
 -- SET manager_id = (SELECT e.manager_id FROM public.employees e WHERE e.id = pr.team_lead_id)
 -- WHERE pr.manager_id IS NULL;
+
+
+
+UPDATE leave_requests
+SET status = 'Pending Team Lead'
+WHERE status = 'Pending';

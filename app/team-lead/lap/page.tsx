@@ -275,6 +275,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
         body: JSON.stringify({
           requestId: requestId,
           action: "approve",
+          userType: "team-lead", 
           teamLeadId: teamLeadId,
           comments: comments[requestId] || "",
         }),
@@ -315,6 +316,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
           requestId: requestId,
           action: "reject",
           teamLeadId: teamLeadId,
+          userType: "team-lead", 
           comments: comments[requestId] || "",
         }),
       })

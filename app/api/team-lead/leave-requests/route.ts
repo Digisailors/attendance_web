@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         employee_name: employee.name,
         employee_email: employee.email_address,
         team_lead_id: teamMember.team_lead_id,
-        manager_id: employee.manager_id,
+        manager_id: employee?.manager_id,
         leave_type: leaveType,
         start_date: startDate,
         end_date: endDate,
@@ -137,12 +137,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Leave request not found" }, { status: 404 })
     }
 
-    if (leaveRequest.status !== "Pending Team Lead") {
-      return NextResponse.json(
-        { error: `Request is not pending team lead approval (current status: ${leaveRequest.status})` },
-        { status: 400 },
-      )
-    }
+    if (!["Pending", "Pending Team Lead"].includes(leaveRequest.status)) {
+  return NextResponse.json(
+    { error: `Request is not pending team lead approval (current status: ${leaveRequest.status})` },
+    { status: 400 },
+  )
+}
+
 
     // Additional check: Verify the request is actually assigned to this team lead
     if (leaveRequest.team_lead_id !== teamLeadId) {

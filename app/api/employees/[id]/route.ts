@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const employeeId = params.id
     const searchParams = request.nextUrl.searchParams
     const month = Number.parseInt(searchParams.get("month") || "6")
-    const year = Number.parseInt(searchParams.get("year") || "2024")
+    const year = Number.parseInt(searchParams.get("year") || "2025")
     
     console.log("Params:", { employeeId, month, year })
     

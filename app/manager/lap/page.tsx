@@ -188,7 +188,7 @@ export default function ManagerLeavePermissionRequests() {
         params.append('status', statusFilter)
       }
       
-      const response = await fetch(`/api/leave-request?${params.toString()}`)
+      const response = await fetch(`/api/team-lead/leave-requests?${params.toString()}`)
       
       if (response.ok) {
         const data = await response.json()
@@ -233,7 +233,7 @@ export default function ManagerLeavePermissionRequests() {
         params.append('status', statusFilter)
       }
       
-      const response = await fetch(`/api/permission-request?${params.toString()}`)
+      const response = await fetch(`/api/team-lead/permission-requests?${params.toString()}`)
       
       if (response.ok) {
         const data = await response.json()

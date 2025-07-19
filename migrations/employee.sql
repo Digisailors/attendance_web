@@ -200,3 +200,6 @@ CREATE POLICY "Allow authenticated users to delete daily_work_log"
   FOR DELETE
   TO authenticated
   USING (true);
+  
+  ALTER TABLE leave_requests
+ADD COLUMN manager_id uuid REFERENCES employees(id);

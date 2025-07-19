@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("permission_requests")
-      .select("*, employee:employees(id, name, email_address, designation, phone_number, address)")
+      .select("*")
       .order("created_at", { ascending: false })
 
     if (employeeId) {
@@ -117,9 +117,9 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { requestId, action, teamLeadId, comments } = body
+    const { requestId, action, teamLeadId, comments,userType } = body
 
-    if (!requestId || !action || !teamLeadId) {
+    if (!requestId || !action || !teamLeadId || !userType) {
       return NextResponse.json({ error: "Missing required fields: requestId, action, teamLeadId" }, { status: 400 })
     }
 
@@ -138,6 +138,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Permission request not found" }, { status: 404 })
     }
 
+    
     // Verify that the team lead is authorized to approve/reject this request
     if (permissionRequest.team_lead_id !== teamLeadId) {
       return NextResponse.json(

@@ -12,6 +12,17 @@ interface User {
   name?: string
 }
 
+interface DailyState {
+  isCheckedIn: boolean
+  isCheckedOut: boolean
+  checkInTime: string | null
+  checkOutTime: string | null
+  workType: string
+  workDescription: string
+  isWorkSubmitted: boolean
+  date: string
+}
+
 export default function EmployeeDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isCheckedIn, setIsCheckedIn] = useState(false)
@@ -27,6 +38,64 @@ export default function EmployeeDashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [employeeData, setEmployeeData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+
+  // Helper function to get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    return new Date().toISOString().split('T')[0]
+  }
+
+  // Helper function to get storage key for employee
+  const getStorageKey = (employeeId: string) => {
+    return `employee_daily_state_${employeeId}_${getTodayDate()}`
+  }
+
+  // Save state to localStorage
+  const saveStateToStorage = (employeeId: string, state: DailyState) => {
+    try {
+      const storageKey = getStorageKey(employeeId)
+      localStorage.setItem(storageKey, JSON.stringify(state))
+      console.log(`State saved for employee ${employeeId}:`, state)
+    } catch (error) {
+      console.error("Error saving state to localStorage:", error)
+    }
+  }
+
+  // Load state from localStorage
+  const loadStateFromStorage = (employeeId: string): DailyState | null => {
+    try {
+      const storageKey = getStorageKey(employeeId)
+      const savedState = localStorage.getItem(storageKey)
+      if (savedState) {
+        const parsedState = JSON.parse(savedState)
+        console.log(`State loaded for employee ${employeeId}:`, parsedState)
+        return parsedState
+      }
+    } catch (error) {
+      console.error("Error loading state from localStorage:", error)
+    }
+    return null
+  }
+
+  // Clean up old states (optional - clean states older than 7 days)
+  const cleanupOldStates = (employeeId: string) => {
+    try {
+      const keys = Object.keys(localStorage)
+      const employeeKeys = keys.filter(key => key.startsWith(`employee_daily_state_${employeeId}_`))
+      
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      
+      employeeKeys.forEach(key => {
+        const dateStr = key.split('_').pop()
+        if (dateStr && new Date(dateStr) < sevenDaysAgo) {
+          localStorage.removeItem(key)
+          console.log(`Cleaned up old state: ${key}`)
+        }
+      })
+    } catch (error) {
+      console.error("Error cleaning up old states:", error)
+    }
+  }
 
   // Get user data from localStorage and fetch employee details
   useEffect(() => {
@@ -57,6 +126,48 @@ export default function EmployeeDashboard() {
 
     fetchUserData()
   }, [])
+
+  // Load saved state when employee data is available
+  useEffect(() => {
+    if (employeeData?.employee_id || user?.email) {
+      const employeeId = employeeData?.employee_id || user?.email || "fallback"
+      
+      // Clean up old states
+      cleanupOldStates(employeeId)
+      
+      // Load today's state
+      const savedState = loadStateFromStorage(employeeId)
+      if (savedState) {
+        setIsCheckedIn(savedState.isCheckedIn)
+        setIsCheckedOut(savedState.isCheckedOut)
+        setCheckInTime(savedState.checkInTime ? new Date(savedState.checkInTime) : null)
+        setCheckOutTime(savedState.checkOutTime ? new Date(savedState.checkOutTime) : null)
+        setWorkType(savedState.workType)
+        setWorkDescription(savedState.workDescription)
+        setIsWorkSubmitted(savedState.isWorkSubmitted)
+      }
+    }
+  }, [employeeData, user])
+
+  // Save state whenever it changes
+  useEffect(() => {
+    if (employeeData?.employee_id || user?.email) {
+      const employeeId = employeeData?.employee_id || user?.email || "fallback"
+      
+      const currentState: DailyState = {
+        isCheckedIn,
+        isCheckedOut,
+        checkInTime: checkInTime?.toISOString() || null,
+        checkOutTime: checkOutTime?.toISOString() || null,
+        workType,
+        workDescription,
+        isWorkSubmitted,
+        date: getTodayDate()
+      }
+      
+      saveStateToStorage(employeeId, currentState)
+    }
+  }, [isCheckedIn, isCheckedOut, checkInTime, checkOutTime, workType, workDescription, isWorkSubmitted, employeeData, user])
 
   // Get employee ID from employee data or fallback
   const employeeId = employeeData?.employee_id || "SD418" // Default fallback
@@ -167,6 +278,15 @@ export default function EmployeeDashboard() {
   }
 
   const handleStartNewDay = () => {
+    // Clear today's state from localStorage
+    if (employeeData?.employee_id || user?.email) {
+      const empId = employeeData?.employee_id || user?.email || "fallback"
+      const storageKey = getStorageKey(empId)
+      localStorage.removeItem(storageKey)
+      console.log(`Cleared state for new day: ${storageKey}`)
+    }
+
+    // Reset all states
     setIsCheckedIn(false)
     setIsCheckedOut(false)
     setCheckInTime(null)
