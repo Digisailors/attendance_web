@@ -418,9 +418,21 @@ export default function AttendanceOverview() {
     setDeletingEmployeeId(null)
   }
 
+  // FIXED: Better error handling and debugging for update employee
   const handleUpdateEmployee = async (updatedEmployee: Employee): Promise<void> => {
+    if (!updatedEmployee.id) {
+      toast({
+        title: "Error",
+        description: "Employee ID is missing",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
-      const response = await fetch(`/api/employees/${updatedEmployee.id}`, {
+      console.log("Updating employee:", updatedEmployee.id, updatedEmployee)
+      
+      const response = await fetch(`/api/employees/${encodeURIComponent(updatedEmployee.id)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -428,9 +440,38 @@ export default function AttendanceOverview() {
         body: JSON.stringify(updatedEmployee),
       })
 
+      console.log("Update response status:", response.status)
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to update employee")
+        let errorMessage = `HTTP ${response.status}`
+        
+        try {
+          const errorData = await response.json()
+          console.error("Update error data:", errorData)
+          errorMessage = errorData.error || errorData.message || errorData.details || errorMessage
+        } catch (e) {
+          try {
+            const errorText = await response.text()
+            console.error("Update error text:", errorText)
+            errorMessage = errorText || errorMessage
+          } catch (textError) {
+            console.error("Error reading response:", textError)
+          }
+        }
+
+        throw new Error(errorMessage)
+      }
+
+      // Try to parse response
+      let responseData = null
+      try {
+        const responseText = await response.text()
+        if (responseText) {
+          responseData = JSON.parse(responseText)
+          console.log("Update success response:", responseData)
+        }
+      } catch (e) {
+        console.log("Empty or invalid response body, assuming successful update")
       }
 
       toast({
@@ -537,7 +578,6 @@ export default function AttendanceOverview() {
       </div>
     )
   }
-
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="admin" />

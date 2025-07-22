@@ -11,11 +11,11 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   },
 })
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     console.log("=== API: Fetching employee details ===")
     
-    const employeeId = params.id
+    const { id: employeeId } = await params
     const searchParams = request.nextUrl.searchParams
     const month = Number.parseInt(searchParams.get("month") || "6")
     const year = Number.parseInt(searchParams.get("year") || "2025")
@@ -108,16 +108,43 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // PUT method for updating employee
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     console.log("=== API: Updating employee ===")
     
-    const employeeId = params.id
+    const { id: employeeId } = await params
     const body = await request.json()
     
+    console.log("Employee ID from params:", employeeId)
     console.log("Update data:", body)
     
+    // First, let's check if the employee exists
+    console.log("Checking if employee exists...")
+    const { data: existingEmployee, error: checkError } = await supabase
+      .from("employees")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .eq("is_active", true)
+    
+    console.log("Existing employee query result:", { data: existingEmployee, error: checkError })
+    
+    if (checkError) {
+      console.error("Error checking employee:", checkError)
+      return NextResponse.json({ error: "Database error while checking employee" }, { status: 500 })
+    }
+    
+    if (!existingEmployee || existingEmployee.length === 0) {
+      console.error("Employee not found with ID:", employeeId)
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 })
+    }
+    
+    if (existingEmployee.length > 1) {
+      console.error("Multiple employees found with same ID:", employeeId)
+      return NextResponse.json({ error: "Multiple employees found with same ID" }, { status: 400 })
+    }
+    
     // Update employee in database
+    console.log("Updating employee...")
     const { data, error } = await supabase
       .from("employees")
       .update({
@@ -133,26 +160,33 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         updated_at: new Date().toISOString(),
       })
       .eq("employee_id", employeeId)
+      .eq("is_active", true)
       .select()
-      .single()
+    
+    console.log("Update query result:", { data, error })
     
     if (error) {
       console.error("Update error:", error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
     
+    if (!data || data.length === 0) {
+      console.error("No rows updated")
+      return NextResponse.json({ error: "Employee not found or not updated" }, { status: 404 })
+    }
+    
     // Transform response data
     const updatedEmployee = {
-      id: data.employee_id,
-      name: data.name,
-      designation: data.designation,
-      workMode: data.work_mode,
-      status: data.status,
-      phoneNumber: data.phone_number,
-      emailAddress: data.email_address,
-      address: data.address,
-      dateOfJoining: data.date_of_joining,
-      experience: data.experience,
+      id: data[0].employee_id,
+      name: data[0].name,
+      designation: data[0].designation,
+      workMode: data[0].work_mode,
+      status: data[0].status,
+      phoneNumber: data[0].phone_number,
+      emailAddress: data[0].email_address,
+      address: data[0].address,
+      dateOfJoining: data[0].date_of_joining,
+      experience: data[0].experience,
     }
     
     return NextResponse.json({
@@ -173,11 +207,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 // DELETE method for deleting employee
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     console.log("=== API: Deleting employee ===")
     
-    const employeeId = params.id
+    const { id: employeeId } = await params
     console.log("Deleting employee with ID:", employeeId)
     
     // First check if employee exists
