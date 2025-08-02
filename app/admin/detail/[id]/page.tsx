@@ -102,12 +102,23 @@ const getEmployeeStatusBadge = (status: string) => {
 };
 
 export default function EmployeeAttendanceDetail() {
+  // Get current month and year
+  const getCurrentMonth = () => {
+    const now = new Date();
+    return (now.getMonth() + 1).toString(); // getMonth() returns 0-11, so add 1
+  };
+
+  const getCurrentYear = () => {
+    const now = new Date();
+    return now.getFullYear().toString();
+  };
+
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [dailyWorkLog, setDailyWorkLog] = useState<DailyWorkLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState("6");
-  const [selectedYear, setSelectedYear] = useState("2024");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth()); // Set current month as default
+  const [selectedYear, setSelectedYear] = useState(getCurrentYear()); // Set current year as default
   const router = useRouter();
   const params = useParams();
   const employeeId = params.id as string;
@@ -251,6 +262,8 @@ export default function EmployeeAttendanceDetail() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="2023">2023</SelectItem>
+                  <SelectItem value="2024">2024</SelectItem>
                   <SelectItem value="2025">2025</SelectItem>
                   <SelectItem value="2026">2026</SelectItem>
                   <SelectItem value="2027">2027</SelectItem>
@@ -283,7 +296,7 @@ export default function EmployeeAttendanceDetail() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">Current Month</div>
+                  <div className="text-sm text-gray-500">Selected Month</div>
                   <div className="text-lg font-semibold">{getMonthName(selectedMonth)} {selectedYear}</div>
                 </div>
               </div>

@@ -1,4 +1,3 @@
-
 "use client"
 import { useState, useEffect } from "react"
 import type React from "react"
@@ -26,6 +25,8 @@ import {
   Phone,
   Mail,
   MapPin,
+  Users,
+  AlertCircle,
 } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
@@ -41,12 +42,15 @@ interface LeaveRequest {
   reason: string
   status: string
   applied_date: string
+  created_at: string
   team_lead_comments?: string
   manager_comments?: string
+  manager_id?: string
+  team_lead_id?: string
   employee: {
     name: string
     employee_id: string
-    designation: string
+    team_lead: string
     phoneNumber?: string
     emailAddress?: string
     address?: string
@@ -59,18 +63,21 @@ interface PermissionRequest {
   employee_name: string
   permission_type: string
   date: string
-  from_time: string
-  to_time: string
+  start_time: string
+  end_time: string
   duration_hours: number
   reason: string
   status: string
   applied_date: string
+  created_at: string
   team_lead_comments?: string
+  manager_id?: string
   manager_comments?: string
+  team_lead_id?: string
   employee: {
     name: string
     employee_id: string
-    designation: string
+    team_lead: string
     phoneNumber?: string
     emailAddress?: string
     address?: string
@@ -84,6 +91,15 @@ interface ManagerUser {
   name?: string
 }
 
+// Team Lead Name Cache
+interface TeamLeadCache {
+  [key: string]: {
+    name: string
+    loading: boolean
+    error: boolean
+  }
+}
+
 export default function ManagerLeavePermissionRequests() {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([])
@@ -94,9 +110,12 @@ export default function ManagerLeavePermissionRequests() {
   const [managerData, setManagerData] = useState<any>(null)
   const [comments, setComments] = useState<{ [key: string]: string }>({})
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("All") // Changed to "All" to show all requests initially
+  const [statusFilter, setStatusFilter] = useState("All")
   const [activeTab, setActiveTab] = useState("leave")
   const [error, setError] = useState<string | null>(null)
+  
+  // Improved team lead name cache
+  const [teamLeadCache, setTeamLeadCache] = useState<TeamLeadCache>({})
 
   const [leaveStats, setLeaveStats] = useState({
     total: 0,
@@ -111,163 +130,463 @@ export default function ManagerLeavePermissionRequests() {
     rejected: 0,
   })
 
-  // Get user data from localStorage and fetch manager details
+  // Debug function to check if request needs manager approval
+  const needsManagerApproval = (request: LeaveRequest | PermissionRequest): boolean => {
+    const status = request.status?.toLowerCase().trim()
+    console.log(`🔍 Checking status for request ${request.id}: "${request.status}" (normalized: "${status}")`)
+    
+    const pendingStatuses = [
+      'pending manager approval',
+      'pending manager',
+      'manager approval',
+      'awaiting manager approval',
+      'pending',
+      'submitted'
+    ]
+    
+    const needsApproval = pendingStatuses.some(pendingStatus => 
+      status.includes(pendingStatus.toLowerCase())
+    )
+    
+    console.log(`🎯 Request ${request.id} needs approval: ${needsApproval}`)
+    return needsApproval
+  }
+
+  // Improved function to fetch team lead name with better error handling and caching
+  const fetchTeamLeadName = async (teamLeadId: string): Promise<string> => {
+    if (!teamLeadId) return "No Team Lead Assigned"
+    
+    // Check if we already have this team lead's data in cache
+    if (teamLeadCache[teamLeadId]) {
+      if (teamLeadCache[teamLeadId].loading) {
+        return "Loading..."
+      }
+      if (teamLeadCache[teamLeadId].error) {
+        return teamLeadId // Return ID if there was an error
+      }
+      return teamLeadCache[teamLeadId].name
+    }
+
+    // Set loading state
+    setTeamLeadCache(prev => ({
+      ...prev,
+      [teamLeadId]: { name: "", loading: true, error: false }
+    }))
+
+    try {
+      // Try multiple API endpoints to fetch team lead details
+      const endpoints = [
+        `/api/employees/profile?employee_id=${teamLeadId}`,
+        `/api/employees/profile?id=${teamLeadId}`,
+        `/api/team-lead/profile?id=${teamLeadId}`
+      ]
+
+      let teamLeadData = null
+      
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint)
+          if (response.ok) {
+            teamLeadData = await response.json()
+            break
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch from ${endpoint}:`, error)
+          continue
+        }
+      }
+
+      if (teamLeadData) {
+        // Try different possible name fields
+        const teamLeadName = teamLeadData.name || 
+                           teamLeadData.employee_name || 
+                           teamLeadData.full_name || 
+                           teamLeadData.firstName + " " + teamLeadData.lastName ||
+                           teamLeadId
+
+        // Update cache with successful result
+        setTeamLeadCache(prev => ({
+          ...prev,
+          [teamLeadId]: { name: teamLeadName, loading: false, error: false }
+        }))
+        
+        return teamLeadName
+      } else {
+        // If all endpoints fail, cache the error and return ID
+        setTeamLeadCache(prev => ({
+          ...prev,
+          [teamLeadId]: { name: teamLeadId, loading: false, error: true }
+        }))
+        return teamLeadId
+      }
+    } catch (error) {
+      console.error("Error fetching team lead name:", error)
+      // Cache the error
+      setTeamLeadCache(prev => ({
+        ...prev,
+        [teamLeadId]: { name: teamLeadId, loading: false, error: true }
+      }))
+      return teamLeadId
+    }
+  }
+
+  // Improved batch fetching function
+  const fetchAllTeamLeadNames = async (requests: (LeaveRequest | PermissionRequest)[]) => {
+    const uniqueTeamLeadIds = Array.from(new Set(
+      requests
+        .map(request => request.team_lead_id)
+        .filter(id => id && !teamLeadCache[id])
+    ))
+
+    if (uniqueTeamLeadIds.length === 0) return
+
+    console.log("Fetching team lead names for IDs:", uniqueTeamLeadIds)
+
+    // Set loading state for all IDs
+    const loadingStates: TeamLeadCache = {}
+    uniqueTeamLeadIds.forEach(id => {
+  if (typeof id === "string") {
+    loadingStates[id] = { name: "", loading: true, error: false }
+  }
+})
+
+    
+    setTeamLeadCache(prev => ({
+      ...prev,
+      ...loadingStates
+    }))
+
+    // Fetch all team lead names in parallel
+    const teamLeadPromises = uniqueTeamLeadIds.map(async (teamLeadId) => {
+      try {
+        // Try multiple endpoints for each team lead
+        const endpoints = [
+          `/api/employees/profile?employee_id=${teamLeadId}`,
+          `/api/employees/profile?id=${teamLeadId}`,
+          `/api/team-lead/profile?id=${teamLeadId}`
+        ]
+
+        let teamLeadData = null
+        
+        for (const endpoint of endpoints) {
+          try {
+            const response = await fetch(endpoint)
+            if (response.ok) {
+              teamLeadData = await response.json()
+              break
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch from ${endpoint} for ${teamLeadId}:`, error)
+            continue
+          }
+        }
+
+        if (teamLeadData) {
+          const teamLeadName = teamLeadData.name || 
+                             teamLeadData.employee_name || 
+                             teamLeadData.full_name || 
+                             teamLeadData.firstName + " " + teamLeadData.lastName ||
+                             teamLeadId
+          
+          return { 
+            id: teamLeadId, 
+            name: teamLeadName, 
+            loading: false, 
+            error: false 
+          }
+        } else {
+          return { 
+            id: teamLeadId, 
+            name: teamLeadId, 
+            loading: false, 
+            error: true 
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching team lead ${teamLeadId}:`, error)
+        return { 
+          id: teamLeadId, 
+          name: teamLeadId, 
+          loading: false, 
+          error: true 
+        }
+      }
+    })
+
+    try {
+      const results = await Promise.all(teamLeadPromises)
+      const newTeamLeadCache: TeamLeadCache = {}
+
+    results.forEach(result => {
+  if (typeof result.id === "string") {
+    newTeamLeadCache[result.id] = {
+      name: result.name,
+      loading: result.loading,
+      error: result.error
+    }
+  }
+})
+
+
+      setTeamLeadCache(prev => ({
+        ...prev,
+        ...newTeamLeadCache
+      }))
+
+      console.log("Team lead names fetched:", newTeamLeadCache)
+    } catch (error) {
+      console.error("Error fetching team lead names in batch:", error)
+      
+      // Set error state for all IDs that failed
+      const errorStates: TeamLeadCache = {}
+     uniqueTeamLeadIds.forEach(id => {
+  if (typeof id === "string") {
+    errorStates[id] = { name: id, loading: false, error: true }
+  }
+})
+
+      
+      setTeamLeadCache(prev => ({
+        ...prev,
+        ...errorStates
+      }))
+    }
+  }
+
+  // Improved function to get team lead name for display
+  const getTeamLeadName = (request: LeaveRequest | PermissionRequest): string => {
+    if (request.team_lead_id) {
+      const cached = teamLeadCache[request.team_lead_id]
+      if (cached) {
+        if (cached.loading) {
+          return "Loading..."
+        }
+        if (cached.error) {
+          // If there's an error but we have a fallback name from employee.team_lead, use it
+          if (request.employee?.team_lead && request.employee.team_lead !== "No Team Lead Assigned") {
+            return request.employee.team_lead
+          }
+          return request.team_lead_id // Return ID as fallback
+        }
+        return cached.name
+      } else {
+        // If not in cache yet, trigger fetch and show loading
+        fetchTeamLeadName(request.team_lead_id)
+        return "Loading..."
+      }
+    }
+    
+    // Fallback to employee.team_lead if available
+    if (request.employee?.team_lead && request.employee.team_lead !== "No Team Lead Assigned") {
+      return request.employee.team_lead
+    }
+    
+    return "No Team Lead Assigned"
+  }
+
+  // Function to calculate total days between two dates
+  const calculateTotalDays = (startDate: string, endDate: string): number => {
+    try {
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      
+      // Reset time to avoid timezone issues
+      start.setHours(0, 0, 0, 0)
+      end.setHours(0, 0, 0, 0)
+      
+      const timeDifference = end.getTime() - start.getTime()
+      const daysDifference = Math.ceil(timeDifference / (1000 * 3600 * 24)) + 1 // +1 to include both start and end dates
+      
+      return daysDifference > 0 ? daysDifference : 1
+    } catch (error) {
+      console.error("Error calculating total days:", error)
+      return 1
+    }
+  }
+
+  // Function to get applied date (use created_at if applied_date is invalid)
+  const getAppliedDate = (request: LeaveRequest | PermissionRequest): string => {
+    // Try applied_date first, if invalid or empty, use created_at
+    if (request.applied_date && request.applied_date !== 'Invalid Date' && new Date(request.applied_date).toString() !== 'Invalid Date') {
+      return request.applied_date
+    }
+    return request.created_at || request.applied_date || new Date().toISOString()
+  }
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        setError(null)
-        // First, try to get user data from localStorage
-        const userData = localStorage.getItem("user")
+        const userData = localStorage.getItem("user");
         if (userData) {
-          const parsedUser = JSON.parse(userData)
-          setUser(parsedUser)
-          console.log("User data loaded:", parsedUser)
-          
-          // Try to fetch manager profile
-          try {
-            const response = await fetch(`/api/employees/profile?email=${parsedUser.email}`)
-            if (response.ok) {
-              const managerInfo = await response.json()
-              setManagerData(managerInfo)
-              setManagerId(managerInfo.id)
-              console.log("Manager data loaded:", managerInfo)
-            } else {
-              console.error("Failed to fetch manager profile:", response.status)
-              // Use fallback data if API fails
-              setManagerData({
-                id: parsedUser.id || 'fallback-id',
-                name: parsedUser.name || parsedUser.email?.split("@")[0] || 'Manager',
-                employee_id: parsedUser.employee_id || 'N/A',
-                designation: 'Manager'
-              })
-              setManagerId(parsedUser.id || 'fallback-id')
-            }
-          } catch (apiError) {
-            console.error("API Error:", apiError)
-            // Use fallback data if API fails
-            setManagerData({
-              id: parsedUser.id || 'fallback-id',
-              name: parsedUser.name || parsedUser.email?.split("@")[0] || 'Manager',
-              employee_id: parsedUser.employee_id || 'N/A',
-              designation: 'Manager'
-            })
-            setManagerId(parsedUser.id || 'fallback-id')
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+
+          // Fetch manager details using email
+          const response = await fetch(
+            `/api/employees/profile?email=${parsedUser.email}`
+          );
+          if (response.ok) {
+            const managerInfo = await response.json();
+            setManagerData(managerInfo);
+            setManagerId(managerInfo.employee_id || managerInfo.id);
+            console.log("Manager data loaded:", managerInfo);
+          } else {
+            console.error("Failed to fetch manager profile");
           }
-        } else {
-          console.warn("No user data found in localStorage")
-          setError("No user data found. Please login again.")
         }
       } catch (error) {
-        console.error("Error fetching user data:", error)
-        setError("Error loading user data")
+        console.error("Error fetching user data:", error);
       }
-    }
-    fetchUserData()
-  }, [])
+    };
+
+    fetchUserData();
+  }, []);
 
   useEffect(() => {
     if (managerId) {
       fetchLeaveRequests()
       fetchPermissionRequests()
     }
-  }, [managerId]) // Removed statusFilter dependency to prevent unnecessary refetches
+  }, [managerId])
 
+  // Refresh team lead names when cache updates
+  useEffect(() => {
+    // Force re-render when team lead cache updates
+  }, [teamLeadCache])
+
+  // Fetch Leave Requests
   const fetchLeaveRequests = async () => {
     try {
-      setLoading(true)
-      setError(null)
-      console.log("Fetching leave requests for manager:", managerId)
+      setLoading(true);
+      setError(null);
+      console.log("🔄 Fetching leave requests for manager:", managerId);
       
       // Build query parameters
       const params = new URLSearchParams({
         managerId: managerId
-      })
+      });
       
       // Only add status filter if it's not "All"
       if (statusFilter !== "All") {
-        params.append('status', statusFilter)
+        params.append('status', statusFilter);
       }
       
-      const response = await fetch(`/api/team-lead/leave-requests?${params.toString()}`)
+      const response = await fetch(`/api/team-lead/leave-requests?${params.toString()}`);
       
       if (response.ok) {
-        const data = await response.json()
-        console.log("Leave requests response:", data)
+        const data = await response.json();
+        console.log("📥 Leave requests response:", data);
         
-        const requests = data.data || data || []
-        setLeaveRequests(requests)
+        const requests = data.data || data || [];
+        console.log("📋 Total leave requests:", requests.length);
         
-        // Calculate stats
-        const total = requests.length
-        const pending = requests.filter((r: LeaveRequest) => r.status === "Pending Manager Approval").length
-        const approved = requests.filter((r: LeaveRequest) => r.status === "Approved").length
-        const rejected = requests.filter((r: LeaveRequest) => r.status === "Rejected").length
+        // Debug: Log all request statuses
+        requests.forEach((req: LeaveRequest, index: number) => {
+          console.log(`📄 Request ${index + 1} (ID: ${req.id}): Status = "${req.status}"`);
+        });
         
-        setLeaveStats({ total, pending, approved, rejected })
-        console.log("Leave stats:", { total, pending, approved, rejected })
+        setLeaveRequests(requests);
+        
+        // Fetch team lead names for all requests
+        await fetchAllTeamLeadNames(requests);
+        
+        // Calculate stats with flexible status matching
+        const total = requests.length;
+        const pending = requests.filter((r: LeaveRequest) => needsManagerApproval(r)).length;
+        const approved = requests.filter((r: LeaveRequest) => 
+          r.status?.toLowerCase().includes('approved')).length;
+        const rejected = requests.filter((r: LeaveRequest) => 
+          r.status?.toLowerCase().includes('rejected')).length;
+        
+        setLeaveStats({ total, pending, approved, rejected });
+        console.log("📊 Leave stats:", { total, pending, approved, rejected });
       } else {
-        const errorData = await response.json()
-        console.error("Failed to fetch leave requests:", errorData)
-        setError(`Failed to fetch leave requests: ${errorData.error || response.statusText}`)
+        const errorData = await response.json();
+        console.error("❌ Failed to fetch leave requests:", errorData);
+        setError(`Failed to fetch leave requests: ${errorData.error || response.statusText}`);
       }
     } catch (error) {
-      console.error("Error fetching leave requests:", error)
-      setError(`Error fetching leave requests: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("❌ Error fetching leave requests:", error);
+      setError(`Error fetching leave requests: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
+  // Fetch Permission Requests
   const fetchPermissionRequests = async () => {
     try {
-      setError(null)
-      console.log("Fetching permission requests for manager:", managerId)
+      setError(null);
+      console.log("🔄 Fetching permission requests for manager:", managerId);
       
       // Build query parameters
       const params = new URLSearchParams({
         managerId: managerId
-      })
+      });
       
       // Only add status filter if it's not "All"
       if (statusFilter !== "All") {
-        params.append('status', statusFilter)
+        params.append('status', statusFilter);
       }
       
-      const response = await fetch(`/api/team-lead/permission-requests?${params.toString()}`)
+      const response = await fetch(`/api/team-lead/permission-requests?${params.toString()}`);
       
       if (response.ok) {
-        const data = await response.json()
-        console.log("Permission requests response:", data)
+        const data = await response.json();
+        console.log("📥 Permission requests response:", data);
         
-        const requests = data.data || data || []
-        setPermissionRequests(requests)
+        const requests = data.data || data || [];
+        console.log("📋 Total permission requests:", requests.length);
         
-        // Calculate stats
-        const total = requests.length
-        const pending = requests.filter((r: PermissionRequest) => r.status === "Pending Manager Approval").length
-        const approved = requests.filter((r: PermissionRequest) => r.status === "Approved").length
-        const rejected = requests.filter((r: PermissionRequest) => r.status === "Rejected").length
+        // Debug: Log all request statuses
+        requests.forEach((req: PermissionRequest, index: number) => {
+          console.log(`📄 Request ${index + 1} (ID: ${req.id}): Status = "${req.status}"`);
+        });
         
-        setPermissionStats({ total, pending, approved, rejected })
-        console.log("Permission stats:", { total, pending, approved, rejected })
+        setPermissionRequests(requests);
+        
+        // Fetch team lead names for all requests
+        await fetchAllTeamLeadNames(requests);
+        
+        // Calculate stats with flexible status matching
+        const total = requests.length;
+        const pending = requests.filter((r: PermissionRequest) => needsManagerApproval(r)).length;
+        const approved = requests.filter((r: PermissionRequest) => 
+          r.status?.toLowerCase().includes('approved')).length;
+        const rejected = requests.filter((r: PermissionRequest) => 
+          r.status?.toLowerCase().includes('rejected')).length;
+        
+        setPermissionStats({ total, pending, approved, rejected });
+        console.log("📊 Permission stats:", { total, pending, approved, rejected });
       } else {
-        const errorData = await response.json()
-        console.error("Failed to fetch permission requests:", errorData)
-        setError(`Failed to fetch permission requests: ${errorData.error || response.statusText}`)
+        const errorData = await response.json();
+        console.error("❌ Failed to fetch permission requests:", errorData);
+        setError(`Failed to fetch permission requests: ${errorData.error || response.statusText}`);
       }
     } catch (error) {
-      console.error("Error fetching permission requests:", error)
-      setError(`Error fetching permission requests: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("❌ Error fetching permission requests:", error);
+      setError(`Error fetching permission requests: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
+  // Handle Approve Leave
   const handleApproveLeave = async (requestId: string, event?: React.MouseEvent) => {
-    event?.stopPropagation()
-    event?.preventDefault()
-    if (processingId) return
-    setProcessingId(requestId)
+    event?.stopPropagation();
+    event?.preventDefault();
+
+    if (processingId) return;
+    setProcessingId(requestId);
+
+    if (!managerId) {
+      alert("Manager ID is missing. Please login again.");
+      setProcessingId(null);
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/leave-request`, {
+      console.log("✅ Approving leave with managerId:", managerId);
+
+      const response = await fetch("/api/manager/leave-requests", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -275,38 +594,42 @@ export default function ManagerLeavePermissionRequests() {
         body: JSON.stringify({
           requestId: requestId,
           action: "approve",
-          managerId: managerId,
-          comments: comments[requestId] || "",
+          comments: comments[requestId] || "Approved by manager",
           userType: "manager",
+          managerId: managerId,
         }),
-      })
+      });
+
       if (response.ok) {
-        await fetchLeaveRequests()
+        await fetchLeaveRequests();
         setComments((prev) => ({
           ...prev,
           [requestId]: "",
-        }))
-        console.log("Leave request approved by manager successfully")
+        }));
+        console.log("✅ Leave request approved by manager successfully");
       } else {
-        console.error("Failed to approve leave request")
-        const errorData = await response.json()
-        alert(`Failed to approve leave request: ${errorData.error || "Unknown error"}`)
+        console.error("❌ Failed to approve leave request");
+        const errorData = await response.json();
+        alert(`Failed to approve leave request: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error approving leave request:", error)
-      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+      console.error("❌ Error approving leave request:", error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setProcessingId(null)
+      setProcessingId(null);
     }
-  }
+  };
 
+  // Handle Reject Leave
   const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) => {
-    event?.stopPropagation()
-    event?.preventDefault()
-    if (processingId) return
-    setProcessingId(requestId)
+    event?.stopPropagation();
+    event?.preventDefault();
+    if (processingId) return;
+    setProcessingId(requestId);
     try {
-      const response = await fetch(`/api/leave-request`, {
+      console.log("❌ Rejecting leave with managerId:", managerId);
+      
+      const response = await fetch(`/api/manager/leave-requests`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -315,37 +638,40 @@ export default function ManagerLeavePermissionRequests() {
           requestId: requestId,
           action: "reject",
           managerId: managerId,
-          comments: comments[requestId] || "",
+          comments: comments[requestId] || "Rejected by manager",
           userType: "manager",
         }),
-      })
+      });
       if (response.ok) {
-        await fetchLeaveRequests()
+        await fetchLeaveRequests();
         setComments((prev) => ({
           ...prev,
           [requestId]: "",
-        }))
-        console.log("Leave request rejected by manager successfully")
+        }));
+        console.log("❌ Leave request rejected by manager successfully");
       } else {
-        console.error("Failed to reject leave request")
-        const errorData = await response.json()
-        alert(`Failed to reject leave request: ${errorData.error || "Unknown error"}`)
+        console.error("❌ Failed to reject leave request");
+        const errorData = await response.json();
+        alert(`Failed to reject leave request: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error rejecting leave request:", error)
-      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+      console.error("❌ Error rejecting leave request:", error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setProcessingId(null)
+      setProcessingId(null);
     }
   }
 
+  // Handle Approve Permission
   const handleApprovePermission = async (requestId: string, event?: React.MouseEvent) => {
-    event?.stopPropagation()
-    event?.preventDefault()
-    if (processingId) return
-    setProcessingId(requestId)
+    event?.stopPropagation();
+    event?.preventDefault();
+    if (processingId) return;
+    setProcessingId(requestId);
     try {
-      const response = await fetch(`/api/permission-request`, {
+      console.log("✅ Approving permission with managerId:", managerId);
+      
+      const response = await fetch(`/api/manager/permission-requests`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -354,37 +680,40 @@ export default function ManagerLeavePermissionRequests() {
           requestId: requestId,
           action: "approve",
           managerId: managerId,
-          comments: comments[requestId] || "",
+          comments: comments[requestId] || "Approved by manager",
           userType: "manager",
         }),
-      })
+      });
       if (response.ok) {
-        await fetchPermissionRequests()
+        await fetchPermissionRequests();
         setComments((prev) => ({
           ...prev,
           [requestId]: "",
-        }))
-        console.log("Permission request approved by manager successfully")
+        }));
+        console.log("✅ Permission request approved by manager successfully");
       } else {
-        console.error("Failed to approve permission request")
-        const errorData = await response.json()
-        alert(`Failed to approve permission request: ${errorData.error || "Unknown error"}`)
+        console.error("❌ Failed to approve permission request");
+        const errorData = await response.json();
+        alert(`Failed to approve permission request: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error approving permission request:", error)
-      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+      console.error("❌ Error approving permission request:", error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setProcessingId(null)
+      setProcessingId(null);
     }
   }
 
+  // Handle Reject Permission
   const handleRejectPermission = async (requestId: string, event?: React.MouseEvent) => {
-    event?.stopPropagation()
-    event?.preventDefault()
-    if (processingId) return
-    setProcessingId(requestId)
+    event?.stopPropagation();
+    event?.preventDefault();
+    if (processingId) return;
+    setProcessingId(requestId);
     try {
-      const response = await fetch(`/api/permission-request`, {
+      console.log("❌ Rejecting permission with managerId:", managerId);
+      
+      const response = await fetch(`/api/manager/permission-requests`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -393,27 +722,27 @@ export default function ManagerLeavePermissionRequests() {
           requestId: requestId,
           action: "reject",
           managerId: managerId,
-          comments: comments[requestId] || "",
+          comments: comments[requestId] || "Rejected by manager",
           userType: "manager",
         }),
-      })
+      });
       if (response.ok) {
-        await fetchPermissionRequests()
+        await fetchPermissionRequests();
         setComments((prev) => ({
           ...prev,
           [requestId]: "",
-        }))
-        console.log("Permission request rejected by manager successfully")
+        }));
+        console.log("❌ Permission request rejected by manager successfully");
       } else {
-        console.error("Failed to reject permission request")
-        const errorData = await response.json()
-        alert(`Failed to reject permission request: ${errorData.error || "Unknown error"}`)
+        console.error("❌ Failed to reject permission request");
+        const errorData = await response.json();
+        alert(`Failed to reject permission request: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error rejecting permission request:", error)
-      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+      console.error("❌ Error rejecting permission request:", error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setProcessingId(null)
+      setProcessingId(null);
     }
   }
 
@@ -425,43 +754,56 @@ export default function ManagerLeavePermissionRequests() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    } catch (error) {
+      console.error("Error formatting date:", error)
+      return "Invalid Date"
+    }
   }
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } catch (error) {
+      console.error("Error formatting datetime:", error)
+      return "Invalid Date"
+    }
   }
 
   const formatTime = (timeString: string) => {
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    })
+    try {
+      return new Date(`2000-01-01T${timeString}`).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    } catch (error) {
+      console.error("Error formatting time:", error)
+      return timeString
+    }
   }
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Pending Team Lead":
-        return "bg-blue-100 text-blue-800"
-      case "Pending Manager Approval":
-        return "bg-yellow-100 text-yellow-800"
-      case "Approved":
-        return "bg-green-100 text-green-800"
-      case "Rejected":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+    const statusLower = status?.toLowerCase() || ""
+    if (statusLower.includes('pending')) {
+      return "bg-yellow-100 text-yellow-800"
+    } else if (statusLower.includes('approved')) {
+      return "bg-green-100 text-green-800"
+    } else if (statusLower.includes('rejected')) {
+      return "bg-red-100 text-red-800"
+    } else {
+      return "bg-gray-100 text-gray-800"
     }
   }
 
@@ -499,13 +841,29 @@ export default function ManagerLeavePermissionRequests() {
     }
   }
 
-  // Filter functions
+  // Filter functions with improved status matching
   const filterLeaveRequests = (requests: LeaveRequest[]) => {
     return requests.filter((request) => {
       const matchesSearch =
         request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.leave_type.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = statusFilter === "All" || request.status === statusFilter
+      
+      let matchesStatus = true
+      if (statusFilter !== "All") {
+        const statusLower = request.status?.toLowerCase() || ""
+        const filterLower = statusFilter.toLowerCase()
+        
+        if (filterLower.includes('pending')) {
+          matchesStatus = needsManagerApproval(request)
+        } else if (filterLower.includes('approved')) {
+          matchesStatus = statusLower.includes('approved')
+        } else if (filterLower.includes('rejected')) {
+          matchesStatus = statusLower.includes('rejected')
+        } else {
+          matchesStatus = statusLower.includes(filterLower)
+        }
+      }
+      
       return matchesSearch && matchesStatus
     })
   }
@@ -515,7 +873,23 @@ export default function ManagerLeavePermissionRequests() {
       const matchesSearch =
         request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.permission_type.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = statusFilter === "All" || request.status === statusFilter
+      
+      let matchesStatus = true
+      if (statusFilter !== "All") {
+        const statusLower = request.status?.toLowerCase() || ""
+        const filterLower = statusFilter.toLowerCase()
+        
+        if (filterLower.includes('pending')) {
+          matchesStatus = needsManagerApproval(request)
+        } else if (filterLower.includes('approved')) {
+          matchesStatus = statusLower.includes('approved')
+        } else if (filterLower.includes('rejected')) {
+          matchesStatus = statusLower.includes('rejected')
+        } else {
+          matchesStatus = statusLower.includes(filterLower)
+        }
+      }
+      
       return matchesSearch && matchesStatus
     })
   }
@@ -581,18 +955,17 @@ export default function ManagerLeavePermissionRequests() {
     )
   }
 
-
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar userType="manager" />
-      <div className="flex-1 flex flex-col">
-        <Header
-          title="Manager Approvals"
-          subtitle="Review and provide final approval for leave and permission requests"
-          userType="manager"
-        />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-7xl mx-auto space-y-6">
+    <div className="flex min-h-screen bg-gray-50">
+    <Sidebar userType="manager" className="fixed-sidebar" />
+    <div className="main-content flex-1 flex flex-col">
+      <Header
+        title="Manager Approvals"
+        subtitle="Review and provide final approval for leave and permission requests"
+        userType="manager"
+      />
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-7xl mx-auto space-y-6">
             {/* Manager Info */}
             <Card className="bg-purple-50 border-purple-200">
               <CardHeader className="pb-3">
@@ -601,14 +974,22 @@ export default function ManagerLeavePermissionRequests() {
                     <CardTitle className="text-lg text-purple-900">
                       {managerData?.name || user?.email?.split("@")[0] || "Manager"}
                     </CardTitle>
-                    <CardDescription className="text-purple-700">
-                      {managerData?.designation || "Manager"} • ID: {managerData?.employee_id || "N/A"}
+                    <CardDescription className="text-purple-700 flex items-center space-x-4">
+                      <span>Manager • ID: {managerData?.employee_id || "N/A"}</span>
+                      {managerData?.team_lead && (
+                        <div className="flex items-center space-x-1">
+                          <Users className="h-3 w-3" />
+                          <span>Team Lead: {managerData?.team_lead}</span>
+                        </div>
+                      )}
                     </CardDescription>
                   </div>
                   <Badge className="bg-purple-600 text-white">Manager</Badge>
                 </div>
               </CardHeader>
             </Card>
+
+        
 
             {/* Tabs for Leave and Permission Requests */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -731,10 +1112,13 @@ export default function ManagerLeavePermissionRequests() {
                                   <div>
                                     <CardTitle className="text-lg">{request.employee_name}</CardTitle>
                                     <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                      <span>{request.employee?.designation || "N/A"}</span>
+                                      <div className="flex items-center space-x-1">
+                                        <Users className="h-3 w-3" />
+                                        <span>Team Lead</span>
+                                      </div>
                                       <span className="flex items-center space-x-1">
                                         <Calendar className="h-3 w-3" />
-                                        <span>Applied: {formatDate(request.applied_date)}</span>
+                                        <span>Applied: {formatDate(getAppliedDate(request))}</span>
                                       </span>
                                     </div>
                                   </div>
@@ -747,6 +1131,11 @@ export default function ManagerLeavePermissionRequests() {
                             </CardHeader>
                             <CardContent>
                               <div className="space-y-4">
+                                {/* Debug Status Info */}
+                                {/* <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
+                                  <strong>Debug:</strong> Status = "{request.status}" | Needs Approval = {needsManagerApproval(request) ? "Yes" : "No"}
+                                </div> */}
+
                                 {/* Leave Details */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                                   <div>
@@ -759,7 +1148,9 @@ export default function ManagerLeavePermissionRequests() {
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">Total Days</p>
-                                    <p className="text-sm text-gray-600">{request.total_days} days</p>
+                                    <p className="text-sm text-gray-600">
+                                      {calculateTotalDays(request.start_date, request.end_date)} days
+                                    </p>
                                   </div>
                                 </div>
 
@@ -814,7 +1205,7 @@ export default function ManagerLeavePermissionRequests() {
                                 )}
 
                                 {/* Actions for Pending Manager Approval Requests */}
-                                {request.status === "Pending Manager Approval" && (
+                                {needsManagerApproval(request) && (
                                   <div className="space-y-4 border-t pt-4">
                                     <div>
                                       <Label htmlFor={`leave-comments-${request.id}`} className="text-sm font-medium">
@@ -831,7 +1222,7 @@ export default function ManagerLeavePermissionRequests() {
                                     <div className="flex space-x-2">
                                       <Button
                                         onClick={(e) => handleApproveLeave(request.id, e)}
-                                        disabled={processingId !== null}
+                                        disabled={processingId === request.id || !managerId}
                                         className="bg-green-500 hover:bg-green-600"
                                         type="button"
                                       >
@@ -852,7 +1243,7 @@ export default function ManagerLeavePermissionRequests() {
                                 )}
 
                                 {/* Status Messages */}
-                                {request.status === "Approved" && (
+                                {request.status?.toLowerCase().includes('approved') && (
                                   <div className="bg-green-50 p-3 rounded-md">
                                     <p className="text-sm text-green-700 font-medium">✓ Fully Approved</p>
                                     {request.manager_comments && (
@@ -862,7 +1253,7 @@ export default function ManagerLeavePermissionRequests() {
                                     )}
                                   </div>
                                 )}
-                                {request.status === "Rejected" && (
+                                {request.status?.toLowerCase().includes('rejected') && (
                                   <div className="bg-red-50 p-3 rounded-md">
                                     <p className="text-sm text-red-700 font-medium">✗ Rejected</p>
                                     {request.manager_comments && (
@@ -990,10 +1381,13 @@ export default function ManagerLeavePermissionRequests() {
                                   <div>
                                     <CardTitle className="text-lg">{request.employee_name}</CardTitle>
                                     <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                      <span>{request.employee?.designation || "N/A"}</span>
+                                      <div className="flex items-center space-x-1">
+                                        <Users className="h-3 w-3" />
+                                        <span>Team Lead</span>
+                                      </div>
                                       <span className="flex items-center space-x-1">
                                         <Calendar className="h-3 w-3" />
-                                        <span>Applied: {formatDate(request.applied_date)}</span>
+                                        <span>Applied: {formatDate(getAppliedDate(request))}</span>
                                       </span>
                                     </div>
                                   </div>
@@ -1008,6 +1402,8 @@ export default function ManagerLeavePermissionRequests() {
                             </CardHeader>
                             <CardContent>
                               <div className="space-y-4">
+                              
+
                                 {/* Permission Details */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
                                   <div>
@@ -1016,11 +1412,11 @@ export default function ManagerLeavePermissionRequests() {
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">From Time</p>
-                                    <p className="text-sm text-gray-600">{formatTime(request.from_time)}</p>
+                                    <p className="text-sm text-gray-600">{formatTime(request.start_time)}</p>
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">To Time</p>
-                                    <p className="text-sm text-gray-600">{formatTime(request.to_time)}</p>
+                                    <p className="text-sm text-gray-600">{formatTime(request.end_time)}</p>
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">Duration</p>
@@ -1079,7 +1475,7 @@ export default function ManagerLeavePermissionRequests() {
                                 )}
 
                                 {/* Actions for Pending Manager Approval Requests */}
-                                {request.status === "Pending Manager Approval" && (
+                                {needsManagerApproval(request) && (
                                   <div className="space-y-4 border-t pt-4">
                                     <div>
                                       <Label
@@ -1120,7 +1516,7 @@ export default function ManagerLeavePermissionRequests() {
                                 )}
 
                                 {/* Status Messages */}
-                                {request.status === "Approved" && (
+                                {request.status?.toLowerCase().includes('approved') && (
                                   <div className="bg-green-50 p-3 rounded-md">
                                     <p className="text-sm text-green-700 font-medium">✓ Fully Approved</p>
                                     {request.manager_comments && (
@@ -1130,7 +1526,7 @@ export default function ManagerLeavePermissionRequests() {
                                     )}
                                   </div>
                                 )}
-                                {request.status === "Rejected" && (
+                                {request.status?.toLowerCase().includes('rejected') && (
                                   <div className="bg-red-50 p-3 rounded-md">
                                     <p className="text-sm text-red-700 font-medium">✗ Rejected</p>
                                     {request.manager_comments && (

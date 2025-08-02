@@ -384,9 +384,10 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar userType="employee" />
+      <Sidebar userType="manager" />
       <div className="flex-1 flex flex-col">
-        <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
+        <Header title="Manager Portal" subtitle={`Welcome back, ${displayName}`} userType="manager" />
+
 
         {/* Enhanced Header Cards */}
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">

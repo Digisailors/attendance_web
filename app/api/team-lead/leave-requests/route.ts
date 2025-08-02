@@ -82,33 +82,41 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const employeeId = searchParams.get("employeeId")
-    const teamLeadId = searchParams.get("teamLeadId")
+    const url = new URL(request.url);
+    const employeeId = url.searchParams.get("employeeId");
+    const teamLeadId = url.searchParams.get("teamLeadId");
 
-    let query = supabase.from("leave_requests").select("*").order("created_at", { ascending: false })
+    console.log("🟡 Params received:", { employeeId, teamLeadId });
+
+    if (!employeeId && !teamLeadId) {
+      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+    }
+
+    let query = supabase.from("leave_requests").select("*").order("created_at", { ascending: false });
 
     if (employeeId) {
-      query = query.eq("employee_id", employeeId)
+      query = query.eq("employee_id", employeeId);
     }
 
     if (teamLeadId) {
-      query = query.eq("team_lead_id", teamLeadId)
+      query = query.eq("team_lead_id", teamLeadId);
     }
 
-    const { data, error } = await query
+    const { data, error } = await query;
 
     if (error) {
-      console.error("Error fetching leave requests:", error)
-      return NextResponse.json({ error: "Failed to fetch leave requests" }, { status: 500 })
+      console.error("🟥 Supabase error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data })
-  } catch (error) {
-    console.error("Error in GET leave requests:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ data }, { status: 200 });
+
+  } catch (err) {
+    console.error("🟥 Unexpected error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
+
 
 export async function PATCH(request: NextRequest) {
   try {

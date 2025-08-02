@@ -1,6 +1,11 @@
 // app/api/monthly-settings/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+
+
+
+
 
 // Use service role key for admin operations
 const supabaseAdmin = createClient(
@@ -47,55 +52,54 @@ async function ensureMonthlySettingsTable() {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const month = parseInt(searchParams.get('month') || '6')
-    const year = parseInt(searchParams.get('year') || '2024')
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name) {
+            return request.cookies.get(name)?.value
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
 
-    console.log('Fetching monthly settings for:', { month, year })
+    const url = new URL(request.url);
+    const month = url.searchParams.get("month");
+    const year = url.searchParams.get("year");
 
-    // Ensure table exists first
-    await ensureMonthlySettingsTable()
-
-    // Use admin client to bypass RLS
-    const { data: settings, error: settingsError } = await supabaseAdmin
-      .from('monthly_settings')
-      .select('*')
-      .eq('month', month)
-      .eq('year', year)
-      .single()
-
-    if (settingsError && settingsError.code === 'PGRST116') {
-      // No data found, return default
-      return NextResponse.json({
-        month,
-        year,
-        totalDays: 28
-      })
+    if (!month || !year) {
+      return NextResponse.json({ error: "month and year are required" }, { status: 400 });
     }
 
-    if (settingsError) {
-      console.error('Error fetching monthly settings:', settingsError)
-      return NextResponse.json({
-        month,
-        year,
-        totalDays: 28
-      })
-    }
+    const formattedMonth = month.padStart(2, "0");
+    const startDate = `${year}-${formattedMonth}-01`;
+    const endDate = `${year}-${formattedMonth}-31`;
+const { data, error } = await supabaseAdmin
+  .from("attendance")
+  .select("working_days")
+  .eq("month", parseInt(month))
+  .eq("year", parseInt(year));
 
-    return NextResponse.json({
-      month: settings?.month || month,
-      year: settings?.year || year,
-      totalDays: settings?.total_days || 28
-    })
+if (error) {
+  return NextResponse.json({ error: error.message }, { status: 500 });
+}
 
-  } catch (error) {
-    console.error('API Error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+const totalWorkingDays = data.reduce((sum, row) => sum + (row.working_days || 0), 0);
+return NextResponse.json({ workingDays: totalWorkingDays });
+
+
+    return NextResponse.json({ workingDays: totalWorkingDays });
+  } catch (err) {
+    console.error("GET Error:", err);
+    return NextResponse.json({ error: "Unexpected server error" }, { status: 500 });
   }
 }
+
+
+
 
 export async function POST(request: NextRequest) {
   try {

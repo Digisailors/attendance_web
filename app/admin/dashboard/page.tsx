@@ -57,7 +57,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import AddEmployeeModal from "@/components/AddEmployeeModal"
 
-// Define types for better type safety
 type WorkMode = "Office" | "WFH" | "Hybrid"
 type Status = "Active" | "Warning" | "On Leave"
 
@@ -77,6 +76,9 @@ interface Employee {
   address?: string
   dateOfJoining?: string
   experience?: string
+  // New fields for request counts
+  leaveRequestCount?: number
+  permissionRequestCount?: number
 }
 
 interface PaginationInfo {
@@ -122,6 +124,10 @@ const monthNames = [
   "July", "August", "September", "October", "November", "December"
 ]
 
+const now = new Date()
+const defaultMonth = (now.getMonth() + 1).toString()
+const defaultYear = now.getFullYear().toString()
+
 export default function AttendanceOverview() {
   const [attendanceData, setAttendanceData] = useState<Employee[]>([])
   const [pagination, setPagination] = useState<PaginationInfo>({
@@ -137,8 +143,11 @@ export default function AttendanceOverview() {
   const [searchTerm, setSearchTerm] = useState<string>("")
   const [selectedMode, setSelectedMode] = useState<string>("All Modes")
   const [selectedStatus, setSelectedStatus] = useState<string>("All Status")
-  const [selectedMonth, setSelectedMonth] = useState<string>("6")
-  const [selectedYear, setSelectedYear] = useState<string>("2025")
+
+  // Month/Year selection
+  const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth)
+  const [selectedYear, setSelectedYear] = useState<string>(defaultYear)
+
   const [currentPage, setCurrentPage] = useState(1)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -146,14 +155,139 @@ export default function AttendanceOverview() {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
-  
   // New states for total days management
   const [totalDaysDialogOpen, setTotalDaysDialogOpen] = useState(false)
   const [currentMonthTotalDays, setCurrentMonthTotalDays] = useState<number>(28)
   const [newTotalDays, setNewTotalDays] = useState<number>(28)
   const [totalDaysLoading, setTotalDaysLoading] = useState(false)
-  
   const router = useRouter()
+
+  // Fixed function to fetch attendance summary for each employee
+  const fetchAttendanceSummary = async (employees: Employee[]) => {
+    try {
+      console.log("Fetching attendance summary for employees:", employees.length)
+      
+      const updatedEmployees = await Promise.all(
+        employees.map(async (employee) => {
+          try {
+            const response = await fetch(
+              `/api/attendance-summary?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
+            )
+            
+            if (response.ok) {
+              const summaryData = await response.json()
+              console.log(`Attendance summary for ${employee.name}:`, summaryData)
+              
+              // ✅ Fixed property mapping from snake_case API response to camelCase frontend
+              return {
+                ...employee,
+                workingDays: summaryData.working_days || 0,  // 🔧 Fixed: was summaryData.workingDays
+                permissions: summaryData.permissions || 0,
+                leaves: summaryData.leaves || 0,
+                missedDays: summaryData.missed_days || 0,     // 🔧 Fixed: was summaryData.missedDays
+                totalDays: summaryData.total_days || currentMonthTotalDays  // 🔧 Fixed: was summaryData.totalDays
+              }
+            } else {
+              console.error(`Failed to fetch attendance summary for ${employee.name}:`, response.status)
+              return {
+                ...employee,
+                workingDays: 0,
+                permissions: 0,
+                leaves: 0,
+                missedDays: currentMonthTotalDays
+              }
+            }
+          } catch (err) {
+            console.error(`Error fetching attendance summary for employee ${employee.name}:`, err)
+            return {
+              ...employee,
+              workingDays: 0,
+              permissions: 0,
+              leaves: 0,
+              missedDays: currentMonthTotalDays
+            }
+          }
+        })
+      )
+
+      console.log("Updated employees with attendance summary:", updatedEmployees)
+      return updatedEmployees
+    } catch (err) {
+      console.error("Error in fetchAttendanceSummary:", err)
+      return employees.map(emp => ({
+        ...emp,
+        workingDays: 0,
+        permissions: 0,
+        leaves: 0,
+        missedDays: currentMonthTotalDays
+      }))
+    }
+  }
+
+  // Fixed function to fetch leave and permission counts for all employees
+  const fetchRequestCounts = async (employees: Employee[]) => {
+    try {
+      console.log("Fetching request counts for employees:", employees.length)
+      
+      const updatedEmployees = await Promise.all(
+        employees.map(async (employee) => {
+          try {
+            // Fetch leave request count
+            const leaveResponse = await fetch(
+              `/api/leave-request?employeeId=${employee.id}&count=true&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`
+            )
+            
+            let leaveCount = 0
+            if (leaveResponse.ok) {
+              const leaveData = await leaveResponse.json()
+              leaveCount = leaveData.count || 0
+              console.log(`Leave count for ${employee.name} (${employee.id}):`, leaveCount)
+            } else {
+              console.error(`Failed to fetch leave count for ${employee.name}:`, leaveResponse.status)
+            }
+
+            // Fetch permission request count
+            const permissionResponse = await fetch(
+              `/api/permission-request?employeeId=${employee.id}&count=true&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`
+            )
+            
+            let permissionCount = 0
+            if (permissionResponse.ok) {
+              const permissionData = await permissionResponse.json()
+              permissionCount = permissionData.count || 0
+              console.log(`Permission count for ${employee.name} (${employee.id}):`, permissionCount)
+            } else {
+              console.error(`Failed to fetch permission count for ${employee.name}:`, permissionResponse.status)
+            }
+
+            return {
+              ...employee,
+              leaveRequestCount: leaveCount,
+              permissionRequestCount: permissionCount
+            }
+          } catch (err) {
+            console.error(`Error fetching counts for employee ${employee.name}:`, err)
+            return {
+              ...employee,
+              leaveRequestCount: 0,
+              permissionRequestCount: 0
+            }
+          }
+        })
+      )
+
+      console.log("Updated employees with counts:", updatedEmployees)
+      return updatedEmployees
+    } catch (err) {
+      console.error("Error in fetchRequestCounts:", err)
+      // If counts fail, at least show the employees without counts
+      return employees.map(emp => ({
+        ...emp,
+        leaveRequestCount: 0,
+        permissionRequestCount: 0
+      }))
+    }
+  }
 
   // Fetch current month's total days setting
   const fetchMonthTotalDays = async () => {
@@ -182,7 +316,6 @@ export default function AttendanceOverview() {
 
     try {
       setTotalDaysLoading(true)
-      
       const response = await fetch(`/api/monthly-settings`, {
         method: "POST",
         headers: {
@@ -208,10 +341,8 @@ export default function AttendanceOverview() {
 
       setCurrentMonthTotalDays(newTotalDays)
       setTotalDaysDialogOpen(false)
-      
       // Refresh the employee list to reflect the changes
       await fetchEmployees(currentPage)
-      
     } catch (err) {
       console.error("Error updating total days:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to update total days"
@@ -225,17 +356,14 @@ export default function AttendanceOverview() {
     }
   }
 
-  // Fetch employees data
+  // Updated fetch employees function with attendance summary integration
   const fetchEmployees = async (page = 1) => {
     try {
       setLoading(true)
       setError(null)
-
-      console.log("Frontend: Fetching employees...")
-
+      console.log(`Fetching employees for month: ${selectedMonth}, year: ${selectedYear}, page: ${page}`)
+      
       const url = `/api/employees?month=${selectedMonth}&year=${selectedYear}&page=${page}&limit=10`
-      console.log("Request URL:", url)
-
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -244,12 +372,8 @@ export default function AttendanceOverview() {
         cache: "no-store",
       })
 
-      console.log("Response status:", response.status)
-
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("Error response:", errorText)
-
         let errorMessage = `HTTP ${response.status}`
         try {
           const errorData = JSON.parse(errorText)
@@ -257,25 +381,29 @@ export default function AttendanceOverview() {
         } catch (e) {
           errorMessage = errorText || errorMessage
         }
-
         throw new Error(errorMessage)
       }
 
       const data: ApiResponse = await response.json()
-      console.log("Received data:", data)
-
       if (data.employees && Array.isArray(data.employees)) {
-        setAttendanceData(data.employees)
+        console.log("Fetched employees:", data.employees.length)
         setPagination(data.pagination)
         setCurrentPage(page)
-        console.log(`Successfully loaded ${data.employees.length} employees`)
+        
+        // First fetch attendance summary for all employees
+        const employeesWithAttendance = await fetchAttendanceSummary(data.employees)
+        
+        // Then fetch request counts
+        const employeesWithCounts = await fetchRequestCounts(employeesWithAttendance)
+        
+        setAttendanceData(employeesWithCounts)
       } else {
-        console.error("Invalid data format:", data)
+        console.log("No employees data received")
         setAttendanceData([])
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch employees"
-      console.error("Fetch error:", err)
+      console.error("Error fetching employees:", errorMessage)
       setError(errorMessage)
       setAttendanceData([])
     } finally {
@@ -284,9 +412,11 @@ export default function AttendanceOverview() {
   }
 
   useEffect(() => {
+    console.log("Effect triggered - fetching employees and month total days")
     fetchEmployees(1)
     fetchMonthTotalDays()
     setCurrentPage(1)
+    // eslint-disable-next-line
   }, [selectedMonth, selectedYear])
 
   const handleEmployeeClick = (employeeId: string): void => {
@@ -316,10 +446,8 @@ export default function AttendanceOverview() {
 
       await fetchEmployees(currentPage)
     } catch (err) {
-      console.error("Error adding employee:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to add employee"
       setError(errorMessage)
-      
       toast({
         title: "Error",
         description: errorMessage,
@@ -344,9 +472,6 @@ export default function AttendanceOverview() {
     try {
       setDeleteLoading(true)
       setDeletingEmployeeId(selectedEmployee.id)
-      
-      console.log(`Attempting to delete employee: ${selectedEmployee.name} (ID: ${selectedEmployee.id})`)
-      
       const response = await fetch(`/api/employees/${selectedEmployee.id}`, {
         method: "DELETE",
         headers: {
@@ -356,7 +481,6 @@ export default function AttendanceOverview() {
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`
-        
         try {
           const errorData = await response.json()
           errorMessage = errorData.error || errorData.message || errorData.details || errorMessage
@@ -364,25 +488,10 @@ export default function AttendanceOverview() {
           try {
             const errorText = await response.text()
             errorMessage = errorText || errorMessage
-          } catch (textError) {
-            console.error("Error reading response:", textError)
-          }
+          } catch (textError) {}
         }
-
         throw new Error(errorMessage)
       }
-
-      let responseData = null
-      try {
-        const responseText = await response.text()
-        if (responseText) {
-          responseData = JSON.parse(responseText)
-        }
-      } catch (e) {
-        console.log("Empty response body, assuming successful deletion")
-      }
-
-      console.log("Delete response:", responseData)
 
       toast({
         title: "Success",
@@ -392,14 +501,10 @@ export default function AttendanceOverview() {
 
       setDeleteDialogOpen(false)
       setSelectedEmployee(null)
-
       await fetchEmployees(currentPage)
-      
     } catch (err) {
-      console.error("Error deleting employee:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to delete employee"
       setError(errorMessage)
-      
       toast({
         title: "Delete Failed",
         description: errorMessage,
@@ -418,9 +523,10 @@ export default function AttendanceOverview() {
     setDeletingEmployeeId(null)
   }
 
-  // FIXED: Better error handling and debugging for update employee
-  const handleUpdateEmployee = async (updatedEmployee: Employee): Promise<void> => {
-    if (!updatedEmployee.id) {
+  const handleUpdateEmployee = async (updatedEmployee: Employee, originalEmployeeId?: string): Promise<void> => {
+    const employeeIdToUpdate = originalEmployeeId || updatedEmployee.id
+    
+    if (!employeeIdToUpdate) {
       toast({
         title: "Error",
         description: "Employee ID is missing",
@@ -430,9 +536,7 @@ export default function AttendanceOverview() {
     }
 
     try {
-      console.log("Updating employee:", updatedEmployee.id, updatedEmployee)
-      
-      const response = await fetch(`/api/employees/${encodeURIComponent(updatedEmployee.id)}`, {
+      const response = await fetch(`/api/employees/${encodeURIComponent(employeeIdToUpdate)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -440,38 +544,18 @@ export default function AttendanceOverview() {
         body: JSON.stringify(updatedEmployee),
       })
 
-      console.log("Update response status:", response.status)
-
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`
-        
         try {
           const errorData = await response.json()
-          console.error("Update error data:", errorData)
           errorMessage = errorData.error || errorData.message || errorData.details || errorMessage
         } catch (e) {
           try {
             const errorText = await response.text()
-            console.error("Update error text:", errorText)
             errorMessage = errorText || errorMessage
-          } catch (textError) {
-            console.error("Error reading response:", textError)
-          }
+          } catch (textError) {}
         }
-
         throw new Error(errorMessage)
-      }
-
-      // Try to parse response
-      let responseData = null
-      try {
-        const responseText = await response.text()
-        if (responseText) {
-          responseData = JSON.parse(responseText)
-          console.log("Update success response:", responseData)
-        }
-      } catch (e) {
-        console.log("Empty or invalid response body, assuming successful update")
       }
 
       toast({
@@ -484,10 +568,8 @@ export default function AttendanceOverview() {
       setEditModalOpen(false)
       setSelectedEmployee(null)
     } catch (err) {
-      console.error("Error updating employee:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to update employee"
       setError(errorMessage)
-      
       toast({
         title: "Error",
         description: errorMessage,
@@ -496,6 +578,7 @@ export default function AttendanceOverview() {
     }
   }
 
+  // Updated CSV export without missed days
   const handleExportCSV = () => {
     if (filteredData.length === 0) {
       toast({
@@ -516,20 +599,20 @@ export default function AttendanceOverview() {
         "Working Days",
         "Permissions",
         "Leaves",
-        "Missed Days",
-        "Status",
+        "Leave Requests",
+        "Permission Requests",
       ],
       ...filteredData.map((emp) => [
         emp.id,
         emp.name,
         emp.designation,
         emp.workMode,
-        emp.totalDays,
+        emp.totalDays || currentMonthTotalDays,
         emp.workingDays,
         emp.permissions,
         emp.leaves,
-        emp.missedDays,
-        emp.status,
+        emp.leaveRequestCount || 0,
+        emp.permissionRequestCount || 0,
       ]),
     ]
       .map((row) => row.join(","))
@@ -558,12 +641,32 @@ export default function AttendanceOverview() {
 
   const filteredData = attendanceData.filter((employee) => {
     const matchesSearch =
+      employee.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.designation.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesMode = selectedMode === "All Modes" || employee.workMode === selectedMode
-    const matchesStatus = selectedStatus === "All Status" || employee.status === selectedStatus
+
+    const matchesMode =
+      selectedMode === "All Modes" || employee.workMode === selectedMode
+
+    const matchesStatus =
+      selectedStatus === "All Status" || employee.status === selectedStatus
+
     return matchesSearch && matchesMode && matchesStatus
   })
+
+  // Debug logging
+  useEffect(() => {
+    console.log("Attendance data updated:", attendanceData.map(emp => ({
+      id: emp.id,
+      name: emp.name,
+      workingDays: emp.workingDays,
+      permissions: emp.permissions,
+      leaves: emp.leaves,
+      missedDays: emp.missedDays,
+      leaveRequestCount: emp.leaveRequestCount,
+      permissionRequestCount: emp.permissionRequestCount
+    })))
+  }, [attendanceData])
 
   if (loading) {
     return (
@@ -578,6 +681,7 @@ export default function AttendanceOverview() {
       </div>
     )
   }
+
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="admin" />
@@ -775,23 +879,23 @@ export default function AttendanceOverview() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
-                        <TableHead className="w-[200px]">👤 Employee Name</TableHead>
+                        <TableHead className="w-[100px] text-center">ID</TableHead>
+                        <TableHead className="w-[180px]">Employee Name</TableHead>
                         <TableHead className="w-[150px]">Designation</TableHead>
                         <TableHead className="w-[120px]">Work Mode</TableHead>
-                        <TableHead className="w-[100px] text-center"> Total Days</TableHead>
-                        <TableHead className="w-[100px] text-center"> Working Days</TableHead>
-                        <TableHead className="w-[100px] text-center"> Permissions</TableHead>
-                        <TableHead className="w-[100px] text-center"> Leaves</TableHead>
-                        <TableHead className="w-[100px] text-center"> Missed Days</TableHead>
-                        <TableHead className="w-[100px] text-center">
-                           Status</TableHead>
+                        <TableHead className="w-[100px] text-center">Total Days</TableHead>
+                        <TableHead className="w-[100px] text-center">Working Days</TableHead>
+                        <TableHead className="w-[100px] text-center">Permissions</TableHead>
+                        <TableHead className="w-[100px] text-center">Leaves</TableHead>
+                        <TableHead className="w-[100px] text-center">Leave Requests</TableHead>
+                        <TableHead className="w-[100px] text-center">Permission Requests</TableHead>
                         <TableHead className="w-[80px] text-center">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredData.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                          <TableCell colSpan={11} className="text-center py-8 text-gray-500">
                             {attendanceData.length === 0
                               ? "No employees found"
                               : "No employees match the selected criteria"}
@@ -801,28 +905,42 @@ export default function AttendanceOverview() {
                         filteredData.map((employee) => (
                           <TableRow key={employee.id} className="hover:bg-gray-50">
                             <TableCell>
-                              <div className="flex items-center space-x-3">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-sm">
-                                  {employee.id}
-                                </div>
-                                <span className="font-medium">{employee.name}</span>
+                              <div className="px-1.5 py-0.5 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-xs leading-tight">
+                                {employee.id}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-medium">{employee.name}</span>
                             </TableCell>
                             <TableCell className="text-gray-600">{employee.designation}</TableCell>
                             <TableCell>
                               <Badge className={getWorkModeBadge(employee.workMode)}>{employee.workMode}</Badge>
                             </TableCell>
-                            <TableCell className="text-center font-medium">{employee.totalDays} Days</TableCell>
+                            <TableCell className="text-center font-medium">
+                              {employee.totalDays || currentMonthTotalDays} Days
+                            </TableCell>
                             <TableCell className="text-center font-medium text-green-600">
                               {employee.workingDays} Days
                             </TableCell>
-                            <TableCell className="text-center font-medium">{employee.permissions}</TableCell>
-                            <TableCell className="text-center font-medium">{employee.leaves}</TableCell>
+                            <TableCell className="text-center font-medium text-orange-600">
+                              {employee.permissions} Days
+                            </TableCell>
                             <TableCell className="text-center font-medium text-red-600">
-                              {employee.missedDays}
+                              {employee.leaves} Days
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge className={getStatusBadge(employee.status)}>{employee.status}</Badge>
+                              <div className="flex items-center justify-center">
+                                <Badge className="bg-blue-100 text-blue-800">
+                                  {employee.leaveRequestCount || 0}
+                                </Badge>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center">
+                                <Badge className="bg-green-100 text-green-800">
+                                  {employee.permissionRequestCount || 0}
+                                </Badge>
+                              </div>
                             </TableCell>
                             <TableCell className="text-center">
                               <DropdownMenu>
@@ -841,7 +959,7 @@ export default function AttendanceOverview() {
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem 
+                                  <DropdownMenuItem
                                     onClick={() => handleDeleteEmployee(employee)}
                                     className="text-red-600"
                                   >

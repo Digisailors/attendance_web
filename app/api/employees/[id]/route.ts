@@ -148,6 +148,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { data, error } = await supabase
       .from("employees")
       .update({
+        employee_id: body.id,
         name: body.name,
         designation: body.designation,
         work_mode: body.workMode,

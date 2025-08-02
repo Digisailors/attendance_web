@@ -368,7 +368,7 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   if (loading) {
     return (
       <div className="flex min-h-screen overflow-auto bg-gray-50">
-        <Sidebar userType="employee" />
+        <Sidebar userType="team-lead" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
@@ -383,10 +383,11 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar userType="employee" />
+<div className="flex h-screen bg-gray-50">
+      <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
-        <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
+        <Header title="Teamlead Portal" subtitle={`Welcome back, ${displayName}`} userType="team-lead" />
+
 
         {/* Enhanced Header Cards */}
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">

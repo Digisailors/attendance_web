@@ -84,7 +84,7 @@ export default function EmployeeHistoryPage() {
 
           const { data: employeeInfo, error } = await supabase
             .from("employees")
-            .select("employee_id, name, email_address, designation, phone_number, address")
+            .select("id, name, email_address, designation, phone_number, address")
             .eq("email_address", parsedUser.email)
             .single()
 
@@ -230,7 +230,7 @@ export default function EmployeeHistoryPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen overflow-auto bg-gray-50">
+      <div className="flex h-screen bg-gray-50">
         <Sidebar userType="employee" />
         <div className="flex-1 flex flex-col">
           <Header title="Employee Portal" subtitle="Loading..." userType="employee" />
@@ -247,12 +247,12 @@ export default function EmployeeHistoryPage() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar userType="employee" />
+      <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
         <Header
           title="My Request History"
           subtitle={`Welcome back, ${displayName}. View your past leave and permission requests.`}
-          userType="employee"
+          userType="team-lead"
         />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-7xl mx-auto space-y-6">
@@ -265,11 +265,10 @@ export default function EmployeeHistoryPage() {
                       {employeeData?.name || user?.email?.split("@")[0] || "Employee"}
                     </CardTitle>
                     <CardDescription className="text-blue-700">
-                      {employeeData?.designation || "Employee"} • ID: {employeeData?.employee_id || "N/A"}
-
+                      {employeeData?.designation || "Employee"} 
                     </CardDescription>
                   </div>
-                  <Badge className="bg-blue-600 text-white">Employee</Badge>
+                  <Badge className="bg-blue-600 text-white">team-lead</Badge>
                 </div>
               </CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-blue-800">

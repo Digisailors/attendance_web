@@ -46,7 +46,7 @@ interface FormData {
 }
 
 interface AddEmployeeModalProps {
-  onAddEmployee: (employee: Employee) => Promise<void>
+  onAddEmployee: (employee: Employee, originalId?: string) => Promise<void>
   initialData?: Employee | null
   isEdit?: boolean
   isOpen?: boolean
@@ -63,8 +63,8 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   const [internalOpen, setInternalOpen] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [originalEmployeeId, setOriginalEmployeeId] = useState<string>("")
 
-  // Use controlled or internal state for dialog open/close
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen
   const setIsOpen = controlledOnOpenChange || setInternalOpen
 
@@ -81,13 +81,41 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     experience: "",
   })
 
-  // Effect to populate form when editing
+ const calculateExperience = (joiningDate: string): string => {
+  const startDate = new Date(joiningDate)
+  const currentDate = new Date()
+
+  let years = currentDate.getFullYear() - startDate.getFullYear()
+  let months = currentDate.getMonth() - startDate.getMonth()
+  let days = currentDate.getDate() - startDate.getDate()
+
+  if (days < 0) {
+    months -= 1
+    const prevMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0)
+    days += prevMonth.getDate()
+  }
+
+  if (months < 0) {
+    years -= 1
+    months += 12
+  }
+
+  const parts: string[] = []
+  if (years > 0) parts.push(`${years} year${years > 1 ? "s" : ""}`)
+  if (months > 0) parts.push(`${months} month${months > 1 ? "s" : ""}`)
+  parts.push(`${days} day${days > 1 ? "s" : ""}`)
+
+  return parts.join(", ")
+}
+
+
   useEffect(() => {
     if (isEdit && initialData) {
       const nameParts = initialData.name.split(' ')
       const firstName = nameParts[0] || ''
       const lastName = nameParts.slice(1).join(' ') || ''
-      
+      setOriginalEmployeeId(initialData.id)
+
       setFormData({
         employeeId: initialData.id,
         firstName,
@@ -101,17 +129,41 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         experience: initialData.experience || "",
       })
     } else if (!isEdit) {
-      // Generate initial employee ID for new employees
       generateNewEmployeeId()
+      setOriginalEmployeeId("")
     }
   }, [isEdit, initialData, isOpen])
 
+  useEffect(() => {
+    if (!formData.dateOfJoining) return
+
+    const updateExp = () => {
+      setFormData(prev => ({
+        ...prev,
+        experience: calculateExperience(prev.dateOfJoining)
+      }))
+    }
+
+    updateExp()
+
+    const interval = setInterval(updateExp, 24 * 60 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [formData.dateOfJoining])
+
   const handleInputChange = (field: keyof FormData, value: string): void => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-    // Clear error when user starts typing
+    setFormData((prev) => {
+      const updated = {
+        ...prev,
+        [field]: value,
+      }
+
+      if (field === "dateOfJoining" && value) {
+        updated.experience = calculateExperience(value)
+      }
+
+      return updated
+    })
+
     if (error) {
       setError(null)
     }
@@ -133,7 +185,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   }
 
   const validateEmployeeId = (employeeId: string): boolean => {
-    // Basic validation: should be at least 2 characters and contain only alphanumeric characters
     const idRegex = /^[A-Za-z0-9]{2,10}$/
     return idRegex.test(employeeId)
   }
@@ -149,54 +200,18 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   }
 
   const validateForm = (): string | null => {
-    if (!formData.employeeId.trim()) {
-      return 'Employee ID is required'
-    }
-
-    if (!validateEmployeeId(formData.employeeId)) {
-      return 'Employee ID should be 2-10 characters long and contain only letters and numbers'
-    }
-
-    if (!formData.firstName.trim()) {
-      return 'First name is required'
-    }
-
-    if (!formData.lastName.trim()) {
-      return 'Last name is required'
-    }
-
-    if (!formData.designation.trim()) {
-      return 'Designation is required'
-    }
-
-    if (!formData.phoneNumber.trim()) {
-      return 'Phone number is required'
-    }
-
-    if (!validatePhone(formData.phoneNumber)) {
-      return 'Please enter a valid phone number'
-    }
-
-    if (!formData.emailAddress.trim()) {
-      return 'Email address is required'
-    }
-
-    if (!validateEmail(formData.emailAddress)) {
-      return 'Please enter a valid email address'
-    }
-
-    if (!formData.address.trim()) {
-      return 'Address is required'
-    }
-
-    if (!formData.dateOfJoining) {
-      return 'Date of joining is required'
-    }
-
-    if (!formData.experience.trim()) {
-      return 'Experience is required'
-    }
-
+    if (!formData.employeeId.trim()) return 'Employee ID is required'
+    if (!validateEmployeeId(formData.employeeId)) return 'Employee ID should be 2-10 characters long and contain only letters and numbers'
+    if (!formData.firstName.trim()) return 'First name is required'
+    if (!formData.lastName.trim()) return 'Last name is required'
+    if (!formData.designation.trim()) return 'Designation is required'
+    if (!formData.phoneNumber.trim()) return 'Phone number is required'
+    if (!validatePhone(formData.phoneNumber)) return 'Please enter a valid phone number'
+    if (!formData.emailAddress.trim()) return 'Email address is required'
+    if (!validateEmail(formData.emailAddress)) return 'Please enter a valid email address'
+    if (!formData.address.trim()) return 'Address is required'
+    if (!formData.dateOfJoining) return 'Date of joining is required'
+    if (!formData.experience.trim()) return 'Experience is required'
     return null
   }
 
@@ -206,7 +221,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     setError(null)
 
     try {
-      // Validate form
       const validationError = validateForm()
       if (validationError) {
         setError(validationError)
@@ -217,7 +231,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       let employeeData: Employee
 
       if (isEdit && initialData) {
-        // Update existing employee
         employeeData = {
           ...initialData,
           id: formData.employeeId.trim(),
@@ -230,8 +243,9 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           dateOfJoining: formData.dateOfJoining,
           experience: formData.experience.trim(),
         }
+
+        await onAddEmployee(employeeData, originalEmployeeId)
       } else {
-        // Create new employee
         employeeData = {
           id: formData.employeeId.trim(),
           name: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
@@ -249,16 +263,15 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           dateOfJoining: formData.dateOfJoining,
           experience: formData.experience.trim(),
         }
-      }
 
-      await onAddEmployee(employeeData)
+        await onAddEmployee(employeeData)
+      }
 
       setIsOpen(false)
       resetForm()
     } catch (error) {
       console.error("Error adding/updating employee:", error)
-      
-      // Handle different types of errors
+
       if (error instanceof Error) {
         if (error.message.includes('duplicate') || error.message.includes('already exists')) {
           setError(`Employee ID ${formData.employeeId} already exists. Please use a different ID.`)
@@ -288,6 +301,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       dateOfJoining: "",
       experience: "",
     })
+    setOriginalEmployeeId("")
     setError(null)
   }
 
@@ -296,7 +310,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     resetForm()
   }
 
-  const modalContent = (
+   const modalContent = (
     <>
       <DialogHeader>
         <DialogTitle className="text-xl font-semibold">
@@ -325,9 +339,16 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 value={formData.employeeId}
                 onChange={(e) => handleInputChange("employeeId", e.target.value)}
                 required
-                disabled={isLoading}
+                disabled={isLoading || isEdit} // Disable in edit mode
+                readOnly={isEdit} // Make it read-only in edit mode
+                className={isEdit ? "bg-gray-100 cursor-not-allowed" : ""} // Visual indication
                 aria-describedby="employeeId-help"
               />
+              {isEdit && (
+                <p className="text-xs text-gray-600 mt-1">
+                 
+                </p>
+              )}
             </div>
             {!isEdit && (
               <Button
@@ -342,9 +363,10 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               </Button>
             )}
           </div>
-          <p id="employeeId-help" className="text-gray-500 text-xs">
-            Employee ID should be 2-10 characters long and contain only letters and numbers
-          </p>
+         <p id="employeeId-help" className="text-gray-500 text-xs">
+  {!isEdit && "Employee ID should be 2-10 characters long and contain only letters and numbers"}
+</p>
+
         </div>
 
         {/* First Row - First Name and Last Name */}
@@ -498,7 +520,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     </>
   )
 
-  // If this is being used as a controlled component (for editing), don't render the trigger
   if (isEdit && controlledOpen !== undefined) {
     return (
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -509,7 +530,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     )
   }
 
-  // Regular modal with trigger for adding new employees
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>

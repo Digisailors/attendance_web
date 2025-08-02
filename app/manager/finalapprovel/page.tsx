@@ -15,6 +15,7 @@ interface FinalApproval {
   title: string;
   employee_name: string;
   team_lead_name: string;
+  team_lead_id: string; // Added team lead ID field
   department: string;
   work_type: string;
   work_description: string;
@@ -268,7 +269,7 @@ const handleReject = async (approvalId: string) => {
 
   if (loading && !managerId) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex min-h-screen overflow-auto bg-gray-50">
         <Sidebar userType="manager" />
         <div className="flex-1 flex items-center justify-center">
           <div className="flex items-center space-x-2">
@@ -419,10 +420,7 @@ const handleReject = async (approvalId: string) => {
                                 <User className="h-3 w-3" />
                                 <span>Employee: {approval.employee_name}</span>
                               </span>
-                              <span className="flex items-center space-x-1">
-                                <User className="h-3 w-3" />
-                                <span>Team Lead: {approval.team_lead_name}</span>
-                              </span>
+                             
                             </div>
                             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                               <span>Department: {approval.department}</span>
@@ -430,10 +428,13 @@ const handleReject = async (approvalId: string) => {
                                 <Calendar className="h-3 w-3" />
                                 <span>Submitted: {formatDate(approval.submitted_date)}</span>
                               </span>
-                              <span className="flex items-center space-x-1">
-                                <Calendar className="h-3 w-3" />
-                                <span>Team Lead Approved: {formatDate(approval.approved_by_team_lead_date)}</span>
-                              </span>
+                             {approval.approved_by_team_lead_date && (
+  <span className="flex items-center space-x-1">
+    <Calendar className="h-3 w-3" />
+    <span>Team Lead Approved: {formatDate(approval.approved_by_team_lead_date)}</span>
+  </span>
+)}
+
                             </div>
                           </div>
                         </CardHeader>

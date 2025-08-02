@@ -7,16 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Users, Building2 } from 'lucide-react'
+import { Users, Building2, Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
+import { toast } from '@/hooks/use-toast'
 
-// Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 )
 
-// Simple hash function for demo purposes - in production, use proper server-side hashing
 const simpleHash = async (password: string): Promise<string> => {
   const encoder = new TextEncoder()
   const data = encoder.encode(password)
@@ -26,57 +25,54 @@ const simpleHash = async (password: string): Promise<string> => {
 }
 
 export default function LoginPage() {
+  const router = useRouter()
   const [userType, setUserType] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [isSignup, setIsSignup] = useState(false)
-  const router = useRouter()
+
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSuccess, setForgotSuccess] = useState('')
+  const [showNewPass, setShowNewPass] = useState(false)
+  const [showConfirmPass, setShowConfirmPass] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
 
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setError('Supabase configuration is missing. Please check your environment variables.')
-      setIsLoading(false)
-      return
-    }
-
     try {
       if (isSignup) {
-        // Sign up new user
         const hashedPassword = await simpleHash(password)
-        
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('users')
-          .insert([
-            {
-              email,
-              password: hashedPassword,
-              user_type: userType
-            }
-          ])
-          .select()
+          .insert([{ email, password: hashedPassword, user_type: userType }])
 
         if (error) {
-          console.error('Supabase error:', error)
-          if (error.code === '23505') {
-            setError('Email already exists')
-          } else {
-            setError(`Failed to create account: ${error.message}`)
-          }
+          setError(error.code === '23505' ? 'Email already exists' : error.message)
+          toast({
+            title: 'Error',
+            description: error.message,
+            variant: 'destructive'
+          })
           return
         }
 
-        alert('Account created successfully! Please sign in.')
+        toast({
+          title: 'Account Created',
+          description: 'Account created. Please sign in.',
+          variant: 'default'
+        })
         setIsSignup(false)
         setPassword('')
       } else {
-        // Sign in existing user
         const { data, error } = await supabase
           .from('users')
           .select('*')
@@ -86,49 +82,112 @@ export default function LoginPage() {
 
         if (error || !data) {
           setError('Invalid email or password')
+          toast({
+            title: 'Login Failed',
+            description: 'Invalid email or password',
+            variant: 'destructive'
+          })
           return
         }
 
-        // Verify password
         const hashedInputPassword = await simpleHash(password)
         if (hashedInputPassword !== data.password) {
           setError('Invalid email or password')
+          toast({
+            title: 'Login Failed',
+            description: 'Invalid email or password',
+            variant: 'destructive'
+          })
           return
         }
 
-        // Store user data in localStorage or context
         localStorage.setItem('user', JSON.stringify({
           id: data.id,
           email: data.email,
           userType: data.user_type
         }))
 
-        // Route based on user type
+        toast({
+          title: 'Login Successful',
+          description: `Welcome back, ${data.user_type}!`,
+          variant: 'default'
+        })
+
         switch (data.user_type) {
           case 'admin':
-            router.push('/admin/dashboard')
-            break
+            router.push('/admin/dashboard'); break
           case 'employee':
-            router.push('/employee/dashboard')
-            break
           case 'intern':
-            router.push('/employee/dashboard')
-            break
+            router.push('/employee/dashboard'); break
           case 'team-lead':
-            router.push('/team-lead/team')
-            break
+            router.push('/team-lead/team'); break
           case 'manager':
-            router.push('/manager/dashboard')
-            break
+            router.push('/manager/dashboard'); break
           default:
-            router.push('/employee/dashboard')
+            router.push('/')
         }
       }
     } catch (err) {
-      setError('An unexpected error occurred')
-      console.error('Auth error:', err)
+      setError('Something went wrong')
+      toast({
+        title: 'Error',
+        description: 'Something went wrong',
+        variant: 'destructive'
+      })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleResetPassword = async () => {
+    setForgotError('')
+    setForgotSuccess('')
+
+    if (!forgotEmail || !newPassword || !confirmPassword) {
+      setForgotError('All fields are required')
+      toast({
+        title: 'Error',
+        description: 'All fields are required',
+        variant: 'destructive'
+      })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setForgotError('Passwords do not match')
+      toast({
+        title: 'Error',
+        description: 'Passwords do not match',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: forgotEmail,
+        newPassword,
+        action: 'reset'
+      })
+    })
+
+    const result = await res.json()
+    if (!res.ok) {
+      setForgotError(result.error || 'Reset failed')
+      toast({
+        title: 'Reset Failed',
+        description: result.error || 'Reset failed',
+        variant: 'destructive'
+      })
+    } else {
+      setForgotSuccess('Password updated!')
+      toast({
+        title: 'Success',
+        description: 'Password updated successfully',
+        variant: 'default'
+      })
+      setTimeout(() => setShowForgotPassword(false), 1500)
     }
   }
 
@@ -139,18 +198,14 @@ export default function LoginPage() {
           <div className="mx-auto w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
             <Building2 className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <CardTitle className="text-2xl font-bold text-gray-900">
-              Employee Management System
-            </CardTitle>
-            <CardDescription className="text-gray-600">
-              {isSignup ? 'Create your account' : 'Sign in to access your dashboard'}
-            </CardDescription>
-          </div>
+          <CardTitle className="text-2xl font-bold text-gray-900">Employee Management System</CardTitle>
+          <CardDescription className="text-gray-600">
+            {isSignup ? 'Create your account' : 'Sign in to access your dashboard'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
+              <div className="space-y-2">
               <Label htmlFor="userType">User Type*</Label>
               <Select value={userType} onValueChange={setUserType} required>
                 <SelectTrigger>
@@ -191,67 +246,135 @@ export default function LoginPage() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+
+            <div>
+              <Label>Email</Label>
               <Input
-                id="email"
                 type="email"
-                placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="Enter your email"
                 required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
               />
             </div>
 
-            {error && (
-              <div className="text-red-500 text-sm text-center">
-                {error}
+            <div>
+              <Label>Password</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  required
+                  minLength={6}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute top-1/2 right-3 transform -translate-y-1/2 text-gray-500"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
-            )}
-            
-            <Button 
-              type="submit" 
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-              disabled={isLoading}
-            >
-              {isLoading 
-                ? (isSignup ? 'Creating Account...' : 'Signing In...') 
-                : (isSignup ? 'Create Account' : 'Sign In')
-              }
+              {!isSignup && (
+                <div className="text-right mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {error && <div className="text-red-500 text-sm text-center">{error}</div>}
+
+            <Button type="submit" className="w-full bg-blue-600 text-white" disabled={isLoading}>
+              {isLoading ? (isSignup ? 'Creating...' : 'Signing in...') : (isSignup ? 'Sign Up' : 'Sign In')}
             </Button>
 
             <div className="text-center">
               <button
                 type="button"
+                className="text-blue-500 hover:underline text-sm"
                 onClick={() => {
                   setIsSignup(!isSignup)
                   setError('')
                   setPassword('')
                 }}
-                className="text-blue-500 hover:text-blue-600 text-sm"
               >
-                {isSignup 
-                  ? 'Already have an account? Sign in' 
-                  : "Don't have an account? Sign up"
-                }
+                {isSignup ? 'Already have an account? Sign in' : 'No account? Sign Up'}
               </button>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {/* Forgot Password Modal */}
+     {showForgotPassword && (
+  <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+    <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-md relative">
+      <button
+        onClick={() => setShowForgotPassword(false)}
+        className="absolute top-2 right-3 text-gray-500 text-xl"
+      >
+        ×
+      </button>
+      <h2 className="text-lg font-semibold text-center mb-4">Reset Password</h2>
+
+      <Input
+        type="email"
+        value={forgotEmail}
+        onChange={e => setForgotEmail(e.target.value)}
+        placeholder="Enter your email"
+      />
+
+      <div className="relative mt-3">
+        <Input
+          type={showNewPass ? 'text' : 'password'}
+          value={newPassword}
+          onChange={e => setNewPassword(e.target.value)}
+          placeholder="Create a new password (min 6 characters)"
+        />
+        <button
+          type="button"
+          onClick={() => setShowNewPass(!showNewPass)}
+          className="absolute top-1/2 right-3 transform -translate-y-1/2"
+        >
+          {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+
+      <div className="relative mt-3">
+        <Input
+          type={showConfirmPass ? 'text' : 'password'}
+          value={confirmPassword}
+          onChange={e => setConfirmPassword(e.target.value)}
+          placeholder="Confirm your new password"
+        />
+        <button
+          type="button"
+          onClick={() => setShowConfirmPass(!showConfirmPass)}
+          className="absolute top-1/2 right-3 transform -translate-y-1/2"
+        >
+          {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+
+      {forgotError && <p className="text-red-500 text-sm mt-2">{forgotError}</p>}
+      {forgotSuccess && <p className="text-green-600 text-sm mt-2">{forgotSuccess}</p>}
+
+      <Button onClick={handleResetPassword} className="w-full mt-4 bg-blue-600 text-white">
+        Reset Password
+      </Button>
+    </div>
+  </div>
+)}
+
     </div>
   )
 }

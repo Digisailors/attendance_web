@@ -3,15 +3,15 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { 
- BriefcaseBusiness,
- Home,
-  Users, 
+import {
+  BriefcaseBusiness,
+  Home,
+  Users,
   Calendar,
-  FileText, 
-  Settings, 
-  LogOut, 
-  ChevronLeft, 
+  FileText,
+  Settings,
+  LogOut,
+  ChevronLeft,
   ChevronRight,
   UserPlus,
   CheckCircle,
@@ -23,11 +23,24 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction
+} from '@/components/ui/alert-dialog'
+
 interface SidebarProps {
   userType: 'admin' | 'employee' | 'team-lead' | 'manager'
+    className?: string
 }
 
-export function Sidebar({ userType }: SidebarProps) {
+export function Sidebar({ userType,className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const pathname = usePathname()
 
@@ -36,32 +49,30 @@ export function Sidebar({ userType }: SidebarProps) {
       case 'admin':
         return [
           { icon: Home, label: 'Dashboard', href: '/admin/dashboard' },
-          // { icon: Users, label: 'Employees', href: '/admin/employees' },
-          // { icon: UserPlus, label: 'Add Employee', href: '/admin/add-employee' },
-          // { icon: BarChart3, label: 'Analytics', href: '/admin/analytics' },
-          { icon: Settings, label: 'Settings', href: '/admin/settings' },
         ]
       case 'employee':
         return [
           { icon: Home, label: 'Dashboard', href: '/employee/dashboard' },
-          { icon: Calendar , label: 'Leave Application', href: '/employee/leave' },
+          { icon: Calendar, label: 'Leave Application', href: '/employee/leave' },
           { icon: FileText, label: 'Permission Request', href: '/employee/permission' },
           { icon: Settings, label: 'History', href: '/employee/history' },
+           { icon: Calendar, label: 'Overtime', href: '/employee/Overtime' },
         ]
       case 'team-lead':
         return [
+           { icon: Home, label: 'Dashboard', href: '/team-lead/dashboard' },
           { icon: Users, label: 'Add Team Members', href: '/team-lead/team' },
           { icon: BriefcaseBusiness, label: 'Work Submission', href: '/team-lead/work-submission' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/team-lead/lap' },
-          // { icon: BarChart3, label: 'Reports', href: '/team-lead/reports' },
-          // { icon: Settings, label: 'Settings', href: '/team-lead/settings' },
+          { icon: BarChart3, label: 'Leave', href: '/team-lead/leave' },
+          { icon: Settings, label: 'permission', href: '/team-lead/permission' },
+          { icon: Settings, label: 'histroy', href: '/team-lead/history' },
         ]
       case 'manager':
         return [
-          { icon: Home, label: 'Final Approvals', href: '/manager/dashboard' },
+           { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
+          { icon: Home, label: 'Final Approvals', href: '/manager/finalapprovel' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/manager/lap' },
-          // { icon: BarChart3, label: 'Analytics', href: '/manager/analytics' },
-          // { icon: Settings, label: 'Settings', href: '/manager/settings' },
         ]
       default:
         return []
@@ -87,11 +98,19 @@ export function Sidebar({ userType }: SidebarProps) {
 
   const userTypeInfo = getUserTypeDisplay()
 
+  const handleLogout = () => {
+    localStorage.removeItem('user') // Optional
+    window.location.href = '/login'
+  }
+
   return (
-    <div className={cn(
-      "bg-white border-r border-gray-200 transition-all duration-300",
-      collapsed ? "w-16" : "w-64"
-    )}>
+    
+  <div className={cn(
+    "bg-white border-r border-gray-200 transition-all duration-300",
+    collapsed ? "w-16" : "w-64",
+    className 
+  )}>
+
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
@@ -143,19 +162,35 @@ export function Sidebar({ userType }: SidebarProps) {
           ))}
         </nav>
 
-        {/* Footer */}
+        {/* Footer with Logout */}
         <div className="p-6 border-t border-gray-200">
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50",
-              collapsed && "justify-center px-2"
-            )}
-            onClick={() => window.location.href = '/login'}
-          >
-            <LogOut className="h-4 w-4" />
-            {!collapsed && <span className="ml-2">Logout</span>}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                className={cn(
+                  "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50",
+                  collapsed && "justify-center px-2"
+                )}
+              >
+                <LogOut className="h-4 w-4" />
+                {!collapsed && <span className="ml-2">Logout</span>}
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure you want to logout?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will log you out and redirect you to the login page.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleLogout}>Logout</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

@@ -274,8 +274,11 @@ export default function TeamLeadWorkSubmission() {
   if (loading && !teamLeadId) {
     return (
       <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
+        {/* Fixed Sidebar */}
+        <div className="fixed left-0 top-0 h-full z-40">
+          <Sidebar userType="team-lead" />
+        </div>
+        <div className="flex-1 flex items-center justify-center ml-64">
           <div className="flex items-center space-x-2">
             <Loader2 className="w-6 h-6 animate-spin" />
             <span>Loading team lead data...</span>
@@ -288,8 +291,11 @@ export default function TeamLeadWorkSubmission() {
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
+        {/* Fixed Sidebar */}
+        <div className="fixed left-0 top-0 h-full z-40">
+          <Sidebar userType="team-lead" />
+        </div>
+        <div className="flex-1 flex items-center justify-center ml-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading submissions...</p>
@@ -301,14 +307,20 @@ export default function TeamLeadWorkSubmission() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar userType="team-lead" />
-      <div className="flex-1 flex flex-col">
+      {/* Fixed Sidebar */}
+      <div className="fixed left-0 top-0 h-full z-40">
+        <Sidebar userType="team-lead" />
+      </div>
+      
+      {/* Main Content Area with left margin for sidebar */}
+      <div className="flex-1 flex flex-col ml-64">
         <Header
           title="Team Lead Portal"
           subtitle="Review and approve work submissions from your team members"
           userType="team-lead"
         />
 
+        {/* Scrollable Content Area */}
         <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-7xl mx-auto space-y-6">
             {/* Team Lead Info */}
@@ -515,7 +527,7 @@ export default function TeamLeadWorkSubmission() {
                             {submission.status === "Pending Final Approval" && (
                               <div className="bg-purple-50 p-3 rounded-md">
                                 <p className="text-sm text-purple-700 font-medium">
-                                  ✓ Approved by you and sent to Manager for final approval
+                                  ✓ Approved by Team lead and sent to Manager for final approval
                                 </p>
                               </div>
                             )}

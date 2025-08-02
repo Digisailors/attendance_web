@@ -87,7 +87,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { employeeId, employeeName, workType, workDescription, department, priority = "Medium" } = body
+    const {
+      employeeId,
+      employeeName,
+      workType,
+      workDescription,
+      department,
+      priority = "Medium",
+      userType, // <-- Added
+    } = body
 
     if (!employeeId || !workType || !workDescription) {
       return NextResponse.json(
@@ -98,7 +106,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Lookup employee internal UUID
+    // Get employee internal ID
     const { data: employeeRecord, error: lookupError } = await supabase
       .from("employees")
       .select("id")
@@ -111,18 +119,22 @@ export async function POST(request: Request) {
 
     const internalEmployeeId = employeeRecord.id
 
-    // Insert the work submission with internal UUID
+    // Determine the status based on userType
+    const submissionStatus =
+      userType === "team-lead" ? "Pending Final Approval" : "Pending Team Lead"
+
+    // Insert into work_submissions
     const { data, error } = await supabase
       .from("work_submissions")
       .insert({
-        employee_id: internalEmployeeId, // Use internal UUID
+        employee_id: internalEmployeeId,
         employee_name: employeeName,
-        title: workType, // Add title field - using workType as title
+        title: workType,
         work_type: workType,
         work_description: workDescription,
-        department: department,
-        priority: priority,
-        status: "Pending Team Lead",
+        department,
+        priority,
+        status: submissionStatus,
         submitted_date: new Date().toISOString(),
         created_at: new Date().toISOString(),
       })

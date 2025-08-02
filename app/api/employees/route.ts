@@ -47,67 +47,41 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get total count of active employees
-    const { count: totalCount, error: countError } = await supabase
+    // First, try to get employees with attendance data for the specific month/year
+    // Get count of employees with attendance data
+    const { count: attendanceCount, error: attendanceCountError } = await supabase
       .from("employees")
       .select("*", { count: "exact", head: true })
       .eq("is_active", true)
-
-    if (countError) {
-      console.error("Error getting employee count:", countError)
-      return NextResponse.json(
-        {
-          error: "Failed to get employee count",
-          details: countError.message,
-        },
-        { status: 500 },
-      )
-    }
-
-    // First, try to get employees with attendance data for the specific month/year
-    const { data: employeesWithAttendance, error: attendanceQueryError } = await supabase
-      .from("employees")
-      .select(`
-        id,
-        employee_id,
-        name,
-        designation,
-        work_mode,
-        phone_number,
-        email_address,
-        address,
-        date_of_joining,
-        experience,
-        status,
-        is_active,
-        attendance!inner(
-          total_days,
-          working_days,
-          permissions,
-          leaves,
-          missed_days,
-          month,
-          year
-        )
-      `)
-      .eq("is_active", true)
       .eq("attendance.month", month)
       .eq("attendance.year", year)
-      .order("name")
-      .range(offset, offset + limit - 1)
 
-    console.log("Employees with attendance query result:", {
-      count: employeesWithAttendance?.length || 0,
-      error: attendanceQueryError?.message || "none",
-    })
-
-    let finalEmployees = employeesWithAttendance || []
+    let totalCount = 0
     let hasAttendanceData = true
+    let finalEmployees: any[] = []
 
-    // If no employees found with attendance data, get all employees
-    if (!employeesWithAttendance || employeesWithAttendance.length === 0) {
-      console.log("No employees found with attendance data, fetching all employees...")
+    if (attendanceCountError || attendanceCount === 0) {
+      // No attendance data found, use all active employees
       hasAttendanceData = false
+      console.log("No attendance data found, using all active employees")
+      
+      const { count: allEmployeesCount, error: countError } = await supabase
+        .from("employees")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true)
+
+      if (countError) {
+        console.error("Error getting employee count:", countError)
+        return NextResponse.json(
+          {
+            error: "Failed to get employee count",
+            details: countError.message,
+          },
+          { status: 500 },
+        )
+      }
+
+      totalCount = allEmployeesCount || 0
 
       const { data: allEmployees, error: allEmployeesError } = await supabase
         .from("employees")
@@ -141,14 +115,70 @@ export async function GET(request: NextRequest) {
       }
 
       finalEmployees = allEmployees || []
+    } else {
+      // Use employees with attendance data
+      totalCount = attendanceCount || 0
+
+      const { data: employeesWithAttendance, error: attendanceQueryError } = await supabase
+        .from("employees")
+        .select(`
+          id,
+          employee_id,
+          name,
+          designation,
+          work_mode,
+          phone_number,
+          email_address,
+          address,
+          date_of_joining,
+          experience,
+          status,
+          is_active,
+          attendance!inner(
+            total_days,
+            working_days,
+            permissions,
+            leaves,
+            missed_days,
+            month,
+            year
+          )
+        `)
+        .eq("is_active", true)
+        .eq("attendance.month", month)
+        .eq("attendance.year", year)
+        .order("name")
+        .range(offset, offset + limit - 1)
+
+      if (attendanceQueryError) {
+        console.error("Error fetching employees with attendance:", attendanceQueryError)
+        return NextResponse.json(
+          {
+            error: "Failed to fetch employees with attendance",
+            details: attendanceQueryError.message,
+          },
+          { status: 500 },
+        )
+      }
+
+      finalEmployees = employeesWithAttendance || []
     }
+
+    console.log("Final query result:", {
+      count: finalEmployees?.length || 0,
+      totalCount,
+      hasAttendanceData,
+      page,
+      offset,
+      limit,
+    })
 
     // Transform data to match frontend interface
     const transformedEmployees = finalEmployees.map((employee) => {
       let attendance = null
 
-      if (hasAttendanceData && employee.attendance) {
-        attendance = Array.isArray(employee.attendance) ? employee.attendance[0] : employee.attendance
+      if (hasAttendanceData && (employee as any).attendance) {
+        attendance = Array.isArray((employee as any).attendance) ? (employee as any).attendance[0] : (employee as any).attendance
       }
 
       return {

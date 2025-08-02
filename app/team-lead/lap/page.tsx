@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import {
   CheckCircle,
   Clock,
@@ -25,6 +26,8 @@ import {
   Phone,
   Mail,
   MapPin,
+  Calculator,
+  TrendingUp,
 } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
@@ -36,10 +39,11 @@ interface LeaveRequest {
   leave_type: string
   start_date: string
   end_date: string
-  total_days: number
+  total_days?: number
   reason: string
   status: string
-  applied_date: string
+  applied_date?: string
+  created_at?: string
   team_lead_comments?: string
   manager_comments?: string
   employee: {
@@ -58,12 +62,13 @@ interface PermissionRequest {
   employee_name: string
   permission_type: string
   date: string
-  from_time: string
-  to_time: string
+  start_time: string
+  end_time: string
   duration_hours: number
   reason: string
   status: string
-  applied_date: string
+  applied_date?: string
+  created_at?: string
   team_lead_comments?: string
   manager_comments?: string
   employee: {
@@ -95,6 +100,8 @@ export default function TeamLeadLeavePermissionRequests() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("All")
   const [activeTab, setActiveTab] = useState("leave")
+  const [excludeWeekends, setExcludeWeekends] = useState(false)
+  const [showDurationStats, setShowDurationStats] = useState(false)
 
   const [leaveStats, setLeaveStats] = useState({
     total: 0,
@@ -108,6 +115,139 @@ export default function TeamLeadLeavePermissionRequests() {
     approved: 0,
     rejected: 0,
   })
+
+  // Enhanced duration calculation functions
+  const calculateTotalDays = (startDate: string, endDate: string, excludeWeekends: boolean = false): number => {
+    if (!startDate || !endDate) return 0
+    
+    try {
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0
+      if (start > end) return 0
+      
+      if (!excludeWeekends) {
+        const timeDifference = end.getTime() - start.getTime()
+        const dayDifference = Math.ceil(timeDifference / (1000 * 3600 * 24)) + 1
+        return dayDifference > 0 ? dayDifference : 0
+      } else {
+        let workingDays = 0
+        const currentDate = new Date(start)
+        
+        while (currentDate <= end) {
+          const dayOfWeek = currentDate.getDay()
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            workingDays++
+          }
+          currentDate.setDate(currentDate.getDate() + 1)
+        }
+        
+        return workingDays
+      }
+    } catch (error) {
+      console.error("Error calculating total days:", error)
+      return 0
+    }
+  }
+
+  const calculateDurationHours = (startTime: string, endTime: string, date?: string): number => {
+    if (!startTime || !endTime) return 0
+    
+    try {
+      const baseDate = date || new Date().toISOString().split('T')[0]
+      const startDateTime = new Date(`${baseDate}T${startTime}`)
+      const endDateTime = new Date(`${baseDate}T${endTime}`)
+      
+      if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) return 0
+      
+      if (endDateTime <= startDateTime) {
+        endDateTime.setDate(endDateTime.getDate() + 1)
+      }
+      
+      const timeDifference = endDateTime.getTime() - startDateTime.getTime()
+      const hours = timeDifference / (1000 * 60 * 60)
+      
+      return Math.round(hours * 100) / 100
+    } catch (error) {
+      console.error("Error calculating duration hours:", error)
+      return 0
+    }
+  }
+
+  const formatDuration = (hours: number): string => {
+    if (hours === 0) return "0 hours"
+    
+    const wholeHours = Math.floor(hours)
+    const minutes = Math.round((hours - wholeHours) * 60)
+    
+    if (wholeHours === 0) {
+      return `${minutes} minutes`
+    } else if (minutes === 0) {
+      return `${wholeHours} hour${wholeHours !== 1 ? 's' : ''}`
+    } else {
+      return `${wholeHours} hour${wholeHours !== 1 ? 's' : ''} ${minutes} minutes`
+    }
+  }
+
+  const getDurationStatistics = (requests: (LeaveRequest | PermissionRequest)[]): {
+    totalDays?: number
+    totalHours?: number
+    averageDuration?: number
+    longestDuration?: number
+    shortestDuration?: number
+  } => {
+    if (requests.length === 0) return {}
+    
+    const isLeaveRequests = 'start_date' in requests[0]
+    
+    if (isLeaveRequests) {
+      const leaveRequests = requests as LeaveRequest[]
+      const durations = leaveRequests.map(req => getTotalDays(req)).filter(d => d > 0)
+      
+      if (durations.length === 0) return {}
+      
+      const totalDays = durations.reduce((sum, days) => sum + days, 0)
+      const averageDuration = totalDays / durations.length
+      const longestDuration = Math.max(...durations)
+      const shortestDuration = Math.min(...durations)
+      
+      return { totalDays, averageDuration, longestDuration, shortestDuration }
+    } else {
+      const permissionRequests = requests as PermissionRequest[]
+      const durations = permissionRequests.map(req => req.duration_hours || calculateDurationHours(req.start_time, req.end_time, req.date)).filter(d => d > 0)
+      
+      if (durations.length === 0) return {}
+      
+      const totalHours = durations.reduce((sum, hours) => sum + hours, 0)
+      const averageDuration = totalHours / durations.length
+      const longestDuration = Math.max(...durations)
+      const shortestDuration = Math.min(...durations)
+      
+      return { totalHours, averageDuration, longestDuration, shortestDuration }
+    }
+  }
+
+  // Function to get applied date (use created_at if applied_date is not available)
+  const getAppliedDate = (request: LeaveRequest | PermissionRequest): string => {
+    return request.applied_date || request.created_at || ""
+  }
+
+  // Function to get total days for leave request
+  const getTotalDays = (request: LeaveRequest): number => {
+    if (request.total_days && request.total_days > 0) {
+      return request.total_days
+    }
+    return calculateTotalDays(request.start_date, request.end_date, excludeWeekends)
+  }
+
+  // Function to get calculated duration for permission request
+  const getCalculatedDuration = (request: PermissionRequest): number => {
+    if (request.duration_hours && request.duration_hours > 0) {
+      return request.duration_hours
+    }
+    return calculateDurationHours(request.start_time, request.end_time, request.date)
+  }
 
   // Get user data from localStorage and fetch team lead details
   useEffect(() => {
@@ -141,40 +281,65 @@ export default function TeamLeadLeavePermissionRequests() {
     }
   }, [teamLeadId])
 
-  const fetchLeaveRequests = async () => {
-    try {
-      setLoading(true)
-      // Corrected API endpoint for fetching leave requests
-      const response = await fetch(`/api/leave-request?teamLeadId=${teamLeadId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setLeaveRequests(data.data || []) // Assuming the API returns { data: [...] }
-        // Calculate stats
-        const total = data.data?.length || 0
-        const pending = data.data?.filter((r: LeaveRequest) => r.status === "Pending").length || 0
-        const approved = data.data?.filter((r: LeaveRequest) => r.status === "Approved").length || 0
-        const rejected = data.data?.filter((r: LeaveRequest) => r.status === "Rejected").length || 0
-        setLeaveStats({ total, pending, approved, rejected })
-      }
-    } catch (error) {
-      console.error("Error fetching leave requests:", error)
-    } finally {
-      setLoading(false)
+const fetchLeaveRequests = async () => {
+  try {
+    setLoading(true)
+
+    const currentDate = new Date()
+    const currentMonth = currentDate.getMonth() + 1  // 1 to 12
+    const currentYear = currentDate.getFullYear()
+
+    const response = await fetch(`/api/leave-request?teamLeadId=${teamLeadId}&month=${currentMonth}&year=${currentYear}`)
+
+    if (response.ok) {
+      const data = await response.json()
+      const requestsData = data.data || []
+
+      const processedRequests = requestsData.map((request: LeaveRequest) => ({
+        ...request,
+        applied_date: getAppliedDate(request),
+        total_days: getTotalDays(request)
+      }))
+
+      setLeaveRequests(processedRequests)
+
+      const total = processedRequests.length
+      const pending = processedRequests.filter((r: LeaveRequest) => r.status === "Pending").length
+const approved = processedRequests.filter((r: LeaveRequest) => r.status === "Approved").length
+const rejected = processedRequests.filter((r: LeaveRequest) => r.status === "Rejected").length
+
+      setLeaveStats({ total, pending, approved, rejected })
+    } else {
+      console.error("Server responded with:", await response.json())
     }
+  } catch (error) {
+    console.error("Error fetching leave requests:", error)
+  } finally {
+    setLoading(false)
   }
+}
+
+
 
   const fetchPermissionRequests = async () => {
     try {
-      // Corrected API endpoint for fetching permission requests
       const response = await fetch(`/api/permission-request?teamLeadId=${teamLeadId}`)
       if (response.ok) {
         const data = await response.json()
-        setPermissionRequests(data.data || []) // Assuming the API returns { data: [...] }
-        // Calculate stats
-        const total = data.data?.length || 0
-        const pending = data.data?.filter((r: PermissionRequest) => r.status === "Pending").length || 0
-        const approved = data.data?.filter((r: PermissionRequest) => r.status === "Approved").length || 0
-        const rejected = data.data?.filter((r: PermissionRequest) => r.status === "Rejected").length || 0
+        const requestsData = data.data || []
+        
+        const processedRequests = requestsData.map((request: PermissionRequest) => ({
+          ...request,
+          applied_date: getAppliedDate(request),
+          duration_hours: getCalculatedDuration(request)
+        }))
+        
+        setPermissionRequests(processedRequests)
+        
+        const total = processedRequests.length
+        const pending = processedRequests.filter((r: PermissionRequest) => r.status === "Pending").length
+        const approved = processedRequests.filter((r: PermissionRequest) => r.status === "Approved").length
+        const rejected = processedRequests.filter((r: PermissionRequest) => r.status === "Rejected").length
         setPermissionStats({ total, pending, approved, rejected })
       }
     } catch (error) {
@@ -182,83 +347,83 @@ export default function TeamLeadLeavePermissionRequests() {
     }
   }
 
-const handleApproveLeave = async (requestId: string, event?: React.MouseEvent) => {
-  event?.stopPropagation()
-  event?.preventDefault()
-  if (processingId) return
-  setProcessingId(requestId)
-  try {
-    const response = await fetch(`/api/team-lead/leave-requests`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        requestId: requestId,
-        action: "approve",
-        userType: "team-lead", // Add the missing userType field
-        teamLeadId: teamLeadId,
-        comments: comments[requestId] || "",
-      }),
-    })
-    if (response.ok) {
-      await fetchLeaveRequests()
-      setComments((prev) => ({
-        ...prev,
-        [requestId]: "",
-      }))
-      console.log("Leave request approved successfully")
-    } else {
-      console.error("Failed to approve leave request")
-      const errorData = await response.json()
-      alert(`Failed to approve leave request: ${errorData.error || "Unknown error"}`)
+  const handleApproveLeave = async (requestId: string, event?: React.MouseEvent) => {
+    event?.stopPropagation()
+    event?.preventDefault()
+    if (processingId) return
+    setProcessingId(requestId)
+    try {
+      const response = await fetch(`/api/team-lead/leave-requests`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: requestId,
+          action: "approve",
+          userType: "team-lead",
+          teamLeadId: teamLeadId,
+          comments: comments[requestId] || "",
+        }),
+      })
+      if (response.ok) {
+        await fetchLeaveRequests()
+        setComments((prev) => ({
+          ...prev,
+          [requestId]: "",
+        }))
+        console.log("Leave request approved successfully")
+      } else {
+        console.error("Failed to approve leave request")
+        const errorData = await response.json()
+        alert(`Failed to approve leave request: ${errorData.error || "Unknown error"}`)
+      }
+    } catch (error) {
+      console.error("Error approving leave request:", error)
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setProcessingId(null)
     }
-  } catch (error) {
-    console.error("Error approving leave request:", error)
-    alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    setProcessingId(null)
   }
-}
 
-const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) => {
-  event?.stopPropagation()
-  event?.preventDefault()
-  if (processingId) return
-  setProcessingId(requestId)
-  try {
-    const response = await fetch(`/api/team-lead/leave-requests`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        requestId: requestId,
-        action: "reject",
-        userType: "team-lead", // Add the missing userType field
-        teamLeadId: teamLeadId,
-        comments: comments[requestId] || "",
-      }),
-    })
-    if (response.ok) {
-      await fetchLeaveRequests()
-      setComments((prev) => ({
-        ...prev,
-        [requestId]: "",
-      }))
-      console.log("Leave request rejected successfully")
-    } else {
-      console.error("Failed to reject leave request")
-      const errorData = await response.json()
-      alert(`Failed to reject leave request: ${errorData.error || "Unknown error"}`)
+  const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) => {
+    event?.stopPropagation()
+    event?.preventDefault()
+    if (processingId) return
+    setProcessingId(requestId)
+    try {
+      const response = await fetch(`/api/team-lead/leave-requests`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: requestId,
+          action: "reject",
+          userType: "team-lead",
+          teamLeadId: teamLeadId,
+          comments: comments[requestId] || "",
+        }),
+      })
+      if (response.ok) {
+        await fetchLeaveRequests()
+        setComments((prev) => ({
+          ...prev,
+          [requestId]: "",
+        }))
+        console.log("Leave request rejected successfully")
+      } else {
+        console.error("Failed to reject leave request")
+        const errorData = await response.json()
+        alert(`Failed to reject leave request: ${errorData.error || "Unknown error"}`)
+      }
+    } catch (error) {
+      console.error("Error rejecting leave request:", error)
+      alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setProcessingId(null)
     }
-  } catch (error) {
-    console.error("Error rejecting leave request:", error)
-    alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    setProcessingId(null)
   }
-}
 
   const handleApprovePermission = async (requestId: string, event?: React.MouseEvent) => {
     event?.stopPropagation()
@@ -266,7 +431,6 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
     if (processingId) return
     setProcessingId(requestId)
     try {
-      // Corrected API endpoint and method for approving permission requests
       const response = await fetch(`/api/team-lead/permission-requests`, {
         method: "PATCH",
         headers: {
@@ -306,7 +470,6 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
     if (processingId) return
     setProcessingId(requestId)
     try {
-      // Corrected API endpoint and method for rejecting permission requests
       const response = await fetch(`/api/team-lead/permission-requests`, {
         method: "PATCH",
         headers: {
@@ -348,40 +511,71 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
+    if (!dateString) return "N/A"
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return "Invalid Date"
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    } catch (error) {
+      console.error("Error formatting date:", error)
+      return "Invalid Date"
+    }
   }
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    if (!dateString) return "N/A"
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return "Invalid Date"
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } catch (error) {
+      console.error("Error formatting datetime:", error)
+      return "Invalid Date"
+    }
   }
 
   const formatTime = (timeString: string) => {
-    // Ensure timeString is in a valid format for Date constructor, e.g., "HH:MM"
-    // Prepend a dummy date to parse time correctly
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    })
+    if (!timeString) return "N/A"
+    try {
+      let time = timeString
+      if (timeString.includes(':')) {
+        const parts = timeString.split(':')
+        if (parts.length === 2) {
+          time = `${timeString}:00`
+        }
+      }
+      
+      const date = new Date(`2000-01-01T${time}`)
+      if (isNaN(date.getTime())) return timeString
+      
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    } catch (error) {
+      console.error("Error formatting time:", error)
+      return timeString
+    }
   }
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Pending": // Changed from "Pending Team Lead" to "Pending" based on API
+      case "Pending":
         return "bg-blue-100 text-blue-800"
-      case "Approved": // Changed from "Pending Final Approval" to "Approved"
+      case "Approved":
         return "bg-green-100 text-green-800"
-      case "Rejected": // Changed from "Rejected by Team Lead" to "Rejected"
+      case "Rejected":
         return "bg-red-100 text-red-800"
       default:
         return "bg-gray-100 text-gray-800"
@@ -422,12 +616,11 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
     }
   }
 
-  // Filter functions
   const filterLeaveRequests = (requests: LeaveRequest[]) => {
     return requests.filter((request) => {
       const matchesSearch =
-        request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        request.leave_type.toLowerCase().includes(searchTerm.toLowerCase())
+        request.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        request.leave_type?.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesStatus = statusFilter === "All" || request.status === statusFilter
       return matchesSearch && matchesStatus
     })
@@ -436,8 +629,8 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
   const filterPermissionRequests = (requests: PermissionRequest[]) => {
     return requests.filter((request) => {
       const matchesSearch =
-        request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        request.permission_type.toLowerCase().includes(searchTerm.toLowerCase())
+        request.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        request.permission_type?.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesStatus = statusFilter === "All" || request.status === statusFilter
       return matchesSearch && matchesStatus
     })
@@ -471,8 +664,12 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
     )
   }
 
+  // Get duration statistics for current filtered requests
+  const currentLeaveStats = getDurationStatistics(filterLeaveRequests(leaveRequests))
+  const currentPermissionStats = getDurationStatistics(filterPermissionRequests(permissionRequests))
+
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen overflow-auto bg-gray-50">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
         <Header
@@ -558,13 +755,48 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                   </Card>
                 </div>
 
+                {/* Duration Statistics for Leave */}
+                {showDurationStats && currentLeaveStats.totalDays && (
+                  <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg flex items-center space-x-2">
+                          <TrendingUp className="w-5 h-5 text-blue-600" />
+                          <span>Duration Analytics</span>
+                        </CardTitle>
+                        <Calculator className="w-5 h-5 text-blue-600" />
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-700">{currentLeaveStats.totalDays}</div>
+                          <p className="text-sm text-blue-600">Total Days</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-700">{Math.round((currentLeaveStats.averageDuration || 0) * 10) / 10}</div>
+                          <p className="text-sm text-green-600">Avg Days</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-700">{currentLeaveStats.longestDuration}</div>
+                          <p className="text-sm text-orange-600">Longest</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-700">{currentLeaveStats.shortestDuration}</div>
+                          <p className="text-sm text-purple-600">Shortest</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Filters */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg">Filter Leave Requests</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div className="relative">
                         <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -586,6 +818,8 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                           <SelectItem value="Rejected">Rejected</SelectItem>
                         </SelectContent>
                       </Select>
+                   
+                    
                     </div>
                   </CardContent>
                 </Card>
@@ -615,29 +849,31 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-3">
                                   <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
-                                    {request.employee_name.charAt(0)}
+                                    {request.employee_name?.charAt(0)?.toUpperCase() || "N"}
                                   </div>
                                   <div>
-                                    <CardTitle className="text-lg">{request.employee_name}</CardTitle>
+                                    <CardTitle className="text-lg">{request.employee_name || "N/A"}</CardTitle>
                                     <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
                                       <span>{request.employee?.designation || "N/A"}</span>
                                       <span className="flex items-center space-x-1">
                                         <Calendar className="h-3 w-3" />
-                                        <span>Applied: {formatDate(request.applied_date)}</span>
+                                        <span>Applied: {formatDate(getAppliedDate(request))}</span>
                                       </span>
                                     </div>
                                   </div>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                  <Badge className={getLeaveTypeColor(request.leave_type)}>{request.leave_type}</Badge>
-                                  <Badge className={getStatusColor(request.status)}>{request.status}</Badge>
+                                  <Badge className={getLeaveTypeColor(request.leave_type)}>
+                                    {request.leave_type || "N/A"}
+                                  </Badge>
+                                  <Badge className={getStatusColor(request.status)}>{request.status || "N/A"}</Badge>
                                 </div>
                               </div>
                             </CardHeader>
                             <CardContent>
                               <div className="space-y-4">
-                                {/* Leave Details */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                                {/* Leave Details with Enhanced Duration Display */}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">Start Date</p>
                                     <p className="text-sm text-gray-600">{formatDate(request.start_date)}</p>
@@ -647,9 +883,19 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                     <p className="text-sm text-gray-600">{formatDate(request.end_date)}</p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-medium text-gray-700">Total Days</p>
-                                    <p className="text-sm text-gray-600">{request.total_days} days</p>
+                                    <p className="text-sm font-medium text-gray-700">
+                                      {excludeWeekends ? "Working Days" : "Total Days"}
+                                    </p>
+                                    <p className="text-sm text-gray-600 font-semibold">
+                                      {calculateTotalDays(request.start_date, request.end_date, excludeWeekends)} days
+                                    </p>
                                   </div>
+                                  {/* <div>
+                                    <p className="text-sm font-medium text-gray-700">Duration Type</p>
+                                    <p className="text-sm text-gray-600">
+                                      {excludeWeekends ? "Business Days" : "Calendar Days"}
+                                    </p>
+                                  </div> */}
                                 </div>
 
                                 {/* Employee Contact Info */}
@@ -658,7 +904,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                     <div className="flex items-center space-x-2">
                                       <Phone className="w-4 h-4 text-blue-600" />
                                       <span className="text-sm text-blue-800">
-                                        {request.employee?.phoneNumber || "N/A"}
+                                        {request.employee?.phoneNumber}
                                       </span>
                                     </div>
                                   )}
@@ -666,7 +912,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                     <div className="flex items-center space-x-2">
                                       <Mail className="w-4 h-4 text-blue-600" />
                                       <span className="text-sm text-blue-800">
-                                        {request.employee?.emailAddress || "N/A"}
+                                        {request.employee?.emailAddress}
                                       </span>
                                     </div>
                                   )}
@@ -674,7 +920,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                     <div className="flex items-center space-x-2">
                                       <MapPin className="w-4 h-4 text-blue-600" />
                                       <span className="text-sm text-blue-800 truncate">
-                                        {request.employee?.address || "N/A"}
+                                        {request.employee?.address}
                                       </span>
                                     </div>
                                   )}
@@ -686,7 +932,9 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                     <MessageSquare className="h-4 w-4 text-gray-400" />
                                     <span className="text-sm font-medium text-gray-700">Reason</span>
                                   </div>
-                                  <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">{request.reason}</p>
+                                  <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
+                                    {request.reason || "No reason provided"}
+                                  </p>
                                 </div>
 
                                 {/* Actions for Pending Requests */}
@@ -804,6 +1052,41 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                   </Card>
                 </div>
 
+                {/* Duration Statistics for Permissions */}
+                {showDurationStats && currentPermissionStats.totalHours && (
+                  <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg flex items-center space-x-2">
+                          <TrendingUp className="w-5 h-5 text-green-600" />
+                          <span>Duration Analytics</span>
+                        </CardTitle>
+                        <Calculator className="w-5 h-5 text-green-600" />
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-700">{Math.round((currentPermissionStats.totalHours || 0) * 10) / 10}</div>
+                          <p className="text-sm text-green-600">Total Hours</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-700">{Math.round((currentPermissionStats.averageDuration || 0) * 10) / 10}</div>
+                          <p className="text-sm text-blue-600">Avg Hours</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-700">{Math.round((currentPermissionStats.longestDuration || 0) * 10) / 10}</div>
+                          <p className="text-sm text-orange-600">Longest</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-700">{Math.round((currentPermissionStats.shortestDuration || 0) * 10) / 10}</div>
+                          <p className="text-sm text-purple-600">Shortest</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Permission Filters */}
                 <Card>
                   <CardHeader className="pb-3">
@@ -832,6 +1115,16 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                           <SelectItem value="Rejected">Rejected</SelectItem>
                         </SelectContent>
                       </Select>
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="show-permission-stats"
+                          checked={showDurationStats}
+                          onCheckedChange={setShowDurationStats}
+                        />
+                        <Label htmlFor="show-permission-stats" className="text-sm">
+                          Show Analytics
+                        </Label>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -869,7 +1162,7 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                                       <span>{request.employee?.designation || "N/A"}</span>
                                       <span className="flex items-center space-x-1">
                                         <Calendar className="h-3 w-3" />
-                                        <span>Applied: {formatDate(request.applied_date)}</span>
+                                        <span>Applied: {formatDate(getAppliedDate(request))}</span>
                                       </span>
                                     </div>
                                   </div>
@@ -884,23 +1177,31 @@ const handleRejectLeave = async (requestId: string, event?: React.MouseEvent) =>
                             </CardHeader>
                             <CardContent>
                               <div className="space-y-4">
-                                {/* Permission Details */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                                {/* Permission Details with Enhanced Duration Display */}
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">Date</p>
                                     <p className="text-sm text-gray-600">{formatDate(request.date)}</p>
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">From Time</p>
-                                    <p className="text-sm text-gray-600">{formatTime(request.from_time)}</p>
+                                    <p className="text-sm text-gray-600">{formatTime(request.start_time)}</p>
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium text-gray-700">To Time</p>
-                                    <p className="text-sm text-gray-600">{formatTime(request.to_time)}</p>
+                                    <p className="text-sm text-gray-600">{formatTime(request.end_time)}</p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-medium text-gray-700">Duration</p>
-                                    <p className="text-sm text-gray-600">{request.duration_hours} hours</p>
+                                    <p className="text-sm font-medium text-gray-700">Duration (Hours)</p>
+                                    <p className="text-sm text-gray-600 font-semibold">
+                                      {getCalculatedDuration(request)} hrs
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-700">Formatted Duration</p>
+                                    <p className="text-sm text-gray-600">
+                                      {formatDuration(getCalculatedDuration(request))}
+                                    </p>
                                   </div>
                                 </div>
 
