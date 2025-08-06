@@ -21,7 +21,7 @@ const supabase = createClient(supabaseUrl!, supabaseServiceKey!, {
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("=== API: Fetching employees ===")
+    console.log("🚀 === API: Starting employee search ===")
 
     // Parse URL search params
     const searchParams = request.nextUrl.searchParams
@@ -31,156 +31,192 @@ export async function GET(request: NextRequest) {
     const limit = Number.parseInt(searchParams.get("limit") || "10")
     const offset = (page - 1) * limit
 
-    console.log("Query parameters:", { month, year, page, limit, offset })
+    // Search and filter parameters
+    const searchTerm = searchParams.get("search")?.trim() || ""
+    const workMode = searchParams.get("workMode")?.trim() || ""
+    const status = searchParams.get("status")?.trim() || ""
 
-    // Test Supabase connection first
-    const { error: testError } = await supabase.from("employees").select("id").limit(1)
-
-    if (testError) {
-      console.error("Supabase connection test failed:", testError)
-      return NextResponse.json(
-        {
-          error: "Database connection failed",
-          details: testError.message,
-        },
-        { status: 500 },
-      )
-    }
-
-    // First, try to get employees with attendance data for the specific month/year
-    // Get count of employees with attendance data
-    const { count: attendanceCount, error: attendanceCountError } = await supabase
-      .from("employees")
-      .select("*", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("attendance.month", month)
-      .eq("attendance.year", year)
-
-    let totalCount = 0
-    let hasAttendanceData = true
-    let finalEmployees: any[] = []
-
-    if (attendanceCountError || attendanceCount === 0) {
-      // No attendance data found, use all active employees
-      hasAttendanceData = false
-      console.log("No attendance data found, using all active employees")
-      
-      const { count: allEmployeesCount, error: countError } = await supabase
-        .from("employees")
-        .select("*", { count: "exact", head: true })
-        .eq("is_active", true)
-
-      if (countError) {
-        console.error("Error getting employee count:", countError)
-        return NextResponse.json(
-          {
-            error: "Failed to get employee count",
-            details: countError.message,
-          },
-          { status: 500 },
-        )
-      }
-
-      totalCount = allEmployeesCount || 0
-
-      const { data: allEmployees, error: allEmployeesError } = await supabase
-        .from("employees")
-        .select(`
-          id,
-          employee_id,
-          name,
-          designation,
-          work_mode,
-          phone_number,
-          email_address,
-          address,
-          date_of_joining,
-          experience,
-          status,
-          is_active
-        `)
-        .eq("is_active", true)
-        .order("name")
-        .range(offset, offset + limit - 1)
-
-      if (allEmployeesError) {
-        console.error("Error fetching all employees:", allEmployeesError)
-        return NextResponse.json(
-          {
-            error: "Failed to fetch employees",
-            details: allEmployeesError.message,
-          },
-          { status: 500 },
-        )
-      }
-
-      finalEmployees = allEmployees || []
-    } else {
-      // Use employees with attendance data
-      totalCount = attendanceCount || 0
-
-      const { data: employeesWithAttendance, error: attendanceQueryError } = await supabase
-        .from("employees")
-        .select(`
-          id,
-          employee_id,
-          name,
-          designation,
-          work_mode,
-          phone_number,
-          email_address,
-          address,
-          date_of_joining,
-          experience,
-          status,
-          is_active,
-          attendance!inner(
-            total_days,
-            working_days,
-            permissions,
-            leaves,
-            missed_days,
-            month,
-            year
-          )
-        `)
-        .eq("is_active", true)
-        .eq("attendance.month", month)
-        .eq("attendance.year", year)
-        .order("name")
-        .range(offset, offset + limit - 1)
-
-      if (attendanceQueryError) {
-        console.error("Error fetching employees with attendance:", attendanceQueryError)
-        return NextResponse.json(
-          {
-            error: "Failed to fetch employees with attendance",
-            details: attendanceQueryError.message,
-          },
-          { status: 500 },
-        )
-      }
-
-      finalEmployees = employeesWithAttendance || []
-    }
-
-    console.log("Final query result:", {
-      count: finalEmployees?.length || 0,
-      totalCount,
-      hasAttendanceData,
+    console.log("📋 === API Parameters ===")
+    console.log({
+      month,
+      year,
       page,
-      offset,
       limit,
+      offset,
+      searchTerm: `"${searchTerm}"`,
+      workMode: `"${workMode}"`,
+      status: `"${status}"`,
+      hasSearch: !!searchTerm,
+      searchLength: searchTerm.length,
+      searchType: typeof searchTerm
     })
 
-    // Transform data to match frontend interface
-    const transformedEmployees = finalEmployees.map((employee) => {
-      let attendance = null
+    let employees: any[] = []
+    let totalCount = 0
 
-      if (hasAttendanceData && (employee as any).attendance) {
-        attendance = Array.isArray((employee as any).attendance) ? (employee as any).attendance[0] : (employee as any).attendance
+    if (searchTerm && searchTerm.length > 0) {
+      console.log(`🔍 === SEARCH MODE: "${searchTerm}" ===`)
+      
+      try {
+        // Create a more comprehensive search query
+        let baseQuery = supabase
+          .from("employees")
+          .select("*")
+          .eq("is_active", true)
+
+        // Use OR condition with multiple ilike searches
+        const searchQuery = baseQuery.or(`name.ilike.%${searchTerm}%,employee_id.ilike.%${searchTerm}%,designation.ilike.%${searchTerm}%`)
+
+        // Apply additional filters
+        if (workMode && workMode !== "All Modes") {
+          searchQuery.eq("work_mode", workMode)
+          console.log(`🏢 Applied work mode filter: ${workMode}`)
+        }
+
+        if (status && status !== "All Status") {
+          searchQuery.eq("status", status)
+          console.log(`📊 Applied status filter: ${status}`)
+        }
+
+        // Execute search query
+        const { data: searchResults, error: searchError } = await searchQuery.order("name")
+
+        if (searchError) {
+          console.error("❌ Search query error:", searchError)
+          throw searchError
+        }
+
+        console.log(`✅ Search found ${searchResults?.length || 0} results`)
+
+        if (searchResults) {
+          // Log found employees
+          searchResults.forEach((emp, idx) => {
+            console.log(`  ${idx + 1}. ${emp.employee_id} - "${emp.name}" (${emp.designation})`)
+          })
+
+          totalCount = searchResults.length
+          
+          // Apply pagination to search results
+          employees = searchResults.slice(offset, offset + limit)
+          
+          console.log(`📄 Paginated results: showing ${employees.length} of ${totalCount} (page ${page})`)
+        } else {
+          employees = []
+          totalCount = 0
+        }
+
+      } catch (searchErr) {
+        console.error("❌ Search error:", searchErr)
+        employees = []
+        totalCount = 0
       }
 
+    } else {
+      console.log("📂 === NO SEARCH - FETCHING ALL ===")
+      
+      try {
+        // Build base query for no search
+        let countQuery = supabase
+          .from("employees")
+          .select("*", { count: "exact", head: true })
+          .eq("is_active", true)
+
+        let dataQuery = supabase
+          .from("employees")
+          .select("*")
+          .eq("is_active", true)
+
+        // Apply filters if provided
+        if (workMode && workMode !== "All Modes") {
+          countQuery = countQuery.eq("work_mode", workMode)
+          dataQuery = dataQuery.eq("work_mode", workMode)
+          console.log(`🏢 Applied work mode filter: ${workMode}`)
+        }
+
+        if (status && status !== "All Status") {
+          countQuery = countQuery.eq("status", status)
+          dataQuery = dataQuery.eq("status", status)
+          console.log(`📊 Applied status filter: ${status}`)
+        }
+
+        // Get count
+        const { count, error: countError } = await countQuery
+
+        if (countError) {
+          console.error("❌ Count error:", countError)
+          totalCount = 0
+        } else {
+          totalCount = count || 0
+          console.log(`📊 Total employees found: ${totalCount}`)
+        }
+
+        // Get employees with pagination
+        dataQuery = dataQuery
+          .order("name")
+          .range(offset, offset + limit - 1)
+
+        const { data: allEmployeesData, error: employeesError } = await dataQuery
+
+        if (employeesError) {
+          console.error("❌ Employees fetch error:", employeesError)
+          employees = []
+        } else {
+          employees = allEmployeesData || []
+          console.log(`✅ Fetched ${employees.length} employees for page ${page}`)
+          
+          // Log employee details
+          employees.forEach((emp, idx) => {
+            console.log(`  ${idx + 1}. ${emp.employee_id} - "${emp.name}" (${emp.designation})`)
+          })
+        }
+
+      } catch (fetchErr) {
+        console.error("❌ Fetch error:", fetchErr)
+        employees = []
+        totalCount = 0
+      }
+    }
+
+    console.log("📊 === RESULTS SUMMARY ===")
+    console.log({
+      finalEmployeeCount: employees.length,
+      totalCount,
+      page,
+      totalPages: Math.ceil(totalCount / limit),
+      hasSearch: !!searchTerm,
+      searchTerm
+    })
+
+    // Get attendance data for found employees
+    let attendanceMap = new Map()
+    if (employees.length > 0) {
+      const employeeIds = employees.map(emp => emp.id)
+      console.log(`📈 Fetching attendance for ${employeeIds.length} employees...`)
+      
+      try {
+        const { data: attendanceData, error: attendanceError } = await supabase
+          .from("attendance")
+          .select("*")
+          .in("employee_id", employeeIds)
+          .eq("month", month)
+          .eq("year", year)
+
+        if (attendanceError) {
+          console.error("❌ Attendance fetch error:", attendanceError)
+        } else {
+          console.log(`✅ Found ${attendanceData?.length || 0} attendance records`)
+          attendanceData?.forEach(attendance => {
+            attendanceMap.set(attendance.employee_id, attendance)
+          })
+        }
+      } catch (attErr) {
+        console.error("❌ Attendance error:", attErr)
+      }
+    }
+
+    // Transform data
+    const transformedEmployees = employees.map((employee) => {
+      const attendance = attendanceMap.get(employee.id)
       return {
         id: employee.employee_id,
         name: employee.name,
@@ -200,27 +236,68 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    console.log("Successfully transformed employees:", transformedEmployees.length)
+    const totalPages = Math.ceil(totalCount / limit)
 
-    const totalPages = Math.ceil((totalCount || 0) / limit)
+    console.log("🎯 === FINAL RESPONSE ===")
+    console.log({
+      transformedEmployeesCount: transformedEmployees.length,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit
+      },
+      searchDetails: {
+        searchTerm,
+        hasSearch: !!searchTerm
+      }
+    })
 
-    return NextResponse.json({
+    const response = {
       employees: transformedEmployees,
       pagination: {
         currentPage: page,
         totalPages,
-        totalCount: totalCount || 0,
+        totalCount,
         limit,
         hasNextPage: page < totalPages,
         hasPreviousPage: page > 1,
       },
-    })
+      debug: {
+        searchTerm,
+        hasSearch: !!searchTerm,
+        totalCount,
+        employeesReturned: transformedEmployees.length,
+        filters: {
+          workMode: workMode || 'none',
+          status: status || 'none'
+        }
+      }
+    }
+
+    console.log("✅ Sending response with", transformedEmployees.length, "employees")
+    return NextResponse.json(response)
+
   } catch (error) {
-    console.error("API error:", error)
+    console.error("💥 === API CRITICAL ERROR ===", error)
+    console.error("Error details:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined
+    })
+    
     return NextResponse.json(
       {
         error: "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
+        employees: [],
+        pagination: {
+          currentPage: 1,
+          totalPages: 1,
+          totalCount: 0,
+          limit: 10,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        }
       },
       { status: 500 },
     )
@@ -229,10 +306,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("=== API: Creating employee ===")
+    console.log("🔨 === API: Creating employee ===")
 
     const body = await request.json()
-    console.log("Request body:", body)
+    console.log("📝 Request body:", body)
 
     // Insert employee
     const { data: newEmployee, error: insertError } = await supabase
@@ -255,7 +332,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError) {
-      console.error("Error creating employee:", insertError)
+      console.error("❌ Error creating employee:", insertError)
       if (insertError.code === "23505") {
         return NextResponse.json(
           {
@@ -291,11 +368,11 @@ export async function POST(request: NextRequest) {
     ])
 
     if (attendanceError) {
-      console.error("Error creating attendance record:", attendanceError)
+      console.error("⚠️ Error creating attendance record:", attendanceError)
       // Don't fail the request as employee is already created
     }
 
-    console.log("Employee created successfully:", newEmployee.employee_id)
+    console.log("✅ Employee created successfully:", newEmployee.employee_id)
 
     return NextResponse.json({
       message: "Employee created successfully",
@@ -308,7 +385,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Error in POST:", error)
+    console.error("💥 Error in POST:", error)
     return NextResponse.json(
       {
         error: "Internal server error",

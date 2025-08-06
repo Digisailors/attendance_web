@@ -108,7 +108,6 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   return parts.join(", ")
 }
 
-
   useEffect(() => {
     if (isEdit && initialData) {
       const nameParts = initialData.name.split(' ')
@@ -339,18 +338,11 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 value={formData.employeeId}
                 onChange={(e) => handleInputChange("employeeId", e.target.value)}
                 required
-                disabled={isLoading || isEdit} // Disable in edit mode
-                readOnly={isEdit} // Make it read-only in edit mode
-                className={isEdit ? "bg-gray-100 cursor-not-allowed" : ""} // Visual indication
+                disabled={isLoading} // Only disable when loading
                 aria-describedby="employeeId-help"
               />
-              {isEdit && (
-                <p className="text-xs text-gray-600 mt-1">
-                 
-                </p>
-              )}
             </div>
-            {!isEdit && (
+            {!isEdit && !isLoading && (
               <Button
                 type="button"
                 variant="outline"
@@ -364,7 +356,7 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             )}
           </div>
          <p id="employeeId-help" className="text-gray-500 text-xs">
-  {!isEdit && "Employee ID should be 2-10 characters long and contain only letters and numbers"}
+  Employee ID should be 2-10 characters long and contain only letters and numbers
 </p>
 
         </div>

@@ -586,7 +586,7 @@ export default function ManagerLeavePermissionRequests() {
     try {
       console.log("✅ Approving leave with managerId:", managerId);
 
-      const response = await fetch("/api/manager/leave-requests", {
+      const response = await fetch("/api/manager/final-approvals/leave-requests", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -600,18 +600,31 @@ export default function ManagerLeavePermissionRequests() {
         }),
       });
 
-      if (response.ok) {
-        await fetchLeaveRequests();
-        setComments((prev) => ({
-          ...prev,
-          [requestId]: "",
-        }));
-        console.log("✅ Leave request approved by manager successfully");
-      } else {
-        console.error("❌ Failed to approve leave request");
-        const errorData = await response.json();
-        alert(`Failed to approve leave request: ${errorData.error || "Unknown error"}`);
-      }
+    if (response.ok) {
+  await fetchLeaveRequests();
+  setComments((prev) => ({
+    ...prev,
+    [requestId]: "",
+  }));
+  console.log("✅ Leave request approved by manager successfully");
+} else {
+  console.error("❌ Failed to approve leave request");
+
+  let errorMessage = "Unknown error";
+  const contentType = response.headers.get("content-type");
+
+  if (contentType && contentType.includes("application/json")) {
+    const errorData = await response.json();
+    errorMessage = errorData.error || errorData.message || errorMessage;
+  } else {
+    const text = await response.text();
+    console.warn("⚠️ Received non-JSON error response:", text);
+    errorMessage = "Server returned invalid response (not JSON)";
+  }
+
+  alert(`Failed to approve leave request: ${errorMessage}`);
+}
+
     } catch (error) {
       console.error("❌ Error approving leave request:", error);
       alert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`);

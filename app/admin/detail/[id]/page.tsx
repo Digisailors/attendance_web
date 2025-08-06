@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -39,6 +39,8 @@ import {
 import { Sidebar } from "@/components/layout/sidebar";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface EmployeeData {
   id: string;
@@ -63,6 +65,7 @@ interface DailyWorkLog {
   checkIn: string;
   checkOut: string;
   hours: string;
+  otHours?: string;
   project: string;
   status: string;
   description: string;
@@ -71,6 +74,11 @@ interface DailyWorkLog {
 interface ApiResponse {
   employee: EmployeeData;
   dailyWorkLog: DailyWorkLog[];
+}
+
+interface OvertimeData {
+  total_hours: number;
+  records_count: number;
 }
 
 const getStatusBadge = (status: string) => {
@@ -105,7 +113,7 @@ export default function EmployeeAttendanceDetail() {
   // Get current month and year
   const getCurrentMonth = () => {
     const now = new Date();
-    return (now.getMonth() + 1).toString(); // getMonth() returns 0-11, so add 1
+    return (now.getMonth() + 1).toString();
   };
 
   const getCurrentYear = () => {
@@ -113,31 +121,201 @@ export default function EmployeeAttendanceDetail() {
     return now.getFullYear().toString();
   };
 
+  // Optimized date range generation with memory limits
+  const generateDateRange = (month: string, year: string) => {
+    const currentDate = new Date();
+    const selectedMonth = parseInt(month);
+    const selectedYear = parseInt(year);
+    
+    // Safety check for valid dates
+    if (selectedMonth < 1 || selectedMonth > 12 || selectedYear < 2020 || selectedYear > 2030) {
+      console.error('Invalid month or year:', month, year);
+      return [];
+    }
+    
+    const isCurrentMonth = selectedMonth === currentDate.getMonth() + 1 && selectedYear === currentDate.getFullYear();
+    const endDate = isCurrentMonth ? currentDate.getDate() : new Date(selectedYear, selectedMonth, 0).getDate();
+    
+    // Limit to maximum 31 days to prevent memory issues
+    const maxDays = Math.min(endDate, 31);
+    
+    const dates = [];
+    for (let day = 1; day <= maxDays; day++) {
+      try {
+        const date = new Date(selectedYear, selectedMonth - 1, day);
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+        const dateString = `${dayName} ${day.toString().padStart(2, '0')}`;
+        dates.push({
+          dateKey: `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+          displayDate: dateString,
+          fullDate: date
+        });
+      } catch (error) {
+        console.error(`Error creating date for day ${day}:`, error);
+        break; // Stop if date creation fails
+      }
+    }
+    return dates;
+  };
+
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [dailyWorkLog, setDailyWorkLog] = useState<DailyWorkLog[]>([]);
+  const [overtimeHours, setOvertimeHours] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth()); // Set current month as default
-  const [selectedYear, setSelectedYear] = useState(getCurrentYear()); // Set current year as default
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [selectedYear, setSelectedYear] = useState(getCurrentYear());
   const router = useRouter();
   const params = useParams();
   const employeeId = params.id as string;
 
+  // Memoize total calculated hours to prevent unnecessary recalculations
+  const totalCalculatedHours = useMemo(() => {
+    return dailyWorkLog.reduce((total, log) => {
+      const regularHours = parseFloat(log.hours) || 0;
+      const otHours = parseFloat(log.otHours || "0") || 0;
+      return total + regularHours + otHours;
+    }, 0);
+  }, [dailyWorkLog]);
+
+  // Optimized fetch functions with error handling and timeouts
+  const fetchOvertimeData = async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(
+        `/api/overtime-summary?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data: OvertimeData = await response.json();
+        setOvertimeHours(data.total_hours || 0);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.error('Overtime data request timed out');
+      } else {
+        console.error('Error fetching overtime data:', err);
+      }
+      setOvertimeHours(0);
+    }
+  };
+
+  const fetchLeaveCount = async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(
+        `/api/leave-request?employeeId=${employeeId}&count=true&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`,
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const leaveCount = data.count || 0;
+        
+        setEmployeeData(prev => prev ? { ...prev, leaves: leaveCount } : null);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.error('Leave count request timed out');
+      } else {
+        console.error('Error fetching leave count:', err);
+      }
+    }
+  };
+
   const fetchEmployeeData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`);
+      setError(null);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      const response = await fetch(
+        `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch employee data');
+        throw new Error(`Failed to fetch employee data: ${response.status} ${response.statusText}`);
       }
       
       const data: ApiResponse = await response.json();
+      
+      // Validate data structure
+      if (!data.employee || !Array.isArray(data.dailyWorkLog)) {
+        throw new Error('Invalid data structure received from API');
+      }
+      
       setEmployeeData(data.employee);
-      setDailyWorkLog(data.dailyWorkLog);
-      setError(null);
+      
+      // Generate date range with safety checks
+      const dateRange = generateDateRange(selectedMonth, selectedYear);
+      
+      if (dateRange.length === 0) {
+        throw new Error('Invalid date range generated');
+      }
+      
+      // Limit the number of work logs to prevent memory issues
+      const maxLogs = Math.min(data.dailyWorkLog.length, 100); // Limit to 100 entries
+      const limitedWorkLogs = data.dailyWorkLog.slice(0, maxLogs);
+      
+      // Create a map of existing work logs by date
+      const workLogMap = new Map<string, DailyWorkLog>();
+      limitedWorkLogs.forEach(log => {
+        try {
+          const dateParts = log.date.split(' ');
+          const day = dateParts[dateParts.length - 1];
+          const dateKey = `${selectedYear}-${selectedMonth.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          workLogMap.set(dateKey, {
+            ...log,
+            otHours: log.otHours || "0"
+          });
+        } catch (err) {
+          console.error('Error processing work log:', log, err);
+        }
+      });
+      
+      // Create complete work log with all dates (limited to prevent memory issues)
+      const completeWorkLog: DailyWorkLog[] = dateRange.slice(0, 31).map(({ dateKey, displayDate }) => {
+        if (workLogMap.has(dateKey)) {
+          return workLogMap.get(dateKey)!;
+        } else {
+          return {
+            date: displayDate,
+            checkIn: "--",
+            checkOut: "--",
+            hours: "0",
+            otHours: "0",
+            project: "No Work Assigned",
+            status: "Leave",
+            description: "No work logged for this date"
+          };
+        }
+      });
+      
+      setDailyWorkLog(completeWorkLog);
+      
+      // Fetch additional data
+      await Promise.allSettled([
+        fetchOvertimeData(),
+        fetchLeaveCount()
+      ]);
+      
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
       console.error('Error fetching employee data:', err);
     } finally {
       setLoading(false);
@@ -145,7 +323,7 @@ export default function EmployeeAttendanceDetail() {
   };
 
   useEffect(() => {
-    if (employeeId) {
+    if (employeeId && selectedMonth && selectedYear) {
       fetchEmployeeData();
     }
   }, [employeeId, selectedMonth, selectedYear]);
@@ -154,34 +332,120 @@ export default function EmployeeAttendanceDetail() {
     router.push('/admin/dashboard');
   };
 
+  // Optimized PDF export with chunking
   const handleExportPDF = () => {
-    // Implement PDF export functionality
-    console.log('Export PDF functionality to be implemented');
+    if (!employeeData || !dailyWorkLog.length) return;
+
+    try {
+      const doc = new jsPDF();
+
+      // Title
+      doc.setFontSize(16);
+      doc.text(`Employee Work Log Report`, 14, 15);
+      doc.setFontSize(12);
+      doc.text(`Name: ${employeeData.name}`, 14, 25);
+      doc.text(`Designation: ${employeeData.designation}`, 14, 32);
+      doc.text(`Month: ${getMonthName(selectedMonth)} ${selectedYear}`, 14, 39);
+      doc.text(`Total Hours (Including OT): ${totalCalculatedHours.toFixed(1)}`, 14, 46);
+
+      // Process table data in chunks to prevent memory issues
+      const chunkSize = 20; // Process 20 rows at a time
+      const chunks = [];
+      
+      for (let i = 0; i < dailyWorkLog.length; i += chunkSize) {
+        const chunk = dailyWorkLog.slice(i, i + chunkSize).map((log) => {
+          const regularHours = parseFloat(log.hours) || 0;
+          const otHours = parseFloat(log.otHours || "0") || 0;
+          const totalHours = regularHours + otHours;
+          
+          return [
+            log.date,
+            log.checkIn,
+            log.checkOut,
+            log.hours,
+            log.otHours || "0",
+            totalHours.toFixed(1),
+            log.project.substring(0, 30) + (log.project.length > 30 ? '...' : ''), // Truncate long text
+            log.status,
+            log.description.substring(0, 40) + (log.description.length > 40 ? '...' : '')
+          ];
+        });
+        chunks.push(...chunk);
+      }
+
+      const tableColumn = [
+        "Date", "Check-in", "Check-out", "Hours", "OT Hours",
+        "Total Hours", "Project", "Status", "Description"
+      ];
+
+      autoTable(doc, {
+        startY: 52,
+        head: [tableColumn],
+        body: chunks,
+        styles: { fontSize: 8 }, // Smaller font to fit more content
+        headStyles: { fillColor: [52, 152, 219] },
+        pageBreak: 'auto',
+        rowPageBreak: 'avoid'
+      });
+
+      doc.save(`${employeeData.name}-worklog-${selectedMonth}-${selectedYear}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try with a smaller date range.');
+    }
   };
 
+  // Optimized Excel export
   const handleExportExcel = () => {
     if (!employeeData || !dailyWorkLog.length) return;
 
-    const csvContent = [
-      ['Date', 'Check-in', 'Check-out', 'Hours', 'Project/Task', 'Status', 'Description'],
-      ...dailyWorkLog.map(log => [
-        log.date,
-        log.checkIn,
-        log.checkOut,
-        log.hours,
-        log.project,
-        log.status,
-        log.description
-      ])
-    ].map(row => row.join(',')).join('\n');
+    try {
+      const sanitizeDate = (dateStr: string) => {
+        const parts = dateStr.split(' ');
+        return parts.length > 1 ? parts[1] : dateStr;
+      };
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${employeeData.name}-worklog-${selectedMonth}-${selectedYear}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+      const escapeCsvValue = (value: string) => {
+        const truncated = (value || '').substring(0, 100); // Limit cell content length
+        return `"${truncated.replace(/"/g, '""')}"`;
+      };
+
+      const csvContent = [
+        ['Employee:', employeeData.name],
+        ['Month:', `${getMonthName(selectedMonth)} ${selectedYear}`],
+        ['Total Hours (Including OT):', totalCalculatedHours.toFixed(1)],
+        [''],
+        ['Date', 'Check-in', 'Check-out', 'Hours', 'OT Hours', 'Total Hours', 'Project/Task', 'Status', 'Description'],
+        ...dailyWorkLog.slice(0, 50).map(log => { // Limit to 50 rows to prevent memory issues
+          const regularHours = parseFloat(log.hours) || 0;
+          const otHours = parseFloat(log.otHours || "0") || 0;
+          const totalHours = regularHours + otHours;
+          
+          return [
+            escapeCsvValue(sanitizeDate(log.date)),
+            escapeCsvValue(log.checkIn),
+            escapeCsvValue(log.checkOut),
+            escapeCsvValue(log.hours),
+            escapeCsvValue(log.otHours || "0"),
+            escapeCsvValue(totalHours.toFixed(1)),
+            escapeCsvValue(log.project),
+            escapeCsvValue(log.status),
+            escapeCsvValue(log.description)
+          ];
+        })
+      ].map(row => row.join(',')).join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${employeeData.name}-worklog-${selectedMonth}-${selectedYear}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating Excel file:', error);
+      alert('Error generating Excel file. Please try with a smaller date range.');
+    }
   };
 
   const getMonthName = (month: string) => {
@@ -189,7 +453,7 @@ export default function EmployeeAttendanceDetail() {
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
-    return months[parseInt(month) - 1];
+    return months[parseInt(month) - 1] || 'Unknown';
   };
 
   if (loading) {
@@ -265,8 +529,6 @@ export default function EmployeeAttendanceDetail() {
                   <SelectItem value="2023">2023</SelectItem>
                   <SelectItem value="2024">2024</SelectItem>
                   <SelectItem value="2025">2025</SelectItem>
-                  <SelectItem value="2026">2026</SelectItem>
-                  <SelectItem value="2027">2027</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -303,7 +565,7 @@ export default function EmployeeAttendanceDetail() {
             </div>
 
             {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
               <Card className="bg-blue-500 text-white">
                 <CardContent className="p-6 text-center">
                   <div className="text-3xl font-bold">{employeeData.totalDays}</div>
@@ -328,10 +590,16 @@ export default function EmployeeAttendanceDetail() {
                   <div className="text-sm opacity-90">Leaves</div>
                 </CardContent>
               </Card>
-              <Card className="bg-red-500 text-white">
+              <Card className="bg-yellow-500 text-white">
                 <CardContent className="p-6 text-center">
-                  <div className="text-3xl font-bold">{employeeData.missedDays}</div>
-                  <div className="text-sm opacity-90">Missed</div>
+                  <div className="text-3xl font-bold">{overtimeHours}</div>
+                  <div className="text-sm opacity-90">OT Hours</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-indigo-500 text-white">
+                <CardContent className="p-6 text-center">
+                  <div className="text-3xl font-bold">{totalCalculatedHours.toFixed(1)}</div>
+                  <div className="text-sm opacity-90">Total Hours</div>
                 </CardContent>
               </Card>
             </div>
@@ -343,6 +611,9 @@ export default function EmployeeAttendanceDetail() {
                   <div className="flex items-center space-x-2">
                     <Calendar className="w-5 h-5 text-blue-600" />
                     <CardTitle>Daily Work Log - {getMonthName(selectedMonth)} {selectedYear}</CardTitle>
+                    <Badge variant="outline" className="ml-2">
+                      {dailyWorkLog.length} days shown
+                    </Badge>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Button variant="outline" size="sm" onClick={handleExportPDF}>
@@ -370,6 +641,8 @@ export default function EmployeeAttendanceDetail() {
                         <TableHead className="w-[100px] text-center">Check-in</TableHead>
                         <TableHead className="w-[100px] text-center">Check-out</TableHead>
                         <TableHead className="w-[80px] text-center">Hours</TableHead>
+                        <TableHead className="w-[80px] text-center">OT Hours</TableHead>
+                        <TableHead className="w-[90px] text-center">Total Hours</TableHead>
                         <TableHead className="w-[200px]">Project/Task</TableHead>
                         <TableHead className="w-[100px] text-center">Status</TableHead>
                         <TableHead>Work Description</TableHead>
@@ -378,56 +651,96 @@ export default function EmployeeAttendanceDetail() {
                     <TableBody>
                       {dailyWorkLog.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                          <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                             No work log entries found for this month
                           </TableCell>
                         </TableRow>
                       ) : (
-                        dailyWorkLog.map((log, index) => (
-                          <TableRow key={index} className="hover:bg-gray-50">
-                            <TableCell className="font-medium">{log.date}</TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center">
-                                {log.checkIn !== "-" && (
-                                  <CheckCircle className="w-4 h-4 text-green-500 mr-1" />
-                                )}
-                                <span className={log.checkIn !== "-" ? "text-green-600" : "text-gray-400"}>
-                                  {log.checkIn}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center">
-                                {log.checkOut !== "-" && (
-                                  <XCircle className="w-4 h-4 text-red-500 mr-1" />
-                                )}
-                                <span className={log.checkOut !== "-" ? "text-red-600" : "text-gray-400"}>
-                                  {log.checkOut}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center font-medium text-green-600">
-                              {log.hours}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center">
-                                <FileText className="w-4 h-4 text-blue-500 mr-2" />
-                                {log.project}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge className={getStatusBadge(log.status)}>
-                                {log.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-gray-600">
-                              {log.description}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        dailyWorkLog.slice(0, 31).map((log, index) => { // Limit display to 31 rows
+                          const regularHours = parseFloat(log.hours) || 0;
+                          const otHours = parseFloat(log.otHours || "0") || 0;
+                          const totalHours = regularHours + otHours;
+                          
+                          return (
+                            <TableRow key={index} className="hover:bg-gray-50">
+                              <TableCell className="font-medium">{log.date}</TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center">
+                                  {log.checkIn !== "--" && log.checkIn !== "-" && (
+                                    <CheckCircle className="w-4 h-4 text-green-500 mr-1" />
+                                  )}
+                                  <span className={log.checkIn !== "--" && log.checkIn !== "-" ? "text-green-600" : "text-gray-400"}>
+                                    {log.checkIn}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center">
+                                  {log.checkOut !== "--" && log.checkOut !== "-" && (
+                                    <XCircle className="w-4 h-4 text-red-500 mr-1" />
+                                  )}
+                                  <span className={log.checkOut !== "--" && log.checkOut !== "-" ? "text-red-600" : "text-gray-400"}>
+                                    {log.checkOut}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center font-medium text-green-600">
+                                {log.hours}
+                              </TableCell>
+                              <TableCell className="text-center font-medium text-yellow-600">
+                                <div className="flex items-center justify-center">
+                                  <Clock className="w-4 h-4 text-yellow-500 mr-1" />
+                                  {log.otHours || "0"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center font-bold text-indigo-600">
+                                {totalHours.toFixed(1)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center">
+                                  <FileText className="w-4 h-4 text-blue-500 mr-2" />
+                                  {log.project.length > 30 ? log.project.substring(0, 30) + '...' : log.project}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge className={getStatusBadge(log.status)}>
+                                  {log.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-gray-600">
+                                {log.description.length > 50 ? log.description.substring(0, 50) + '...' : log.description}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
+                </div>
+                
+                {/* Total Hours Summary */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-gray-700">Monthly Summary:</span>
+                    <div className="flex space-x-6">
+                      <span className="text-sm text-gray-600">
+                       
+                        Regular Hours: <span className="font-medium text-green-600">
+                          {dailyWorkLog.reduce((sum, log) => sum + (parseFloat(log.hours) || 0), 0).toFixed(1)}
+                        </span>
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        OT Hours: <span className="font-medium text-yellow-600">
+                          {dailyWorkLog.reduce((sum, log) => sum + (parseFloat(log.otHours || "0") || 0), 0).toFixed(1)}
+                        </span>
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        Total Hours: <span className="font-medium text-indigo-600">
+                          {totalCalculatedHours.toFixed(1)}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -438,7 +751,7 @@ export default function EmployeeAttendanceDetail() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
-              <Button variant="outline" onClick={handleExportPDF}>
+              <Button variant="outline" size="sm" onClick={handleExportPDF}>
                 <FileText className="w-4 h-4 mr-2" />
                 Export PDF
               </Button>

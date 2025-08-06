@@ -54,6 +54,8 @@
     "eslint-config-next": "13.5.1",
     "firebase-functions": "^6.4.0",
     "input-otp": "^1.2.4",
+    "jspdf": "^3.0.1",
+    "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.446.0",
     "next-themes": "^0.3.0",
     "postcss": "8.4.30",

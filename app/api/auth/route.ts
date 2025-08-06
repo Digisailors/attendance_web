@@ -7,8 +7,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Helper function to hash using SHA-256
-function hashPassword(password: string) {
+function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex')
 }
 
@@ -23,28 +22,39 @@ export async function POST(request: NextRequest) {
 
     // ✅ SIGNUP
     if (action === 'signup') {
-      const hashedPassword = hashPassword(password)
+      // 1. Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      })
 
+      if (authError) {
+        return NextResponse.json({ error: 'Auth signup failed', details: authError.message }, { status: 400 })
+      }
+
+      const authUserId = authData.user?.id
+
+      // 2. Store additional info in your custom `users` table, including hashed password
+      const hashedPassword = hashPassword(password);
       const { data, error } = await supabase
         .from('users')
         .insert([
           {
+            id: authUserId,
             email,
-            password: hashedPassword,
             user_type: userType || 'user',
             is_active: true,
+            password: hashedPassword,
           },
         ])
         .select()
 
       if (error) {
-        if (error.code === '23505') {
-          return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
-        }
-        return NextResponse.json({ error: 'Signup failed', details: error.message }, { status: 500 })
+        return NextResponse.json({ error: 'Custom user insert failed', details: error.message }, { status: 500 })
       }
 
-      return NextResponse.json({ message: 'Signup successful', user: data[0] })
+      return NextResponse.json({ message: 'Signup successful', user: data?.[0] })
     }
 
     // ✅ SIGNIN
@@ -61,6 +71,7 @@ export async function POST(request: NextRequest) {
       }
 
       const hashedInputPassword = hashPassword(password)
+
       if (hashedInputPassword !== data.password) {
         return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
       }
@@ -75,48 +86,44 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ✅ PASSWORD RESET
+    // ✅ RESET PASSWORD
     if (action === 'reset') {
-      if (!newPassword || !email) {
-        return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+      if (!newPassword) {
+        return NextResponse.json({ error: 'Missing new password' }, { status: 400 })
       }
 
-      const { data: allUsers, error: allError } = await supabase
+      const { data: userData, error: findError } = await supabase
         .from('users')
-        .select('id, email');
+        .select('id, email')
+        .eq('email', email)
+        .single()
 
-      if (allError) {
-        return NextResponse.json({ error: 'Database error', details: allError.message }, { status: 500 });
+      if (findError || !userData) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
-      const exactUser = allUsers?.find(user => user.email === email);
-      if (!exactUser) {
-        return NextResponse.json({ error: 'User not found' }, { status: 404 });
-      }
-
-      const hashedNewPassword = hashPassword(newPassword);
+      const hashedNewPassword = hashPassword(newPassword)
 
       const { error: updateError } = await supabase
         .from('users')
         .update({ password: hashedNewPassword })
-        .eq('id', exactUser.id);
+        .eq('id', userData.id)
 
       if (updateError) {
-        return NextResponse.json({ error: 'Failed to update password', details: updateError.message }, { status: 500 });
+        return NextResponse.json({ error: 'Failed to update password', details: updateError.message }, { status: 500 })
       }
 
       return NextResponse.json({
         message: 'Password reset successful',
         user: {
-          id: exactUser.id,
-          email: exactUser.email
-        }
-      });
+          id: userData.id,
+          email: userData.email,
+        },
+      })
     }
 
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (error: any) {
-    return NextResponse.json({ error: 'Server error', details: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Server error', details: error.message }, { status: 500 })
   }
 }

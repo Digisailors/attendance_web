@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -51,6 +51,8 @@ import {
   Calendar,
   Settings,
   Save,
+  X,
+  Clock,
 } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import Link from "next/link"
@@ -60,7 +62,32 @@ import AddEmployeeModal from "@/components/AddEmployeeModal"
 type WorkMode = "Office" | "WFH" | "Hybrid"
 type Status = "Active" | "Warning" | "On Leave"
 
-interface Employee {
+// Dashboard Employee interface - matches the dashboard needs
+interface DashboardEmployee {
+  id: string
+  name: string
+  designation: string
+  workMode: WorkMode
+  totalDays: number
+  workingDays: number
+  otHours: number
+  missedDays: number
+  status: Status
+  phoneNumber?: string
+  emailAddress?: string
+  address?: string
+  dateOfJoining?: string
+  experience?: string
+  // Request counts
+  leaveRequestCount?: number
+  permissionRequestCount?: number
+  // For modal compatibility
+  permissions?: number
+  leaves?: number
+}
+
+// Modal Employee interface - matches AddEmployeeModal requirements
+interface ModalEmployee {
   id: string
   name: string
   designation: string
@@ -76,9 +103,6 @@ interface Employee {
   address?: string
   dateOfJoining?: string
   experience?: string
-  // New fields for request counts
-  leaveRequestCount?: number
-  permissionRequestCount?: number
 }
 
 interface PaginationInfo {
@@ -91,8 +115,9 @@ interface PaginationInfo {
 }
 
 interface ApiResponse {
-  employees: Employee[]
+  employees: DashboardEmployee[]
   pagination: PaginationInfo
+  debug?: any
 }
 
 interface MonthlySettings {
@@ -119,6 +144,51 @@ const getStatusBadge = (status: Status): string => {
   return colors[status] || "bg-gray-100 text-gray-800"
 }
 
+// Helper function to convert DashboardEmployee to ModalEmployee
+const convertDashboardToModal = (employee: DashboardEmployee): ModalEmployee => {
+  return {
+    id: employee.id,
+    name: employee.name,
+    designation: employee.designation,
+    workMode: employee.workMode,
+    totalDays: employee.totalDays,
+    workingDays: employee.workingDays,
+    permissions: employee.permissions || employee.permissionRequestCount || 0,
+    leaves: employee.leaves || employee.leaveRequestCount || 0,
+    missedDays: employee.missedDays,
+    status: employee.status,
+    phoneNumber: employee.phoneNumber,
+    emailAddress: employee.emailAddress,
+    address: employee.address,
+    dateOfJoining: employee.dateOfJoining,
+    experience: employee.experience,
+  }
+}
+
+// Helper function to convert ModalEmployee to DashboardEmployee
+const convertModalToDashboard = (employee: ModalEmployee): DashboardEmployee => {
+  return {
+    id: employee.id,
+    name: employee.name,
+    designation: employee.designation,
+    workMode: employee.workMode,
+    totalDays: employee.totalDays,
+    workingDays: employee.workingDays,
+    otHours: 0, // Will be fetched separately
+    missedDays: employee.missedDays,
+    status: employee.status,
+    phoneNumber: employee.phoneNumber,
+    emailAddress: employee.emailAddress,
+    address: employee.address,
+    dateOfJoining: employee.dateOfJoining,
+    experience: employee.experience,
+    leaveRequestCount: employee.leaves,
+    permissionRequestCount: employee.permissions,
+    permissions: employee.permissions,
+    leaves: employee.leaves,
+  }
+}
+
 const monthNames = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
@@ -129,7 +199,7 @@ const defaultMonth = (now.getMonth() + 1).toString()
 const defaultYear = now.getFullYear().toString()
 
 export default function AttendanceOverview() {
-  const [attendanceData, setAttendanceData] = useState<Employee[]>([])
+  const [attendanceData, setAttendanceData] = useState<DashboardEmployee[]>([])
   const [pagination, setPagination] = useState<PaginationInfo>({
     currentPage: 1,
     totalPages: 1,
@@ -151,7 +221,7 @@ export default function AttendanceOverview() {
   const [currentPage, setCurrentPage] = useState(1)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<ModalEmployee | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -160,10 +230,86 @@ export default function AttendanceOverview() {
   const [currentMonthTotalDays, setCurrentMonthTotalDays] = useState<number>(28)
   const [newTotalDays, setNewTotalDays] = useState<number>(28)
   const [totalDaysLoading, setTotalDaysLoading] = useState(false)
+  
+  // Search debounce
+  const [searchLoading, setSearchLoading] = useState(false)
+  
   const router = useRouter()
 
-  // Fixed function to fetch attendance summary for each employee
-  const fetchAttendanceSummary = async (employees: Employee[]) => {
+  // FIXED: Function to fetch overtime hours for each employee
+  const fetchOvertimeHours = async (employees: DashboardEmployee[]) => {
+    try {
+      console.log("🕐 Fetching overtime hours for employees:", employees.length)
+      
+      const updatedEmployees = await Promise.all(
+        employees.map(async (employee) => {
+          try {
+            const response = await fetch(
+              `/api/overtime-summary?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
+            )
+            
+            if (response.ok) {
+              const overtimeData = await response.json()
+              console.log(`✅ Raw overtime data for ${employee.name} (${employee.id}):`, overtimeData)
+              
+              // FIXED: Extract OT hours from the API response properly
+              let otHours = 0
+              
+              // Try different possible sources for the actual overtime hours
+              if (overtimeData.total_hours && overtimeData.total_hours > 0) {
+                // If top-level total_hours has a value, use it
+                otHours = overtimeData.total_hours
+              } else if (overtimeData.sample_record && overtimeData.sample_record.total_hours) {
+                // If sample_record has total_hours, use that
+                otHours = overtimeData.sample_record.total_hours
+              } else if (overtimeData.debug_info && overtimeData.debug_info.sample_record && overtimeData.debug_info.sample_record.total_hours) {
+                // If debug_info.sample_record has total_hours, use that
+                otHours = overtimeData.debug_info.sample_record.total_hours
+              }
+              
+              // Round to 2 decimal places
+              const roundedOtHours = Math.round(otHours * 100) / 100
+              
+              console.log(`💡 Setting OT hours for ${employee.name}: ${roundedOtHours}h (from ${otHours})`)
+              
+              return {
+                ...employee,
+                otHours: roundedOtHours
+              }
+            } else {
+              console.error(`❌ Failed to fetch overtime hours for ${employee.name}:`, response.status)
+              return {
+                ...employee,
+                otHours: 0
+              }
+            }
+          } catch (err) {
+            console.error(`❌ Error fetching overtime hours for employee ${employee.name}:`, err)
+            return {
+              ...employee,
+              otHours: 0
+            }
+          }
+        })
+      )
+
+      console.log("✅ Updated employees with overtime hours:", updatedEmployees.map(emp => ({
+        name: emp.name,
+        id: emp.id,
+        otHours: emp.otHours
+      })))
+      return updatedEmployees
+    } catch (err) {
+      console.error("❌ Error in fetchOvertimeHours:", err)
+      return employees.map(emp => ({
+        ...emp,
+        otHours: 0
+      }))
+    }
+  }
+
+  // Fixed function to fetch attendance summary for each employee (removed permissions and leaves)
+  const fetchAttendanceSummary = async (employees: DashboardEmployee[]) => {
     try {
       console.log("Fetching attendance summary for employees:", employees.length)
       
@@ -178,22 +324,17 @@ export default function AttendanceOverview() {
               const summaryData = await response.json()
               console.log(`Attendance summary for ${employee.name}:`, summaryData)
               
-              // ✅ Fixed property mapping from snake_case API response to camelCase frontend
               return {
                 ...employee,
-                workingDays: summaryData.working_days || 0,  // 🔧 Fixed: was summaryData.workingDays
-                permissions: summaryData.permissions || 0,
-                leaves: summaryData.leaves || 0,
-                missedDays: summaryData.missed_days || 0,     // 🔧 Fixed: was summaryData.missedDays
-                totalDays: summaryData.total_days || currentMonthTotalDays  // 🔧 Fixed: was summaryData.totalDays
+                workingDays: summaryData.working_days || 0,
+                missedDays: summaryData.missed_days || 0,
+                totalDays: summaryData.total_days || currentMonthTotalDays
               }
             } else {
               console.error(`Failed to fetch attendance summary for ${employee.name}:`, response.status)
               return {
                 ...employee,
                 workingDays: 0,
-                permissions: 0,
-                leaves: 0,
                 missedDays: currentMonthTotalDays
               }
             }
@@ -202,8 +343,6 @@ export default function AttendanceOverview() {
             return {
               ...employee,
               workingDays: 0,
-              permissions: 0,
-              leaves: 0,
               missedDays: currentMonthTotalDays
             }
           }
@@ -217,15 +356,13 @@ export default function AttendanceOverview() {
       return employees.map(emp => ({
         ...emp,
         workingDays: 0,
-        permissions: 0,
-        leaves: 0,
         missedDays: currentMonthTotalDays
       }))
     }
   }
 
   // Fixed function to fetch leave and permission counts for all employees
-  const fetchRequestCounts = async (employees: Employee[]) => {
+  const fetchRequestCounts = async (employees: DashboardEmployee[]) => {
     try {
       console.log("Fetching request counts for employees:", employees.length)
       
@@ -263,14 +400,19 @@ export default function AttendanceOverview() {
             return {
               ...employee,
               leaveRequestCount: leaveCount,
-              permissionRequestCount: permissionCount
+              permissionRequestCount: permissionCount,
+              // Add these for AddEmployeeModal compatibility
+              leaves: leaveCount,
+              permissions: permissionCount
             }
           } catch (err) {
             console.error(`Error fetching counts for employee ${employee.name}:`, err)
             return {
               ...employee,
               leaveRequestCount: 0,
-              permissionRequestCount: 0
+              permissionRequestCount: 0,
+              leaves: 0,
+              permissions: 0
             }
           }
         })
@@ -280,11 +422,12 @@ export default function AttendanceOverview() {
       return updatedEmployees
     } catch (err) {
       console.error("Error in fetchRequestCounts:", err)
-      // If counts fail, at least show the employees without counts
       return employees.map(emp => ({
         ...emp,
         leaveRequestCount: 0,
-        permissionRequestCount: 0
+        permissionRequestCount: 0,
+        leaves: 0,
+        permissions: 0
       }))
     }
   }
@@ -356,14 +499,53 @@ export default function AttendanceOverview() {
     }
   }
 
-  // Updated fetch employees function with attendance summary integration
-  const fetchEmployees = async (page = 1) => {
+  // FIXED: Enhanced fetch employees function with better search handling
+  const fetchEmployees = async (page = 1, resetPagination = false) => {
     try {
       setLoading(true)
       setError(null)
-      console.log(`Fetching employees for month: ${selectedMonth}, year: ${selectedYear}, page: ${page}`)
       
-      const url = `/api/employees?month=${selectedMonth}&year=${selectedYear}&page=${page}&limit=10`
+      // ALWAYS reset to page 1 when searching or filtering
+      const finalPage = (searchTerm.trim() || selectedMode !== 'All Modes' || selectedStatus !== 'All Status') ? 1 : (resetPagination ? 1 : page)
+      
+      console.log(`🔍 SEARCH DEBUG: Fetching employees`)
+      console.log(`📊 Parameters:`, {
+        searchTerm: `"${searchTerm}"`,
+        selectedMode,
+        selectedStatus,
+        month: selectedMonth,
+        year: selectedYear,
+        page: finalPage,
+        resetPagination
+      })
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        page: finalPage.toString(),
+        limit: '10'
+      })
+
+      // Add search parameters - FIXED: Always add search even if empty to clear results
+      if (searchTerm.trim()) {
+        params.append('search', searchTerm.trim())
+        console.log(`🔍 Adding search parameter: "${searchTerm.trim()}"`)
+      }
+      
+      if (selectedMode && selectedMode !== 'All Modes') {
+        params.append('workMode', selectedMode)
+        console.log(`🏢 Adding work mode filter: "${selectedMode}"`)
+      }
+      
+      if (selectedStatus && selectedStatus !== 'All Status') {
+        params.append('status', selectedStatus)
+        console.log(`📈 Adding status filter: "${selectedStatus}"`)
+      }
+
+      const url = `/api/employees?${params.toString()}`
+      console.log(`🌐 API URL: ${url}`)
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -374,6 +556,7 @@ export default function AttendanceOverview() {
 
       if (!response.ok) {
         const errorText = await response.text()
+        console.error("❌ API Error:", response.status, errorText)
         let errorMessage = `HTTP ${response.status}`
         try {
           const errorData = JSON.parse(errorText)
@@ -385,52 +568,149 @@ export default function AttendanceOverview() {
       }
 
       const data: ApiResponse = await response.json()
+      console.log(`✅ API Response:`, {
+        employeesReceived: data.employees?.length || 0,
+        totalCount: data.pagination?.totalCount || 0,
+        currentPage: data.pagination?.currentPage || 1,
+        searchTerm: data.debug?.searchTerm,
+        hasSearch: data.debug?.hasSearch
+      })
+
       if (data.employees && Array.isArray(data.employees)) {
-        console.log("Fetched employees:", data.employees.length)
+        console.log(`👥 Employee List:`)
+        data.employees.forEach((emp, idx) => {
+          console.log(`  ${idx + 1}. ID: ${emp.id}, Name: ${emp.name}`)
+        })
+        
         setPagination(data.pagination)
-        setCurrentPage(page)
+        setCurrentPage(finalPage)
         
         // First fetch attendance summary for all employees
+        console.log(`📊 Fetching attendance data...`)
         const employeesWithAttendance = await fetchAttendanceSummary(data.employees)
         
-        // Then fetch request counts
-        const employeesWithCounts = await fetchRequestCounts(employeesWithAttendance)
+        // FIXED: Then fetch overtime hours with proper logging
+        console.log(`⏰ Fetching overtime hours for all employees...`)
+        const employeesWithOT = await fetchOvertimeHours(employeesWithAttendance)
         
+        // Finally fetch request counts
+        console.log(`📋 Fetching request counts...`)
+        const employeesWithCounts = await fetchRequestCounts(employeesWithOT)
+        
+        console.log(`✅ Final employee data with OT hours:`, employeesWithCounts.map(emp => ({
+          name: emp.name,
+          id: emp.id,
+          otHours: emp.otHours,
+          workingDays: emp.workingDays
+        })))
         setAttendanceData(employeesWithCounts)
       } else {
-        console.log("No employees data received")
+        console.log("⚠️ No employees data received")
         setAttendanceData([])
+        setPagination({
+          currentPage: 1,
+          totalPages: 1,
+          totalCount: 0,
+          limit: 10,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        })
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch employees"
-      console.error("Error fetching employees:", errorMessage)
+      console.error("❌ Error fetching employees:", errorMessage)
       setError(errorMessage)
       setAttendanceData([])
+      setPagination({
+        currentPage: 1,
+        totalPages: 1,
+        totalCount: 0,
+        limit: 10,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      })
     } finally {
       setLoading(false)
+      setSearchLoading(false)
     }
   }
 
-  useEffect(() => {
-    console.log("Effect triggered - fetching employees and month total days")
-    fetchEmployees(1)
-    fetchMonthTotalDays()
+  // FIXED: Improved debounced search function
+  const debouncedSearch = useCallback(
+    (() => {
+      let timeoutId: NodeJS.Timeout
+      return (searchValue: string) => {
+        clearTimeout(timeoutId)
+        setSearchLoading(true)
+        
+        console.log(`🔍 Debounced search triggered: "${searchValue}"`)
+        
+        timeoutId = setTimeout(() => {
+          console.log(`🔍 Executing search after delay: "${searchValue}"`)
+          fetchEmployees(1, true) // Always reset to page 1 for search
+        }, 300) // Reduced delay for better UX
+      }
+    })(),
+    [selectedMonth, selectedYear, selectedMode, selectedStatus, searchTerm] // Added searchTerm to dependencies
+  )
+
+  // FIXED: Enhanced search input handler
+  const handleSearchChange = (value: string) => {
+    console.log(`🔤 Search input changed: "${value}"`)
+    setSearchTerm(value)
+    
+    if (value.trim() === '') {
+      // If search is cleared, fetch immediately and reset page
+      console.log(`🔍 Search cleared, fetching all employees`)
+      setSearchLoading(true)
+      setCurrentPage(1)
+      fetchEmployees(1, true)
+    } else {
+      // Use debounced search for other cases
+      console.log(`🔍 Starting debounced search for: "${value}"`)
+      debouncedSearch(value)
+    }
+  }
+
+  // Handle filter changes
+  const handleFilterChange = () => {
+    console.log(`🔧 Filter changed - Mode: ${selectedMode}, Status: ${selectedStatus}`)
     setCurrentPage(1)
+    fetchEmployees(1, true)
+  }
+
+  useEffect(() => {
+    console.log("🔄 Month/Year changed - refetching data")
+    fetchEmployees(1, true)
+    fetchMonthTotalDays()
     // eslint-disable-next-line
   }, [selectedMonth, selectedYear])
+
+  // Handle mode and status filter changes
+  useEffect(() => {
+    if (selectedMode !== "All Modes" || selectedStatus !== "All Status") {
+      console.log(`🔧 Filter effect triggered - Mode: ${selectedMode}, Status: ${selectedStatus}`)
+      handleFilterChange()
+    }
+    // eslint-disable-next-line
+  }, [selectedMode, selectedStatus])
 
   const handleEmployeeClick = (employeeId: string): void => {
     router.push(`/admin/detail/${employeeId}`)
   }
 
-  const handleAddEmployee = async (newEmployee: Employee): Promise<void> => {
+  // FIXED: Updated handleAddEmployee function with proper type conversion
+  const handleAddEmployee = async (newEmployee: ModalEmployee, originalId?: string): Promise<void> => {
     try {
+      // Convert modal employee to dashboard employee format
+      const dashboardEmployee = convertModalToDashboard(newEmployee)
+
       const response = await fetch("/api/employees", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(newEmployee),
+        body: JSON.stringify(dashboardEmployee),
       })
 
       if (!response.ok) {
@@ -456,13 +736,17 @@ export default function AttendanceOverview() {
     }
   }
 
-  const handleEditEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee)
+  const handleEditEmployee = (employee: DashboardEmployee) => {
+    // Convert dashboard employee to modal employee format
+    const modalEmployee = convertDashboardToModal(employee)
+    setSelectedEmployee(modalEmployee)
     setEditModalOpen(true)
   }
 
-  const handleDeleteEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee)
+  const handleDeleteEmployee = (employee: DashboardEmployee) => {
+    // Convert to modal format for consistency, but we only need basic info for delete
+    const modalEmployee = convertDashboardToModal(employee)
+    setSelectedEmployee(modalEmployee)
     setDeleteDialogOpen(true)
   }
 
@@ -523,7 +807,8 @@ export default function AttendanceOverview() {
     setDeletingEmployeeId(null)
   }
 
-  const handleUpdateEmployee = async (updatedEmployee: Employee, originalEmployeeId?: string): Promise<void> => {
+  // FIXED: Updated handleUpdateEmployee function with proper type conversion
+  const handleUpdateEmployee = async (updatedEmployee: ModalEmployee, originalEmployeeId?: string): Promise<void> => {
     const employeeIdToUpdate = originalEmployeeId || updatedEmployee.id
     
     if (!employeeIdToUpdate) {
@@ -536,12 +821,15 @@ export default function AttendanceOverview() {
     }
 
     try {
+      // Convert modal employee to dashboard employee format
+      const dashboardEmployee = convertModalToDashboard(updatedEmployee)
+
       const response = await fetch(`/api/employees/${encodeURIComponent(employeeIdToUpdate)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(updatedEmployee),
+        body: JSON.stringify(dashboardEmployee),
       })
 
       if (!response.ok) {
@@ -578,9 +866,9 @@ export default function AttendanceOverview() {
     }
   }
 
-  // Updated CSV export without missed days
+  // Updated CSV export with OT Hours instead of permissions and leaves
   const handleExportCSV = () => {
-    if (filteredData.length === 0) {
+    if (attendanceData.length === 0) {
       toast({
         title: "No Data",
         description: "No data available to export",
@@ -597,20 +885,18 @@ export default function AttendanceOverview() {
         "Work Mode",
         "Total Days",
         "Working Days",
-        "Permissions",
-        "Leaves",
+        "OT Hours",
         "Leave Requests",
         "Permission Requests",
       ],
-      ...filteredData.map((emp) => [
+      ...attendanceData.map((emp) => [
         emp.id,
         emp.name,
         emp.designation,
         emp.workMode,
         emp.totalDays || currentMonthTotalDays,
         emp.workingDays,
-        emp.permissions,
-        emp.leaves,
+        emp.otHours || 0,
         emp.leaveRequestCount || 0,
         emp.permissionRequestCount || 0,
       ]),
@@ -635,40 +921,44 @@ export default function AttendanceOverview() {
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
+      console.log(`📄 Page changed to: ${page}`)
       fetchEmployees(page)
     }
   }
 
-  const filteredData = attendanceData.filter((employee) => {
-    const matchesSearch =
-      employee.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.designation.toLowerCase().includes(searchTerm.toLowerCase())
+  // Clear search and filters
+  const clearAllFilters = () => {
+    console.log('🧹 Clearing all filters')
+    setSearchTerm('')
+    setSelectedMode('All Modes')
+    setSelectedStatus('All Status')
+    setCurrentPage(1)
+    setSearchLoading(true)
+    fetchEmployees(1, true)
+  }
 
-    const matchesMode =
-      selectedMode === "All Modes" || employee.workMode === selectedMode
+  // Clear search only
+  const clearSearch = () => {
+    console.log('🧹 Clearing search only')
+    setSearchTerm('')
+    setSearchLoading(true)
+    fetchEmployees(1, true)
+  }
 
-    const matchesStatus =
-      selectedStatus === "All Status" || employee.status === selectedStatus
-
-    return matchesSearch && matchesMode && matchesStatus
-  })
-
-  // Debug logging
+  // FIXED: Debug logging with proper OT hours tracking
   useEffect(() => {
-    console.log("Attendance data updated:", attendanceData.map(emp => ({
+    console.log("📊 Attendance data updated with OT hours:", attendanceData.map(emp => ({
       id: emp.id,
       name: emp.name,
       workingDays: emp.workingDays,
-      permissions: emp.permissions,
-      leaves: emp.leaves,
+      otHours: emp.otHours, // This should now show correct values
       missedDays: emp.missedDays,
       leaveRequestCount: emp.leaveRequestCount,
       permissionRequestCount: emp.permissionRequestCount
     })))
   }, [attendanceData])
 
-  if (loading) {
+  if (loading && !searchLoading) {
     return (
       <div className="flex h-screen bg-gray-50">
         <Sidebar userType="admin" />
@@ -764,6 +1054,9 @@ export default function AttendanceOverview() {
                         {pagination.totalCount} total employees
                         {" • "}
                         <span className="text-blue-600 font-medium">{currentMonthTotalDays} total days</span>
+                        {(searchTerm || selectedMode !== "All Modes" || selectedStatus !== "All Status") && (
+                          <span className="text-orange-600 font-medium"> (filtered)</span>
+                        )}
                       </CardDescription>
                     </div>
                   </div>
@@ -784,24 +1077,18 @@ export default function AttendanceOverview() {
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
                           <div className="grid grid-cols-4 items-center gap-4">
-                            <label htmlFor="total-days" className="text-right text-sm font-medium">
+                            <label htmlFor="totalDays" className="text-right">
                               Total Days
                             </label>
-                            <div className="col-span-3">
-                              <Input
-                                id="total-days"
-                                type="number"
-                                min="1"
-                                max="31"
-                                value={newTotalDays}
-                                onChange={(e) => setNewTotalDays(parseInt(e.target.value) || 0)}
-                                className="w-full"
-                              />
-                            </div>
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            <p>Current setting: <span className="font-medium">{currentMonthTotalDays} days</span></p>
-                            <p>Common values: 28 days (February), 30 days (April, June, September, November), 31 days (January, March, May, July, August, October, December)</p>
+                            <Input
+                              id="totalDays"
+                              type="number"
+                              value={newTotalDays}
+                              onChange={(e) => setNewTotalDays(parseInt(e.target.value) || 28)}
+                              className="col-span-3"
+                              min="1"
+                              max="31"
+                            />
                           </div>
                         </div>
                         <div className="flex justify-end space-x-2">
@@ -843,11 +1130,24 @@ export default function AttendanceOverview() {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search by name or designation..."
-                      className="pl-10"
+                      placeholder="Search by name, ID, or designation..."
+                      className="pl-10 pr-10"
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onChange={(e) => handleSearchChange(e.target.value)}
                     />
+                    {searchTerm && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-1 top-1 h-8 w-8 p-0"
+                        onClick={clearSearch}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {searchLoading && (
+                      <Loader2 className="absolute right-10 top-3 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
                   </div>
                   <Select value={selectedMode} onValueChange={setSelectedMode}>
                     <SelectTrigger className="w-[140px]">
@@ -885,24 +1185,60 @@ export default function AttendanceOverview() {
                         <TableHead className="w-[120px]">Work Mode</TableHead>
                         <TableHead className="w-[100px] text-center">Total Days</TableHead>
                         <TableHead className="w-[100px] text-center">Working Days</TableHead>
-                        <TableHead className="w-[100px] text-center">Permissions</TableHead>
-                        <TableHead className="w-[100px] text-center">Leaves</TableHead>
+                        <TableHead className="w-[100px] text-center">OT Hours</TableHead>
                         <TableHead className="w-[100px] text-center">Leave Requests</TableHead>
                         <TableHead className="w-[100px] text-center">Permission Requests</TableHead>
                         <TableHead className="w-[80px] text-center">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.length === 0 ? (
+                      {attendanceData.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={11} className="text-center py-8 text-gray-500">
-                            {attendanceData.length === 0
-                              ? "No employees found"
-                              : "No employees match the selected criteria"}
+                          <TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                            {loading || searchLoading ? (
+                              <div className="flex items-center justify-center space-x-2">
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <span>
+                                  {searchTerm ? `Searching for "${searchTerm}"...` : 'Loading employees...'}
+                                </span>
+                              </div>
+                            ) : searchTerm || selectedMode !== "All Modes" || selectedStatus !== "All Status" ? (
+                              <div className="space-y-3">
+                                <AlertCircle className="w-8 h-8 text-gray-400 mx-auto" />
+                                <div>
+                                  <p className="font-medium">No employees found</p>
+                                  <p className="text-sm text-gray-500 mt-1">
+                                    {searchTerm && `No results for "${searchTerm}"`}
+                                    {(selectedMode !== "All Modes" || selectedStatus !== "All Status") && 
+                                      ` with selected filters`
+                                    }
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={clearAllFilters}
+                                >
+                                  Clear all filters
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <AlertCircle className="w-8 h-8 text-gray-400 mx-auto" />
+                                <p>No employees found for this month</p>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => fetchEmployees(1, true)}
+                                >
+                                  Refresh
+                                </Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredData.map((employee) => (
+                        attendanceData.map((employee) => (
                           <TableRow key={employee.id} className="hover:bg-gray-50">
                             <TableCell>
                               <div className="px-1.5 py-0.5 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-xs leading-tight">
@@ -922,11 +1258,11 @@ export default function AttendanceOverview() {
                             <TableCell className="text-center font-medium text-green-600">
                               {employee.workingDays} Days
                             </TableCell>
-                            <TableCell className="text-center font-medium text-orange-600">
-                              {employee.permissions} Days
-                            </TableCell>
-                            <TableCell className="text-center font-medium text-red-600">
-                              {employee.leaves} Days
+                            <TableCell className="text-center font-medium text-purple-600">
+                              <div className="flex items-center justify-center space-x-1">
+                                <Clock className="w-4 h-4" />
+                                <span>{employee.otHours || 0}h</span>
+                              </div>
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex items-center justify-center">
@@ -983,6 +1319,9 @@ export default function AttendanceOverview() {
                       Showing {(pagination.currentPage - 1) * pagination.limit + 1} to{" "}
                       {Math.min(pagination.currentPage * pagination.limit, pagination.totalCount)} of{" "}
                       {pagination.totalCount} employees
+                      {(searchTerm || selectedMode !== "All Modes" || selectedStatus !== "All Status") && (
+                        <span className="text-orange-600"> (filtered results)</span>
+                      )}
                     </div>
                     <div className="flex items-center space-x-2">
                       <Button

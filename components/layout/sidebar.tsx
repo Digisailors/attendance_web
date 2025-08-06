@@ -67,6 +67,7 @@ export function Sidebar({ userType,className }: SidebarProps) {
           { icon: BarChart3, label: 'Leave', href: '/team-lead/leave' },
           { icon: Settings, label: 'permission', href: '/team-lead/permission' },
           { icon: Settings, label: 'histroy', href: '/team-lead/history' },
+          { icon: Calendar, label: 'Overtime', href: '/team-lead/Overtime' },
         ]
       case 'manager':
         return [

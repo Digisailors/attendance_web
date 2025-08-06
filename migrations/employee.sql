@@ -203,3 +203,38 @@ CREATE POLICY "Allow authenticated users to delete daily_work_log"
   
   ALTER TABLE leave_requests
 ADD COLUMN manager_id uuid REFERENCES employees(id);
+
+create table if not exists overtime_requests (
+  id uuid primary key default gen_random_uuid(),
+
+  -- Foreign key to employees table
+  employee_id uuid not null references employees(id) on delete cascade,
+
+  -- OT details
+  ot_date date not null,
+  start_time time not null,
+  end_time time not null,
+
+  -- Total hours (calculated from time difference)
+  total_hours numeric(5,2) generated always as (
+    extract(epoch from (end_time - start_time)) / 3600
+  ) stored,
+
+  -- Reason for OT
+  reason text not null,
+
+  -- Image URL (uploaded via Supabase Storage or signed URL)
+  ot_image_url text,
+
+  -- Request status
+  status text default 'Pending' check (status in ('Pending', 'Approved', 'Rejected')),
+
+  -- Approval tracking
+  approved_by uuid references employees(id),
+  approved_at timestamp with time zone,
+
+  -- Audit timestamps
+  created_at timestamp with time zone default timezone('Asia/Kolkata', now()),
+  updated_at timestamp with time zone default timezone('Asia/Kolkata', now())
+);
+

@@ -122,7 +122,7 @@ export default function LoginPage() {
           case 'team-lead':
             router.push('/team-lead/team'); break
           case 'manager':
-            router.push('/manager/dashboard'); break
+            router.push('/manager/finalapprovel'); break
           default:
             router.push('/')
         }

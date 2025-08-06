@@ -329,8 +329,7 @@ const handleOTEnd = async () => {
       hour12: true,
     })
   }
-
- const calculateOTHours = (): string => {
+const calculateOTHours = (): string => {
   if (otStartTime && otEndTime) {
     const diffMs = otEndTime.getTime() - otStartTime.getTime();
     const totalMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
@@ -376,10 +375,10 @@ const handleOTEnd = async () => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
-    <div className="flex h-screen bg-gray-50">
-       <Sidebar userType="employee" />
-      <div className="flex-1 flex flex-col">
-        <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
+   <div className="flex h-screen bg-gray-50">
+         <Sidebar userType="team-lead" />
+         <div className="flex-1 flex flex-col">
+           <Header title="Teamlead Portal" subtitle={`Welcome back, ${displayName}`} userType="team-lead" />
 
         {/* Enhanced Header Cards */}
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">

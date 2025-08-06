@@ -8,116 +8,177 @@ export async function GET(req: NextRequest) {
     const supabase = createServerSupabaseClient();
     const { searchParams } = new URL(req.url);
 
-    const rawEmployeeId = searchParams.get("employeeId"); // Code like AS886
+    const rawEmployeeId = searchParams.get("employeeId");
+    const teamLeadId = searchParams.get("teamLeadId");
     const month = searchParams.get("month");
     const year = searchParams.get("year");
     const countOnly = searchParams.get("count") === "true";
+    const status = searchParams.get("status");
+    const getAllRecords = searchParams.get("getAll") === "true"; // New parameter to get all records
 
+    // 🆕 NEW: Get ALL records from leave_requests table (for debugging)
+    if (getAllRecords) {
+      console.log("🔍 Fetching ALL records from leave_requests table...");
+      
+      const { data: allRecords, count: totalCount, error: allError } = await supabase
+        .from("leave_requests")
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false });
+
+      if (allError) {
+        console.error("❌ Error fetching all records:", allError);
+        return NextResponse.json({ 
+          error: "Failed to fetch all records", 
+          details: allError.message 
+        }, { status: 500 });
+      }
+
+      console.log(`✅ Found ${totalCount} total records in leave_requests table`);
+      return NextResponse.json({ 
+        data: allRecords || [],
+        count: totalCount || 0,
+        message: `Found ${totalCount} total records in leave_requests table`
+      }, { status: 200 });
+    }
+
+    // Handle team lead requests (fetch all requests for team members)
+    if (teamLeadId) {
+      console.log("Fetching leave requests for team lead:", teamLeadId);
+
+      // First, let's try to get ALL leave_requests and see what's in the table
+      console.log("🔍 Debug: Checking all leave_requests first...");
+      const { data: debugAll, error: debugError } = await supabase
+        .from("leave_requests")
+        .select("*")
+        .limit(5);
+
+      if (debugError) {
+        console.error("❌ Debug query failed:", debugError);
+      } else {
+        console.log("🔍 Sample leave_requests data:", JSON.stringify(debugAll, null, 2));
+      }
+
+      // Convert team lead code to UUID
+      const { data: teamLeadData, error: teamLeadError } = await supabase
+        .from("employees")
+        .select("id")
+        .eq("employee_id", teamLeadId)
+        .single();
+
+      if (teamLeadError || !teamLeadData) {
+        console.error("Team lead not found:", teamLeadError);
+        return NextResponse.json({ error: "Invalid team lead ID" }, { status: 404 });
+      }
+
+      const teamLeadUUID = teamLeadData.id;
+      console.log("Team lead UUID:", teamLeadUUID);
+
+      // 🆕 Simplified approach - Just get all leave requests for now
+      console.log("🔍 Trying simplified approach: Get all leave requests");
+      const { data: allLeaveRequests, count: allCount, error: simpleError } = await supabase
+        .from("leave_requests")
+        .select(`
+          *,
+          employees!left(
+            name,
+            employee_id,
+            designation,
+            phoneNumber,
+            emailAddress,
+            address
+          )
+        `, { count: "exact" })
+        .order("created_at", { ascending: false });
+
+      if (simpleError) {
+        console.error("❌ Simple query failed:", simpleError);
+        
+        // Try even simpler - just get leave_requests without join
+        const { data: verySimple, count: verySimpleCount, error: verySimpleError } = await supabase
+          .from("leave_requests")
+          .select("*", { count: "exact" })
+          .order("created_at", { ascending: false });
+
+        if (verySimpleError) {
+          console.error("❌ Very simple query also failed:", verySimpleError);
+          return NextResponse.json({ 
+            error: "All queries failed", 
+            details: verySimpleError.message 
+          }, { status: 500 });
+        }
+
+        console.log(`✅ Very simple query worked! Found ${verySimpleCount} records`);
+        return NextResponse.json({ 
+          data: verySimple || [],
+          count: verySimpleCount || 0,
+          note: "Retrieved without employee details due to join issues"
+        }, { status: 200 });
+      }
+
+      console.log(`✅ Simple query worked! Found ${allCount} records`);
+      return NextResponse.json({ 
+        data: allLeaveRequests || [],
+        count: allCount || 0 
+      }, { status: 200 });
+    }
+
+    // Handle individual employee requests
     if (!rawEmployeeId || !month || !year) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
-    // 🧠 Convert employee code -> UUID
+    // Convert employee code -> UUID
     const { data: employeeData, error: employeeError } = await supabase
       .from("employees")
-      .select("id, employee_id") // include both UUID and readable code
-
+      .select("id, employee_id")
       .eq("employee_id", rawEmployeeId)
       .single();
 
     if (employeeError || !employeeData) {
+      console.error("Employee not found:", employeeError);
+      
+      // 🆕 If employee UUID lookup fails, try with the raw employee ID directly
+      console.log("🔍 Trying with raw employee ID:", rawEmployeeId);
+      const { data: directQuery, count: directCount, error: directError } = await supabase
+        .from("leave_requests")
+        .select("*", { count: "exact" })
+        .eq("employee_id", rawEmployeeId) // Try with raw ID
+        .order("created_at", { ascending: false });
+
+      if (!directError && directQuery) {
+        console.log(`✅ Direct query worked! Found ${directCount} records`);
+        return NextResponse.json({ 
+          data: directQuery,
+          count: directCount,
+          note: "Used raw employee_id instead of UUID"
+        }, { status: 200 });
+      }
+
       return NextResponse.json({ error: "Invalid employee ID or not found" }, { status: 404 });
     }
 
     const uuid = employeeData.id;
 
-    const startDate = `${year}-${month.padStart(2, "0")}-01`;
-    const endDate = new Date(parseInt(year), parseInt(month), 0)
-      .toISOString()
-      .split("T")[0];
+    // Try to get employee's leave requests
+    const { data: employeeLeaves, count: empCount, error: empError } = await supabase
+      .from("leave_requests")
+      .select("*", { count: "exact" })
+      .eq("employee_id", uuid)
+      .order("created_at", { ascending: false });
 
-    // Debug logging
-    console.log("Debug info:", {
-      rawEmployeeId,
-      uuid,
-      startDate,
-      endDate,
-      month,
-      year
-    });
-
-    // First, let's try different possible table names and see which one works
-    const possibleTableNames = ["leave_requests", "leave_Request", "leaveRequests", "LeaveRequests"];
-    
-    for (const tableName of possibleTableNames) {
-      console.log(`Trying table: ${tableName}`);
-      const testQuery = supabase
-        .from(tableName)
-        .select("*", { count: "exact", head: true })
-        .limit(1);
-      
-      const { error: testError } = await testQuery;
-      
-      if (!testError) {
-        console.log(`✅ Table ${tableName} exists!`);
-        
-        // Now let's try the actual query with this table
-        const actualQuery = supabase
-          .from(tableName)
-          .select("*", { count: "exact", head: countOnly })
-          .eq("employee_id", uuid)
-          .gte("from_date", startDate)
-          .lte("from_date", endDate);
-
-        const { data, count, error } = await actualQuery;
-        
-        if (error) {
-          console.log(`❌ Query failed on ${tableName}:`, error);
-          
-          // Try with different column names if from_date doesn't work
-          const altQuery = supabase
-            .from(tableName)
-            .select("*", { count: "exact", head: countOnly })
-            .eq("employee_id", uuid)
-            .gte("start_date", startDate)
-            .lte("start_date", endDate);
-
-          const { data: altData, count: altCount, error: altError } = await altQuery;
-          
-          if (!altError) {
-            console.log(`✅ Query worked with start_date column!`);
-            if (countOnly) {
-              return NextResponse.json({ count: altCount }, { status: 200 });
-            }
-            return NextResponse.json({ count: altCount, data: altData }, { status: 200 });
-          } else {
-            console.log(`❌ Alt query also failed:`, altError);
-          }
-        } else {
-          console.log(`✅ Query successful on ${tableName}!`);
-          if (countOnly) {
-            return NextResponse.json({ count }, { status: 200 });
-          }
-          return NextResponse.json({ count, data }, { status: 200 });
-        }
-      } else {
-        console.log(`❌ Table ${tableName} doesn't exist:`, testError);
-      }
+    if (empError) {
+      console.error("❌ Employee leaves query failed:", empError);
+      return NextResponse.json({ 
+        error: "Failed to fetch employee leaves", 
+        details: empError.message 
+      }, { status: 500 });
     }
 
-    // If we get here, none of the table names worked
+    console.log(`✅ Found ${empCount} leave requests for employee ${rawEmployeeId}`);
     return NextResponse.json({ 
-      error: "Could not find any matching table", 
-      details: "Tried: " + possibleTableNames.join(", "),
-      debugInfo: {
-        employeeId: rawEmployeeId,
-        uuid: uuid,
-        startDate,
-        endDate,
-        tableName: "none found"
-      }
-    }, { status: 500 });
-
+      data: employeeLeaves || [],
+      count: empCount || 0 
+    }, { status: 200 });
 
   } catch (err) {
     console.error("Server error:", err);
@@ -128,7 +189,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST Handler
+// POST Handler (unchanged)
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const body = await request.json();
@@ -175,7 +236,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ message: "Leave applied successfully" }, { status: 200 });
 }
 
-// PATCH Handler
+// PATCH Handler (unchanged)
 export async function PATCH(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const body = await request.json();

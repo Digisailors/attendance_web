@@ -82,38 +82,25 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url);
-    const employeeId = url.searchParams.get("employeeId");
-    const teamLeadId = url.searchParams.get("teamLeadId");
+    // 🔁 Ignore query params like managerId
 
-    console.log("🟡 Params received:", { employeeId, teamLeadId });
+    const { data: leaveRequests, error: leaveError } = await supabase
+      .from("leave_requests")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-    if (!employeeId && !teamLeadId) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+    if (leaveError) {
+      console.error("🟥 Supabase leave_requests fetch error:", leaveError);
+      return NextResponse.json({ error: leaveError.message }, { status: 500 });
     }
 
-    let query = supabase.from("leave_requests").select("*").order("created_at", { ascending: false });
+    console.log("✅ All leave requests fetched:", leaveRequests);
 
-    if (employeeId) {
-      query = query.eq("employee_id", employeeId);
-    }
-
-    if (teamLeadId) {
-      query = query.eq("team_lead_id", teamLeadId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("🟥 Supabase error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ data }, { status: 200 });
-
-  } catch (err) {
-    console.error("🟥 Unexpected error:", err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json({ data: leaveRequests }, { status: 200 });
+    
+  } catch (err: any) {
+    console.error("🟥 Caught unexpected server error:", err);
+    return NextResponse.json({ error: "Server error", details: err.message }, { status: 500 });
   }
 }
 
