@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { CheckCircle, Clock, TrendingUp, Award, User, FileText, Bell, MessageSquare, Loader2, Calendar, Timer, Building } from 'lucide-react'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
+import ProtectedRoute from '@/components/ProtectedRoute'
 
 interface FinalApproval {
   id: string;
@@ -432,6 +433,7 @@ const handleOTApproval = async (id: string) => {
   const currentStats = activeTab === 'final-approval' ? stats : otStats;
 
   return (
+     <ProtectedRoute allowedRoles={['manager']}>
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="manager" />
       <div className="flex-1 flex flex-col">
@@ -846,5 +848,6 @@ const handleOTApproval = async (id: string) => {
         </main>
       </div>
     </div>
+      </ProtectedRoute>
   )
 }

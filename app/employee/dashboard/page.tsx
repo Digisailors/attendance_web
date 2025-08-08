@@ -5,6 +5,9 @@ import { LogIn, CircleCheckBig, LogOut, Clock, Calendar, CheckCircle, Timer } fr
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 
+import ProtectedRoute from '@/components/ProtectedRoute'
+
+
 interface User {
   id: string
   email: string
@@ -367,6 +370,9 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   // Show loading state while fetching user data
   if (loading) {
     return (
+      
+    
+
       <div className="flex min-h-screen overflow-auto bg-gray-50">
         <Sidebar userType="employee" />
         <div className="flex-1 flex items-center justify-center">
@@ -383,6 +389,7 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
+    <ProtectedRoute allowedRoles={['employee', 'intern']}>
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="employee" />
       <div className="flex-1 flex flex-col">
@@ -732,5 +739,6 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
         </div>
       </div>
     </div>
+      </ProtectedRoute>
   )
 }

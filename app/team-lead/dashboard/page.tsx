@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { LogIn, CircleCheckBig, LogOut, Clock, Calendar, CheckCircle, Timer } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
+import ProtectedRoute from '@/components/ProtectedRoute'
 
 interface User {
   id: string
@@ -383,6 +384,7 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
+       <ProtectedRoute allowedRoles={['team-lead']}>
 <div className="flex h-screen bg-gray-50">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
@@ -733,5 +735,6 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
         </div>
       </div>
     </div>
+     </ProtectedRoute>
   )
 }
