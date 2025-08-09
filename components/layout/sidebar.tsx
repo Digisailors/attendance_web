@@ -95,7 +95,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
         ]
       case 'manager':
         return [
-          { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
+          // { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
           { icon: Home, label: 'Final Approvals', href: '/manager/finalapprovel' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/manager/lap' },
         ]

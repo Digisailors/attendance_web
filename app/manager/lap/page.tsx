@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import type React from "react"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -969,6 +969,7 @@ export default function ManagerLeavePermissionRequests() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['employee','intern']}>
     <div className="flex min-h-screen bg-gray-50">
     <Sidebar userType="manager" className="fixed-sidebar" />
     <div className="main-content flex-1 flex flex-col">
@@ -1563,5 +1564,6 @@ export default function ManagerLeavePermissionRequests() {
         </main>
       </div>
     </div>
+    </ProtectedRoute>
   )
 }

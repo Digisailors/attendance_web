@@ -186,7 +186,7 @@ export default function TeamLeaderDashboard() {
 
         // Calculate OT stats
         const total = formattedData.length;
-        const pending = formattedData.filter((s: OTSubmission) => s.status === 'pending').length;
+        const pending = formattedData.filter((s: OTSubmission) => s.status === 'Pending').length;
         const approved = formattedData.filter((s: OTSubmission) => s.status === 'approved').length;
         const rejected = formattedData.filter((s: OTSubmission) => s.status === 'rejected').length;
 

@@ -1,5 +1,5 @@
 "use client"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -372,6 +372,7 @@ export default function TeamLeadAddMembers() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['team-lead']}>         
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
@@ -778,5 +779,6 @@ export default function TeamLeadAddMembers() {
         </main>
       </div>
     </div>
+  </ProtectedRoute>
   )
 }

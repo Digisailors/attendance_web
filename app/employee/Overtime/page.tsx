@@ -1,5 +1,5 @@
 "use client"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect } from "react"
 import { Play, Square, Clock, Calendar, CheckCircle, Timer, Upload, X, Image as ImageIcon, Menu, User, LogOut, Home, Clock as ClockIcon, FileText, Settings } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -376,6 +376,7 @@ const handleOTEnd = async () => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
+    <ProtectedRoute allowedRoles={['employee','intern']}>
     <div className="flex h-screen bg-gray-50">
        <Sidebar userType="employee" />
       <div className="flex-1 flex flex-col">
@@ -916,5 +917,6 @@ const handleOTEnd = async () => {
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   )
 }

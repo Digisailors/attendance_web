@@ -1,5 +1,5 @@
 "use client"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -246,6 +246,7 @@ export default function EmployeeHistoryPage() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['team-lead']}>
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
@@ -594,5 +595,6 @@ export default function EmployeeHistoryPage() {
         </main>
       </div>
     </div>
+    </ProtectedRoute>
   )
 }

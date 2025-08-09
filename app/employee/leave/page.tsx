@@ -1,5 +1,5 @@
 "use client"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import React, { useState, useEffect } from "react";
 import { CalendarDays, CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -205,6 +205,7 @@ export default function LeaveApplicationPage() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['employee','intern']}>
     <div className="flex min-h-screen bg-gray-50">
       {/* Fixed Sidebar */}
       <div className="fixed left-0 top-0 h-full z-10">
@@ -338,5 +339,6 @@ export default function LeaveApplicationPage() {
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

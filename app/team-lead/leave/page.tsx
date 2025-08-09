@@ -1,5 +1,5 @@
 "use client";
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import React, { useState, useEffect } from "react";
 import { CalendarDays, CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -191,6 +191,7 @@ export default function LeaveApplicationTeamLead() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['team-lead']}>
     <div className="flex h-screen overflow-hidden">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col overflow-auto">
@@ -322,5 +323,6 @@ export default function LeaveApplicationTeamLead() {
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

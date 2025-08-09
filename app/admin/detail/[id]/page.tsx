@@ -1,5 +1,5 @@
 "use client";
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect, useMemo } from "react";
 import {
   Card,
@@ -488,6 +488,7 @@ export default function EmployeeAttendanceDetail() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['admin']}>
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="admin" />
       <div className="flex-1 flex flex-col">
@@ -764,5 +765,6 @@ export default function EmployeeAttendanceDetail() {
         </main>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

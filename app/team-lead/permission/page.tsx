@@ -1,5 +1,5 @@
 "use client";
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import React, { useState, useEffect } from "react";
 import { Calendar as CalendarIcon, Clock4 } from "lucide-react";
 import { format } from "date-fns";
@@ -191,6 +191,7 @@ export default function TeamLeadPermissionPage() {
   }
 
   return (
+    <ProtectedRoute allowedRoles={['team-lead']}>
     <div className="flex bg-gray-50">
       {/* Fixed Sidebar */}
       <div className="fixed left-0 top-0 h-full z-10">
@@ -293,5 +294,6 @@ export default function TeamLeadPermissionPage() {
         </div>
       </div>
     </div>
+  </ProtectedRoute>
   );
 }

@@ -1,5 +1,5 @@
 "use client"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect } from "react"
 import { LogIn, CircleCheckBig, LogOut, Clock, Calendar, CheckCircle, Timer } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -383,6 +383,7 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
+    <ProtectedRoute allowedRoles={['manager',]}>
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="manager" />
       <div className="flex-1 flex flex-col">
@@ -733,5 +734,6 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
         </div>
       </div>
     </div>
+  </ProtectedRoute>
   )
 }

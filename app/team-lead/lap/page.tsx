@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import type React from "react"
-
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -669,6 +669,7 @@ const rejected = processedRequests.filter((r: LeaveRequest) => r.status === "Rej
   const currentPermissionStats = getDurationStatistics(filterPermissionRequests(permissionRequests))
 
   return (
+    <ProtectedRoute allowedRoles={['team-lead']}>
     <div className="flex min-h-screen overflow-auto bg-gray-50">
       <Sidebar userType="team-lead" />
       <div className="flex-1 flex flex-col">
@@ -1318,5 +1319,6 @@ const rejected = processedRequests.filter((r: LeaveRequest) => r.status === "Rej
         </main>
       </div>
     </div>
+          </ProtectedRoute>
   )
 }
