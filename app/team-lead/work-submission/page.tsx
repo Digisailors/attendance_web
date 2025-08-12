@@ -1163,7 +1163,7 @@ const OTSubmissionCard: React.FC<{
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">{submission.employee_name}</h3>
-                <p className="text-xs text-gray-500">ID: {submission.employee_id}</p>
+                {/* <p className="text-xs text-gray-500">ID: {submission.employee_id}</p> */}
               </div>
             </div>
           </div>
