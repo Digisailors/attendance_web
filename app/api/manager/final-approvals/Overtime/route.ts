@@ -13,20 +13,18 @@ export async function GET(req: NextRequest) {
     const employee_id = searchParams.get('employee_id');
    
 
-    let query = supabase
-      .from('overtime_requests')
-      .select(`
-        *,
-        employees!overtime_requests_employee_id_fkey(
-          name,
-          employee_id,
-         
-          designation
-        )
-      `)
-      .eq('status', 'Final Approved') // ✅ correct
- // Only show requests awaiting final approval
-      .order('ot_date', { ascending: false });
+   let query = supabase
+  .from('overtime_requests')
+  .select(`
+    *,
+    employees!overtime_requests_employee_id_fkey(
+      name,
+      employee_id,
+      designation
+    )
+  `)
+  .in('status', ['Final Approved', 'approved']) // ✅ works for multiple statuses
+  .order('ot_date', { ascending: false });
 
     // Filter by employee if specified
     if (employee_id) {

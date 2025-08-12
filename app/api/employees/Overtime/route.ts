@@ -99,6 +99,7 @@ const end_time = formatToTime(payload.end_time);
         image1: image1_url,
         image2: image2_url,
         created_at: new Date().toISOString(),
+        status:'pending',
       },
     ]);
 

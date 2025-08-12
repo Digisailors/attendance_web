@@ -27,6 +27,7 @@ interface FinalApproval {
   team_lead_comments?: string;
   manager_comments?: string;
   notification_id?: string;
+  designation: string;
 }
 
 interface OTRequest {
@@ -176,10 +177,11 @@ export default function ManagerDashboard() {
         ).length || 0;
         
         const approvedToday = data.data?.filter(
-          (ot: OTRequest) => 
-            ot.status === "approved" && 
-            new Date(ot.supervisor_approved_at).toDateString() === today
-        ).length || 0;
+  (ot: OTRequest) =>
+    (ot.status === "approved" || ot.status === "final-approval") && 
+    new Date(ot.supervisor_approved_at).toDateString() === today
+).length || 0;
+
         
         const rejectedToday = data.data?.filter(
           (ot: OTRequest) => 
@@ -587,7 +589,7 @@ const handleOTApproval = async (id: string) => {
                                 </span>
                               </div>
                               <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                                <span>Department: {approval.department}</span>
+                                {/* <span>Department: {approval.designation}</span> */}
                                 <span className="flex items-center space-x-1">
                                   <Calendar className="h-3 w-3" />
                                   <span>Submitted: {formatDate(approval.submitted_date)}</span>
@@ -741,7 +743,7 @@ const handleOTApproval = async (id: string) => {
                                 </span>
                                 <span className="flex items-center space-x-1">
                                   <Building className="h-3 w-3" />
-                                  <span>Department: {otRequest.employees.department}</span>
+                                  <span>Designation: {otRequest.employees.designation}</span>
                                 </span>
                               </div>
                               <div className="flex items-center space-x-4 text-sm text-muted-foreground">

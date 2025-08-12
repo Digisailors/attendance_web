@@ -31,6 +31,11 @@ import {
   Users,
   Filter,
   Search,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 interface WorkSubmission {
@@ -78,6 +83,191 @@ interface User {
   name?: string;
 }
 
+interface ImageModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  images: string[];
+  currentIndex: number;
+  onNext: () => void;
+  onPrevious: () => void;
+  title: string;
+}
+
+// Image Modal Component
+const ImageModal: React.FC<ImageModalProps> = ({
+  isOpen,
+  onClose,
+  images,
+  currentIndex,
+  onNext,
+  onPrevious,
+  title
+}) => {
+  const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isOpen) return;
+      
+      switch (event.key) {
+        case 'Escape':
+          onClose();
+          break;
+        case 'ArrowLeft':
+          if (currentIndex > 0) onPrevious();
+          break;
+        case 'ArrowRight':
+          if (currentIndex < images.length - 1) onNext();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentIndex, images.length, onClose, onNext, onPrevious]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [currentIndex]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black bg-opacity-90"
+        onClick={onClose}
+      />
+      
+      {/* Modal Content */}
+      <div className="relative z-10 max-w-6xl max-h-full w-full mx-4">
+        {/* Header */}
+        <div className="bg-white rounded-t-lg p-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            <p className="text-sm text-gray-600">
+              Image {currentIndex + 1} of {images.length}
+            </p>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            {/* Zoom Controls */}
+            <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                disabled={zoom <= 0.5}
+              >
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <span className="px-2 text-sm font-medium">{Math.round(zoom * 100)}%</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setZoom(Math.min(3, zoom + 0.25))}
+                disabled={zoom >= 3}
+              >
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Download */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = images[currentIndex];
+                link.download = `evidence-${currentIndex + 1}.jpg`;
+                link.click();
+              }}
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+
+            {/* Navigation */}
+            {images.length > 1 && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onPrevious}
+                  disabled={currentIndex === 0}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onNext}
+                  disabled={currentIndex === images.length - 1}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+
+            {/* Close */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Image Container */}
+        <div className="bg-white rounded-b-lg p-4 max-h-[80vh] overflow-auto">
+          <div className="flex justify-center">
+            <img
+              src={images[currentIndex]}
+              alt={`Evidence ${currentIndex + 1}`}
+              className="max-w-full max-h-full object-contain transition-transform duration-200"
+              style={{ 
+                transform: `scale(${zoom})`,
+                cursor: zoom > 1 ? 'grab' : 'default'
+              }}
+              draggable={false}
+            />
+          </div>
+        </div>
+
+        {/* Image Thumbnails */}
+        {images.length > 1 && (
+          <div className="bg-gray-100 p-4 rounded-b-lg">
+            <div className="flex justify-center space-x-2 overflow-x-auto">
+              {images.map((image, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    const event = new CustomEvent('imageSelect', { detail: { index } });
+                    window.dispatchEvent(event);
+                  }}
+                  className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                    index === currentIndex 
+                      ? 'border-blue-500 ring-2 ring-blue-200' 
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <img
+                    src={image}
+                    alt={`Thumbnail ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function TeamLeaderDashboard() {
   const [activeTab, setActiveTab] = useState<'work' | 'ot'>('work');
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmission[]>([]);
@@ -95,6 +285,55 @@ export default function TeamLeaderDashboard() {
     work: { total: 0, pending: 0, approved: 0, rejected: 0 },
     ot: { total: 0, pending: 0, approved: 0, rejected: 0 },
   });
+
+  // Image Modal State
+  const [imageModal, setImageModal] = useState({
+    isOpen: false,
+    images: [] as string[],
+    currentIndex: 0,
+    title: ''
+  });
+
+  // Image Modal Functions
+  const openImageModal = (images: string[], startIndex: number = 0, title: string) => {
+    setImageModal({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      title
+    });
+  };
+
+  const closeImageModal = () => {
+    setImageModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const nextImage = () => {
+    setImageModal(prev => ({
+      ...prev,
+      currentIndex: Math.min(prev.currentIndex + 1, prev.images.length - 1)
+    }));
+  };
+
+  const previousImage = () => {
+    setImageModal(prev => ({
+      ...prev,
+      currentIndex: Math.max(prev.currentIndex - 1, 0)
+    }));
+  };
+
+  // Listen for image selection from thumbnails
+  useEffect(() => {
+    const handleImageSelect = (event: any) => {
+      setImageModal(prev => ({
+        ...prev,
+        currentIndex: event.detail.index
+      }));
+    };
+
+    window.addEventListener('imageSelect', handleImageSelect);
+    return () => window.removeEventListener('imageSelect', handleImageSelect);
+  }, []);
 
   // Get user data from localStorage and fetch team lead details
   useEffect(() => {
@@ -278,7 +517,6 @@ export default function TeamLeaderDashboard() {
   setProcessingId(id);
   
   try {
-    // Make sure this matches your actual API route
     const response = await fetch('/api/employees/Overtime', {
       method: 'PUT',
       headers: { 
@@ -286,13 +524,11 @@ export default function TeamLeaderDashboard() {
       },
       body: JSON.stringify({
         id,
-        status: 'Final Approved', // ✅ Correct case-sensitive value
-
-        approved_by: teamLeadData?.id || 'system' // Use UUID or fallback
+        status: 'Final Approved',
+        approved_by: teamLeadData?.id || 'system'
       }),
     });
 
-    // Add response checking
     if (!response.ok) {
       const errorData = await response.json();
       console.error('API Error:', errorData);
@@ -311,7 +547,6 @@ export default function TeamLeaderDashboard() {
     
   } catch (error) {
     console.error('Error approving OT submission:', error);
-    // Show user-friendly error message
     alert('Failed to approve overtime request. Please try again.');
   } finally {
     setProcessingId(null);
@@ -471,6 +706,17 @@ export default function TeamLeaderDashboard() {
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="team-lead" />
+      
+      {/* Image Modal */}
+      <ImageModal
+        isOpen={imageModal.isOpen}
+        onClose={closeImageModal}
+        images={imageModal.images}
+        currentIndex={imageModal.currentIndex}
+        onNext={nextImage}
+        onPrevious={previousImage}
+        title={imageModal.title}
+      />
       
       {/* Main Content */}
       <div className="flex-1 ml-6 flex flex-col">
@@ -687,6 +933,7 @@ export default function TeamLeaderDashboard() {
                             formatDate={formatDate}
                             getPriorityColor={getPriorityColor}
                             getStatusBadge={getStatusBadge}
+                            onImageClick={openImageModal}
                           />
                         ))
                       : filteredOTSubmissions.map((submission) => (
@@ -700,6 +947,7 @@ export default function TeamLeaderDashboard() {
                             processingId={processingId}
                             formatDate={formatDate}
                             getStatusBadge={getStatusBadge}
+                            onImageClick={openImageModal}
                           />
                         ))
                     }
@@ -727,6 +975,7 @@ const WorkSubmissionCard: React.FC<{
   formatDate: (date: string) => string;
   getPriorityColor: (priority: string) => string;
   getStatusBadge: (status: string) => JSX.Element;
+  onImageClick: (images: string[], startIndex: number, title: string) => void;
 }> = ({ 
   submission, 
   isSelected, 
@@ -738,7 +987,8 @@ const WorkSubmissionCard: React.FC<{
   onCommentChange,
   formatDate,
   getPriorityColor,
-  getStatusBadge
+  getStatusBadge,
+  onImageClick
 }) => {
   return (
     <div className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border-2 ${
@@ -795,15 +1045,20 @@ const WorkSubmissionCard: React.FC<{
           <div>
             <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center space-x-2">
               <ImageIcon className="w-4 h-4" />
-              <span>Evidence Images</span>
+              <span>Evidence Images ({submission.images.length})</span>
             </h4>
             <div className="grid grid-cols-2 gap-2">
               {submission.images.map((image, index) => (
-                <div key={index} className="relative group">
+                <div key={index} className="relative group cursor-pointer">
                   <img
                     src={image}
                     alt={`Work evidence ${index + 1}`}
-                    className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                    className="w-full h-24 object-cover rounded-lg border border-gray-200 transition-transform duration-200 group-hover:scale-105"
+                    onClick={() => onImageClick(
+                      submission.images || [], 
+                      index, 
+                      `Work Evidence - ${submission.employee_name}`
+                    )}
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                     <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
@@ -876,6 +1131,7 @@ const OTSubmissionCard: React.FC<{
   processingId: string | null;
   formatDate: (date: string) => string;
   getStatusBadge: (status: string) => JSX.Element;
+  onImageClick: (images: string[], startIndex: number, title: string) => void;
 }> = ({ 
   submission, 
   isSelected, 
@@ -884,8 +1140,11 @@ const OTSubmissionCard: React.FC<{
   onReject, 
   processingId,
   formatDate,
-  getStatusBadge
+  getStatusBadge,
+  onImageClick
 }) => {
+  const otImages = [submission.image1, submission.image2].filter(Boolean);
+  
   return (
     <div className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border-2 ${
       isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-gray-200'
@@ -942,33 +1201,40 @@ const OTSubmissionCard: React.FC<{
         </div>
 
         {/* Images */}
-        <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center space-x-2">
-            <ImageIcon className="w-4 h-4" />
-            <span>OT Evidence Images</span>
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {[submission.image1, submission.image2].filter(Boolean).map((image, index) => (
-              <div key={index} className="relative group">
-                <img
-                  src={image}
-                  alt={`OT evidence ${index + 1}`}
-                  className="w-full h-24 object-cover rounded-lg border border-gray-200"
-                />
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                  <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+        {otImages.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center space-x-2">
+              <ImageIcon className="w-4 h-4" />
+              <span>OT Evidence Images ({otImages.length})</span>
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              {otImages.map((image, index) => (
+                <div key={index} className="relative group cursor-pointer">
+                  <img
+                    src={image}
+                    alt={`OT evidence ${index + 1}`}
+                    className="w-full h-24 object-cover rounded-lg border border-gray-200 transition-transform duration-200 group-hover:scale-105"
+                    onClick={() => onImageClick(
+                      otImages, 
+                      index, 
+                      `OT Evidence - ${submission.employee_name}`
+                    )}
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
+                    <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                  </div>
+                  <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 rounded">
+                    {index + 1}
+                  </div>
                 </div>
-                <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 rounded">
-                  {index + 1}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Actions - Show buttons for pending status */}
-      {submission.status === 'Pending' && (
+      {submission.status === 'pending' && (
         <div className="px-4 pb-4">
           <div className="flex space-x-2">
             <Button
