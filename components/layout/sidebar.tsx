@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 
 import {
   AlertDialog,
@@ -45,7 +45,10 @@ interface SidebarProps {
 export function Sidebar({ userType, className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false) // Add this state
   const pathname = usePathname()
+  const router = useRouter()
 
   // Handle responsive behavior
   useEffect(() => {
@@ -67,6 +70,20 @@ export function Sidebar({ userType, className }: SidebarProps) {
   useEffect(() => {
     setMobileOpen(false)
   }, [pathname])
+
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+
+    // Cleanup function to reset overflow when component unmounts
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [mobileOpen])
 
   const getMenuItems = () => {
     switch (userType) {
@@ -95,7 +112,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
         ]
       case 'manager':
         return [
-          // { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
+          { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
           { icon: Home, label: 'Final Approvals', href: '/manager/finalapprovel' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/manager/lap' },
         ]
@@ -123,10 +140,58 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
   const userTypeInfo = getUserTypeDisplay()
 
-  const handleLogout = () => {
-    // Note: localStorage usage removed for Claude.ai compatibility
-    // In your actual implementation, you can use: localStorage.removeItem('user')
-    window.location.href = '/login'
+  const handleLogout = async () => {
+    // Prevent multiple logout attempts
+    if (isLoggingOut) return
+    
+    setIsLoggingOut(true)
+    
+    try {
+      console.log('Starting logout process...')
+
+      // Clear any authentication tokens or user data
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('user')
+          localStorage.removeItem('token')
+          localStorage.removeItem('authToken')
+          // Clear all localStorage items that start with 'employee_daily_state_'
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('employee_daily_state_')) {
+              localStorage.removeItem(key)
+            }
+          })
+          sessionStorage.clear()
+        } catch (storageError) {
+          console.warn('Error clearing storage:', storageError)
+        }
+      }
+
+      // Clear any cookies if needed
+      try {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/")
+        })
+      } catch (cookieError) {
+        console.warn('Error clearing cookies:', cookieError)
+      }
+
+      // Close dialogs and mobile sidebar
+      setLogoutDialogOpen(false)
+      setMobileOpen(false)
+
+      console.log('Redirecting to login...')
+
+      // Use replace instead of push to prevent back navigation
+      router.replace('/login')
+      
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Fallback to direct navigation
+      window.location.replace('/login')
+    }
   }
 
   // Mobile menu toggle button (to be placed in your header/navbar)
@@ -209,18 +274,19 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
       {/* Footer with Logout */}
       <div className="p-4 border-t border-gray-200">
-        <AlertDialog>
+        <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
           <AlertDialogTrigger asChild>
             <Button
               variant="ghost"
+              disabled={isLoggingOut}
               className={cn(
-                "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50",
+                "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50",
                 collapsed && "md:justify-center md:px-2"
               )}
             >
               <LogOut className="h-4 w-4" />
               {(!collapsed || window.innerWidth < 768) && (
-                <span className="ml-2">Logout</span>
+                <span className="ml-2">{isLoggingOut ? 'Logging out...' : 'Logout'}</span>
               )}
             </Button>
           </AlertDialogTrigger>
@@ -233,8 +299,18 @@ export function Sidebar({ userType, className }: SidebarProps) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleLogout}>Logout</AlertDialogAction>
+              <AlertDialogCancel 
+                disabled={isLoggingOut}
+                onClick={() => setLogoutDialogOpen(false)}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                disabled={isLoggingOut}
+                onClick={handleLogout}
+              >
+                {isLoggingOut ? 'Logging out...' : 'Logout'}
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
