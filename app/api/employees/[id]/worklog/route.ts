@@ -7,17 +7,31 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
     persistSession: false,
   },
 })
-// pages/api/employees/[id]/worklog.ts
+
+// Helper function to get IST date
+const getISTDate = () => {
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istDate.toISOString().split('T')[0];
+};
+
+// Helper function to convert IST datetime to time string
+const getISTTimeString = (isoString: string) => {
+  const date = new Date(isoString);
+  // Ensure we're working with IST time
+  const istTime = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istTime.toTimeString().split(" ")[0]; // Format: HH:MM:SS
+};
+
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const employeeId = params.id
-  const today = new Date().toISOString().split('T')[0]
+  const today = getISTDate(); // Use IST date
   const { data: employee, error } = await supabase.from("employees").select("id").eq("employee_id", employeeId).single();
   if (error || !employee) return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   const { data: worklog } = await supabase.from("daily_work_log").select("*").eq("employee_id", employee.id).eq("date", today).single();
   if (!worklog) return NextResponse.json({}, { status: 200 });
   return NextResponse.json(worklog);
 }
-
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -38,7 +52,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Employee not found" }, { status: 404 })
     }
 
-    const today = new Date().toISOString().split("T")[0]
+    const today = getISTDate(); // Use IST date
     const { data: existingEntry, error: checkError } = await supabase
       .from("daily_work_log")
       .select("*")
@@ -54,7 +68,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
       }
 
-      const checkIn = new Date(checkInTime)
+      // Convert IST time to time string properly
+      const checkInTimeString = getISTTimeString(checkInTime);
 
       const { data: inserted, error: insertError } = await supabase
         .from("daily_work_log")
@@ -62,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           {
             employee_id: employee.id,
             date: today,
-            check_in: checkIn.toTimeString().split(" ")[0],
+            check_in: checkInTimeString,
             status: "Present",
           },
         ])
@@ -74,8 +89,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
 
       // Attendance Update
-      const month = new Date().getMonth() + 1
-      const year = new Date().getFullYear()
+      const istNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      const month = istNow.getMonth() + 1;
+      const year = istNow.getFullYear();
 
       const { data: attendance, error: attErr } = await supabase
         .from("attendance")
@@ -114,15 +130,19 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         return NextResponse.json({ error: "Check-in entry not found" }, { status: 400 })
       }
 
-      const checkOut = new Date(checkOutTime)
-      const checkIn = new Date(`${today}T${existingEntry.check_in}`)
+      // Convert checkout time to IST time string
+      const checkOutTimeString = getISTTimeString(checkOutTime);
+      
+      // Create proper Date objects for hour calculation
+      const checkInDate = new Date(checkInTime); // This is already IST from frontend
+      const checkOutDate = new Date(checkOutTime); // This is already IST from frontend
 
-      const hoursWorked = ((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)).toFixed(2)
+      const hoursWorked = ((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60)).toFixed(2)
 
       const { data: updated, error: updateError } = await supabase
         .from("daily_work_log")
         .update({
-          check_out: checkOut.toTimeString().split(" ")[0],
+          check_out: checkOutTimeString,
           hours: parseFloat(hoursWorked),
           project: workType,
           description: workDescription,
