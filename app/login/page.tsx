@@ -198,7 +198,7 @@ export default function LoginPage() {
           <div className="mx-auto w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
             <Building2 className="w-6 h-6 text-white" />
           </div>
-          <CardTitle className="text-2xl font-bold text-gray-900">Employee Management System</CardTitle>
+          <CardTitle className="text-2xl font-bold text-gray-900"> Management System</CardTitle>
           <CardDescription className="text-gray-600">
             {isSignup ? 'Create your account' : 'Sign in to access your dashboard'}
           </CardDescription>
