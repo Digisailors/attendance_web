@@ -411,13 +411,15 @@ export default function EmployeeDashboard() {
     setIsWorkSubmitted(false)
   }
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    })
-  }
+ const formatTime = (date: Date) => {
+  return date.toLocaleTimeString("en-IN", { // en-IN for IST
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",   // Force IST
+  })
+}
+
 
   if (loading) {
     return (
