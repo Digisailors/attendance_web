@@ -24,6 +24,37 @@ interface DailyState {
   date: string
 }
 
+// IST Time utilities
+const getISTTime = () => {
+  const now = new Date();
+  // Convert to IST (UTC+5:30)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istTime = new Date(utc + istOffset);
+  return istTime;
+};
+
+// Format IST time consistently
+const formatISTTime = (date) => {
+  // If date is already in IST, format it directly
+  if (typeof date === 'string') {
+    date = new Date(date);
+  }
+  
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+};
+
+// Convert any date to IST string for storage
+const toISTString = (date) => {
+  const istTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+  return istTime.toISOString();
+};
+
 // Memoized components to prevent unnecessary re-renders
 const MemoizedSidebar = memo(() => <Sidebar userType="employee" />)
 
@@ -183,14 +214,19 @@ export default function EmployeeDashboard() {
         if (!isMounted) return
         
         if (dbStatus && dbStatus.check_in) {
+          // Parse times assuming they're in IST
           const checkInDate = new Date(`${dbStatus.date}T${dbStatus.check_in}`)
           const checkOutDate = dbStatus.check_out ? new Date(`${dbStatus.date}T${dbStatus.check_out}`) : null
           
+          // Convert to IST if needed
+          const istCheckIn = new Date(checkInDate.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}))
+          const istCheckOut = checkOutDate ? new Date(checkOutDate.toLocaleString("en-US", {timeZone: "Asia/Kolkata"})) : null
+          
           // Batch all state updates
           setIsCheckedIn(true)
-          setCheckInTime(checkInDate)
+          setCheckInTime(istCheckIn)
           setIsCheckedOut(!!dbStatus.check_out)
-          setCheckOutTime(checkOutDate)
+          setCheckOutTime(istCheckOut)
           setWorkType(dbStatus.project || "")
           setWorkDescription(dbStatus.description || "")
           setIsWorkSubmitted(!!dbStatus.check_out)
@@ -198,8 +234,8 @@ export default function EmployeeDashboard() {
           const syncedState: DailyState = {
             isCheckedIn: true,
             isCheckedOut: !!dbStatus.check_out,
-            checkInTime: checkInDate.toISOString(),
-            checkOutTime: checkOutDate?.toISOString() || null,
+            checkInTime: istCheckIn.toISOString(),
+            checkOutTime: istCheckOut?.toISOString() || null,
             workType: dbStatus.project || "",
             workDescription: dbStatus.description || "",
             isWorkSubmitted: !!dbStatus.check_out,
@@ -286,7 +322,8 @@ export default function EmployeeDashboard() {
       return
     }
 
-    const checkInMoment = new Date()
+    // Use IST time consistently
+    const checkInMoment = getISTTime()
     setIsCheckedIn(true)
     setCheckInTime(checkInMoment)
     setShowCheckInNotification(true)
@@ -298,7 +335,9 @@ export default function EmployeeDashboard() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ checkInTime: checkInMoment }),
+        body: JSON.stringify({ 
+          checkInTime: toISTString(checkInMoment) // Send IST time to server
+        }),
       })
 
       const data = await response.json()
@@ -325,7 +364,7 @@ export default function EmployeeDashboard() {
   }
 
   const handleCheckOut = async () => {
-    const checkOutMoment = new Date()
+    const checkOutMoment = getISTTime() // Use IST time
     setCheckOutTime(checkOutMoment)
     setIsSubmittingWorkLog(true)
 
@@ -338,8 +377,8 @@ export default function EmployeeDashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          checkInTime: checkInTime?.toISOString(),
-          checkOutTime: checkOutMoment.toISOString(),
+          checkInTime: toISTString(checkInTime), // Convert to IST string
+          checkOutTime: toISTString(checkOutMoment), // Convert to IST string
           workType: workType,
           workDescription: workDescription,
         }),
@@ -360,7 +399,7 @@ export default function EmployeeDashboard() {
         workDescription: workDescription,
         department: "General",
         priority: "Medium",
-        submittedDate: checkOutMoment.toISOString(),
+        submittedDate: toISTString(checkOutMoment), // Use IST time
       }
 
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
@@ -411,15 +450,10 @@ export default function EmployeeDashboard() {
     setIsWorkSubmitted(false)
   }
 
- const formatTime = (date: Date) => {
-  return date.toLocaleTimeString("en-IN", { // en-IN for IST
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Kolkata",   // Force IST
-  })
-}
-
+  const formatTime = (date: Date) => {
+    if (!date) return "Not Available";
+    return formatISTTime(date);
+  }
 
   if (loading) {
     return (
