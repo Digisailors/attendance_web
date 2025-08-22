@@ -303,6 +303,51 @@ export default function TeamLeadAddMembers() {
     }
   }
 
+  // Add this function after your existing helper functions (getWorkModeBadge, getStatusBadge)
+const calculateExperience = (joinDate: string | null): string => {
+  if (!joinDate) return 'Not specified';
+  
+  const join = new Date(joinDate);
+  const current = new Date();
+  
+  // Calculate the difference
+  let years = current.getFullYear() - join.getFullYear();
+  let months = current.getMonth() - join.getMonth();
+  let days = current.getDate() - join.getDate();
+  
+  // Adjust for negative days
+  if (days < 0) {
+    months--;
+    const lastMonth = new Date(current.getFullYear(), current.getMonth(), 0);
+    days += lastMonth.getDate();
+  }
+  
+  // Adjust for negative months
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+  
+  // Format the experience string
+  if (years === 0 && months === 0) {
+    return days === 1 ? '1 day' : `${days} days`;
+  } else if (years === 0) {
+    if (days === 0) {
+      return months === 1 ? '1 month' : `${months} months`;
+    } else {
+      return `${months} month${months !== 1 ? 's' : ''} ${days} day${days !== 1 ? 's' : ''}`;
+    }
+  } else {
+    if (months === 0 && days === 0) {
+      return years === 1 ? '1 year' : `${years} years`;
+    } else if (days === 0) {
+      return `${years} year${years !== 1 ? 's' : ''} ${months} month${months !== 1 ? 's' : ''}`;
+    } else {
+      return `${years} year${years !== 1 ? 's' : ''} ${months} month${months !== 1 ? 's' : ''} ${days} day${days !== 1 ? 's' : ''}`;
+    }
+  }
+};
+
   // Remove member from team
   const handleRemoveFromTeam = async (teamMemberId: string) => {
     try {
@@ -527,12 +572,12 @@ export default function TeamLeadAddMembers() {
                                 <span className="text-gray-700 truncate">{member.employee.address}</span>
                               </div>
                             )}
-                            {member.employee.experience && (
-                              <div className="flex items-center space-x-2">
-                                <Briefcase className="w-4 h-4 text-gray-400" />
-                                <span className="text-gray-700">{member.employee.experience}</span>
-                              </div>
-                            )}
+                         {member.employee.dateOfJoining && (
+  <div className="flex items-center space-x-2">
+    <Briefcase className="w-4 h-4 text-gray-400" />
+    <span className="text-gray-700">{calculateExperience(member.employee.dateOfJoining)}</span>
+  </div>
+)}
                           </div>
 
                           {/* Joining & Added Info */}
@@ -668,12 +713,12 @@ export default function TeamLeadAddMembers() {
                                 <span className="text-gray-700 truncate">{employee.address}</span>
                               </div>
                             )}
-                            {employee.experience && (
-                              <div className="flex items-center space-x-2">
-                                <Briefcase className="w-4 h-4 text-gray-400" />
-                                <span className="text-gray-700">{employee.experience}</span>
-                              </div>
-                            )}
+                            {employee.dateOfJoining && (
+  <div className="flex items-center space-x-2">
+    <Briefcase className="w-4 h-4 text-gray-400" />
+    <span className="text-gray-700">{calculateExperience(employee.dateOfJoining)}</span>
+  </div>
+)}
                           </div>
 
                           {/* Joining Date */}
