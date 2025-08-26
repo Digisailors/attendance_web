@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import type React from "react"
-import ProtectedRoute from '@/components/ProtectedRoute'
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -113,7 +113,7 @@ export default function ManagerLeavePermissionRequests() {
   const [statusFilter, setStatusFilter] = useState("All")
   const [activeTab, setActiveTab] = useState("leave")
   const [error, setError] = useState<string | null>(null)
-  
+ 
   // Improved team lead name cache
   const [teamLeadCache, setTeamLeadCache] = useState<TeamLeadCache>({})
 
@@ -134,7 +134,7 @@ export default function ManagerLeavePermissionRequests() {
   const needsManagerApproval = (request: LeaveRequest | PermissionRequest): boolean => {
     const status = request.status?.toLowerCase().trim()
     console.log(`🔍 Checking status for request ${request.id}: "${request.status}" (normalized: "${status}")`)
-    
+   
     const pendingStatuses = [
       'pending manager approval',
       'pending manager',
@@ -143,11 +143,11 @@ export default function ManagerLeavePermissionRequests() {
       'pending',
       'submitted'
     ]
-    
-    const needsApproval = pendingStatuses.some(pendingStatus => 
+   
+    const needsApproval = pendingStatuses.some(pendingStatus =>
       status.includes(pendingStatus.toLowerCase())
     )
-    
+   
     console.log(`🎯 Request ${request.id} needs approval: ${needsApproval}`)
     return needsApproval
   }
@@ -155,7 +155,7 @@ export default function ManagerLeavePermissionRequests() {
   // Improved function to fetch team lead name with better error handling and caching
   const fetchTeamLeadName = async (teamLeadId: string): Promise<string> => {
     if (!teamLeadId) return "No Team Lead Assigned"
-    
+   
     // Check if we already have this team lead's data in cache
     if (teamLeadCache[teamLeadId]) {
       if (teamLeadCache[teamLeadId].loading) {
@@ -182,7 +182,7 @@ export default function ManagerLeavePermissionRequests() {
       ]
 
       let teamLeadData = null
-      
+     
       for (const endpoint of endpoints) {
         try {
           const response = await fetch(endpoint)
@@ -198,9 +198,9 @@ export default function ManagerLeavePermissionRequests() {
 
       if (teamLeadData) {
         // Try different possible name fields
-        const teamLeadName = teamLeadData.name || 
-                           teamLeadData.employee_name || 
-                           teamLeadData.full_name || 
+        const teamLeadName = teamLeadData.name ||
+                           teamLeadData.employee_name ||
+                           teamLeadData.full_name ||
                            teamLeadData.firstName + " " + teamLeadData.lastName ||
                            teamLeadId
 
@@ -209,7 +209,7 @@ export default function ManagerLeavePermissionRequests() {
           ...prev,
           [teamLeadId]: { name: teamLeadName, loading: false, error: false }
         }))
-        
+       
         return teamLeadName
       } else {
         // If all endpoints fail, cache the error and return ID
@@ -250,7 +250,7 @@ export default function ManagerLeavePermissionRequests() {
   }
 })
 
-    
+   
     setTeamLeadCache(prev => ({
       ...prev,
       ...loadingStates
@@ -267,7 +267,7 @@ export default function ManagerLeavePermissionRequests() {
         ]
 
         let teamLeadData = null
-        
+       
         for (const endpoint of endpoints) {
           try {
             const response = await fetch(endpoint)
@@ -282,33 +282,33 @@ export default function ManagerLeavePermissionRequests() {
         }
 
         if (teamLeadData) {
-          const teamLeadName = teamLeadData.name || 
-                             teamLeadData.employee_name || 
-                             teamLeadData.full_name || 
+          const teamLeadName = teamLeadData.name ||
+                             teamLeadData.employee_name ||
+                             teamLeadData.full_name ||
                              teamLeadData.firstName + " " + teamLeadData.lastName ||
                              teamLeadId
-          
-          return { 
-            id: teamLeadId, 
-            name: teamLeadName, 
-            loading: false, 
-            error: false 
+         
+          return {
+            id: teamLeadId,
+            name: teamLeadName,
+            loading: false,
+            error: false
           }
         } else {
-          return { 
-            id: teamLeadId, 
-            name: teamLeadId, 
-            loading: false, 
-            error: true 
+          return {
+            id: teamLeadId,
+            name: teamLeadId,
+            loading: false,
+            error: true
           }
         }
       } catch (error) {
         console.error(`Error fetching team lead ${teamLeadId}:`, error)
-        return { 
-          id: teamLeadId, 
-          name: teamLeadId, 
-          loading: false, 
-          error: true 
+        return {
+          id: teamLeadId,
+          name: teamLeadId,
+          loading: false,
+          error: true
         }
       }
     })
@@ -336,7 +336,7 @@ export default function ManagerLeavePermissionRequests() {
       console.log("Team lead names fetched:", newTeamLeadCache)
     } catch (error) {
       console.error("Error fetching team lead names in batch:", error)
-      
+     
       // Set error state for all IDs that failed
       const errorStates: TeamLeadCache = {}
      uniqueTeamLeadIds.forEach(id => {
@@ -345,7 +345,7 @@ export default function ManagerLeavePermissionRequests() {
   }
 })
 
-      
+     
       setTeamLeadCache(prev => ({
         ...prev,
         ...errorStates
@@ -375,12 +375,12 @@ export default function ManagerLeavePermissionRequests() {
         return "Loading..."
       }
     }
-    
+   
     // Fallback to employee.team_lead if available
     if (request.employee?.team_lead && request.employee.team_lead !== "No Team Lead Assigned") {
       return request.employee.team_lead
     }
-    
+   
     return "No Team Lead Assigned"
   }
 
@@ -389,14 +389,14 @@ export default function ManagerLeavePermissionRequests() {
     try {
       const start = new Date(startDate)
       const end = new Date(endDate)
-      
+     
       // Reset time to avoid timezone issues
       start.setHours(0, 0, 0, 0)
       end.setHours(0, 0, 0, 0)
-      
+     
       const timeDifference = end.getTime() - start.getTime()
       const daysDifference = Math.ceil(timeDifference / (1000 * 3600 * 24)) + 1 // +1 to include both start and end dates
-      
+     
       return daysDifference > 0 ? daysDifference : 1
     } catch (error) {
       console.error("Error calculating total days:", error)
@@ -460,44 +460,44 @@ export default function ManagerLeavePermissionRequests() {
       setLoading(true);
       setError(null);
       console.log("🔄 Fetching leave requests for manager:", managerId);
-      
+     
       // Build query parameters
       const params = new URLSearchParams({
         managerId: managerId
       });
-      
+     
       // Only add status filter if it's not "All"
       if (statusFilter !== "All") {
         params.append('status', statusFilter);
       }
-      
+     
       const response = await fetch(`/api/team-lead/leave-requests?${params.toString()}`);
-      
+     
       if (response.ok) {
         const data = await response.json();
         console.log("📥 Leave requests response:", data);
-        
+       
         const requests = data.data || data || [];
         console.log("📋 Total leave requests:", requests.length);
-        
+       
         // Debug: Log all request statuses
         requests.forEach((req: LeaveRequest, index: number) => {
           console.log(`📄 Request ${index + 1} (ID: ${req.id}): Status = "${req.status}"`);
         });
-        
+       
         setLeaveRequests(requests);
-        
+       
         // Fetch team lead names for all requests
         await fetchAllTeamLeadNames(requests);
-        
+       
         // Calculate stats with flexible status matching
         const total = requests.length;
         const pending = requests.filter((r: LeaveRequest) => needsManagerApproval(r)).length;
-        const approved = requests.filter((r: LeaveRequest) => 
+        const approved = requests.filter((r: LeaveRequest) =>
           r.status?.toLowerCase().includes('approved')).length;
-        const rejected = requests.filter((r: LeaveRequest) => 
+        const rejected = requests.filter((r: LeaveRequest) =>
           r.status?.toLowerCase().includes('rejected')).length;
-        
+       
         setLeaveStats({ total, pending, approved, rejected });
         console.log("📊 Leave stats:", { total, pending, approved, rejected });
       } else {
@@ -518,44 +518,44 @@ export default function ManagerLeavePermissionRequests() {
     try {
       setError(null);
       console.log("🔄 Fetching permission requests for manager:", managerId);
-      
+     
       // Build query parameters
       const params = new URLSearchParams({
         managerId: managerId
       });
-      
+     
       // Only add status filter if it's not "All"
       if (statusFilter !== "All") {
         params.append('status', statusFilter);
       }
-      
+     
       const response = await fetch(`/api/team-lead/permission-requests?${params.toString()}`);
-      
+     
       if (response.ok) {
         const data = await response.json();
         console.log("📥 Permission requests response:", data);
-        
+       
         const requests = data.data || data || [];
         console.log("📋 Total permission requests:", requests.length);
-        
+       
         // Debug: Log all request statuses
         requests.forEach((req: PermissionRequest, index: number) => {
           console.log(`📄 Request ${index + 1} (ID: ${req.id}): Status = "${req.status}"`);
         });
-        
+       
         setPermissionRequests(requests);
-        
+       
         // Fetch team lead names for all requests
         await fetchAllTeamLeadNames(requests);
-        
+       
         // Calculate stats with flexible status matching
         const total = requests.length;
         const pending = requests.filter((r: PermissionRequest) => needsManagerApproval(r)).length;
-        const approved = requests.filter((r: PermissionRequest) => 
+        const approved = requests.filter((r: PermissionRequest) =>
           r.status?.toLowerCase().includes('approved')).length;
-        const rejected = requests.filter((r: PermissionRequest) => 
+        const rejected = requests.filter((r: PermissionRequest) =>
           r.status?.toLowerCase().includes('rejected')).length;
-        
+       
         setPermissionStats({ total, pending, approved, rejected });
         console.log("📊 Permission stats:", { total, pending, approved, rejected });
       } else {
@@ -641,7 +641,7 @@ export default function ManagerLeavePermissionRequests() {
     setProcessingId(requestId);
     try {
       console.log("❌ Rejecting leave with managerId:", managerId);
-      
+     
       const response = await fetch(`/api/manager/leave-requests`, {
         method: "PATCH",
         headers: {
@@ -683,7 +683,7 @@ export default function ManagerLeavePermissionRequests() {
     setProcessingId(requestId);
     try {
       console.log("✅ Approving permission with managerId:", managerId);
-      
+     
       const response = await fetch(`/api/manager/permission-requests`, {
         method: "PATCH",
         headers: {
@@ -725,7 +725,7 @@ export default function ManagerLeavePermissionRequests() {
     setProcessingId(requestId);
     try {
       console.log("❌ Rejecting permission with managerId:", managerId);
-      
+     
       const response = await fetch(`/api/manager/permission-requests`, {
         method: "PATCH",
         headers: {
@@ -860,12 +860,12 @@ export default function ManagerLeavePermissionRequests() {
       const matchesSearch =
         request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.leave_type.toLowerCase().includes(searchTerm.toLowerCase())
-      
+     
       let matchesStatus = true
       if (statusFilter !== "All") {
         const statusLower = request.status?.toLowerCase() || ""
         const filterLower = statusFilter.toLowerCase()
-        
+       
         if (filterLower.includes('pending')) {
           matchesStatus = needsManagerApproval(request)
         } else if (filterLower.includes('approved')) {
@@ -876,7 +876,7 @@ export default function ManagerLeavePermissionRequests() {
           matchesStatus = statusLower.includes(filterLower)
         }
       }
-      
+     
       return matchesSearch && matchesStatus
     })
   }
@@ -886,12 +886,12 @@ export default function ManagerLeavePermissionRequests() {
       const matchesSearch =
         request.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.permission_type.toLowerCase().includes(searchTerm.toLowerCase())
-      
+     
       let matchesStatus = true
       if (statusFilter !== "All") {
         const statusLower = request.status?.toLowerCase() || ""
         const filterLower = statusFilter.toLowerCase()
-        
+       
         if (filterLower.includes('pending')) {
           matchesStatus = needsManagerApproval(request)
         } else if (filterLower.includes('approved')) {
@@ -902,7 +902,7 @@ export default function ManagerLeavePermissionRequests() {
           matchesStatus = statusLower.includes(filterLower)
         }
       }
-      
+     
       return matchesSearch && matchesStatus
     })
   }
@@ -920,19 +920,19 @@ export default function ManagerLeavePermissionRequests() {
     }
   }
 
-  if (loading && !managerId) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="manager" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading manager data...</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading && !managerId) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="manager" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading manager data...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   if (error) {
     return (
@@ -969,15 +969,15 @@ export default function ManagerLeavePermissionRequests() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={['employee','intern']}>
-    <div className="flex min-h-screen bg-gray-50">
-    <Sidebar userType="manager" className="fixed-sidebar" />
-    <div className="main-content flex-1 flex flex-col">
-      <Header
-        title="Manager Approvals"
-        subtitle="Review and provide final approval for leave and permission requests"
-        userType="manager"
-      />
+   
+      <div className="flex h-screen bg-gray-50">
+      <Sidebar userType="manager" />
+      <div className="flex-1 flex flex-col">
+        <Header
+          title="Manager Portal"
+          subtitle="Review and provide final approval for leave and permission requests"
+          userType="manager"
+        />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
             {/* Manager Info */}
@@ -1003,7 +1003,7 @@ export default function ManagerLeavePermissionRequests() {
               </CardHeader>
             </Card>
 
-        
+       
 
             {/* Tabs for Leave and Permission Requests */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1416,7 +1416,7 @@ export default function ManagerLeavePermissionRequests() {
                             </CardHeader>
                             <CardContent>
                               <div className="space-y-4">
-                              
+                             
 
                                 {/* Permission Details */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
@@ -1564,6 +1564,5 @@ export default function ManagerLeavePermissionRequests() {
         </main>
       </div>
     </div>
-    </ProtectedRoute>
   )
 }

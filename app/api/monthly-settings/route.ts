@@ -3,10 +3,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 
-
-
-
-
 // Use service role key for admin operations
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,72 +37,86 @@ async function ensureMonthlySettingsTable() {
     GRANT ALL ON public.monthly_settings TO service_role;
   `
 
-  const { error } = await supabaseAdmin.rpc('exec_sql', {
-    sql: createTableQuery
-  })
+  try {
+    const { error } = await supabaseAdmin.rpc('exec_sql', {
+      sql: createTableQuery
+    })
 
-  if (error) {
-    console.log('Table setup error:', error.message)
+    if (error) {
+      console.log('Table setup error:', error.message)
+    }
+  } catch (err) {
+    console.log('Table setup failed, table might already exist:', err)
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name) {
-            return request.cookies.get(name)?.value
-          },
-          set() {},
-          remove() {},
-        },
-      }
-    );
+    console.log('🔍 GET Monthly Settings - Starting request')
+    
+    const url = new URL(request.url)
+    const month = url.searchParams.get("month")
+    const year = url.searchParams.get("year")
 
-    const url = new URL(request.url);
-    const month = url.searchParams.get("month");
-    const year = url.searchParams.get("year");
+    console.log('📅 Requested month/year:', { month, year })
 
     if (!month || !year) {
-      return NextResponse.json({ error: "month and year are required" }, { status: 400 });
+      return NextResponse.json({ error: "month and year are required" }, { status: 400 })
     }
 
-    const formattedMonth = month.padStart(2, "0");
-    const startDate = `${year}-${formattedMonth}-01`;
-    const endDate = `${year}-${formattedMonth}-31`;
-const { data, error } = await supabaseAdmin
-  .from("attendance")
-  .select("working_days")
-  .eq("month", parseInt(month))
-  .eq("year", parseInt(year));
+    // Ensure table exists
+    await ensureMonthlySettingsTable()
 
-if (error) {
-  return NextResponse.json({ error: error.message }, { status: 500 });
-}
+    // FIXED: Query the monthly_settings table instead of attendance table
+    const { data: monthlySettings, error } = await supabaseAdmin
+      .from("monthly_settings")
+      .select("*")
+      .eq("month", parseInt(month))
+      .eq("year", parseInt(year))
+      .single()
 
-const totalWorkingDays = data.reduce((sum, row) => sum + (row.working_days || 0), 0);
-return NextResponse.json({ workingDays: totalWorkingDays });
+    if (error) {
+      console.error('❌ Error fetching monthly settings:', error.message)
+      
+      // If no record found, return default value
+      if (error.code === 'PGRST116') {
+        console.log('📊 No monthly settings found, returning default 28 days')
+        return NextResponse.json({ 
+          totalDays: 28,
+          month: parseInt(month),
+          year: parseInt(year),
+          isDefault: true
+        })
+      }
+      
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
+    console.log('✅ Monthly settings found:', monthlySettings)
+    
+    return NextResponse.json({ 
+      totalDays: monthlySettings.total_days,
+      month: monthlySettings.month,
+      year: monthlySettings.year,
+      createdAt: monthlySettings.created_at,
+      updatedAt: monthlySettings.updated_at,
+      isDefault: false
+    })
 
-    return NextResponse.json({ workingDays: totalWorkingDays });
   } catch (err) {
-    console.error("GET Error:", err);
-    return NextResponse.json({ error: "Unexpected server error" }, { status: 500 });
+    console.error("❌ GET Error:", err)
+    return NextResponse.json({ error: "Unexpected server error" }, { status: 500 })
   }
 }
 
-
-
-
 export async function POST(request: NextRequest) {
   try {
+    console.log('📝 POST Monthly Settings - Starting request')
+    
     const body = await request.json()
     const { month, year, totalDays } = body
 
-    console.log('Updating monthly settings:', { month, year, totalDays })
+    console.log('📊 Updating monthly settings:', { month, year, totalDays })
 
     // Validate input
     if (!month || !year || !totalDays) {
@@ -126,6 +136,8 @@ export async function POST(request: NextRequest) {
     // Ensure table exists first
     await ensureMonthlySettingsTable()
 
+    console.log('💾 Upserting monthly settings to database...')
+    
     // Use admin client to bypass RLS
     const { data: settings, error: upsertError } = await supabaseAdmin
       .from('monthly_settings')
@@ -141,31 +153,38 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (upsertError) {
-      console.error('Error upserting monthly settings:', upsertError)
+      console.error('❌ Error upserting monthly settings:', upsertError)
       return NextResponse.json({ error: upsertError.message }, { status: 500 })
     }
 
+    console.log('✅ Monthly settings saved:', settings)
+
     // Update all attendance records for this month/year using admin client
-    const { error: updateError } = await supabaseAdmin
+    console.log('🔄 Updating related attendance records...')
+    const { data: updatedAttendance, error: updateError } = await supabaseAdmin
       .from('attendance')
       .update({ total_days: totalDays })
       .eq('month', month)
       .eq('year', year)
+      .select('id')
 
     if (updateError) {
-      console.error('Error updating attendance records:', updateError)
+      console.error('⚠️ Warning: Error updating attendance records:', updateError)
       // Don't fail the request, just log the error
+    } else {
+      console.log(`✅ Updated ${updatedAttendance?.length || 0} attendance records`)
     }
 
     return NextResponse.json({
       success: true,
       month,
       year,
-      totalDays
+      totalDays,
+      attendanceRecordsUpdated: updatedAttendance?.length || 0
     })
 
   } catch (error) {
-    console.error('API Error:', error)
+    console.error('❌ POST API Error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

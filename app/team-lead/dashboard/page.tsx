@@ -366,33 +366,37 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
   }
 
   // Show loading state while fetching user data
-  if (loading) {
-    return (
-      <div className="flex min-h-screen overflow-auto bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex min-h-screen overflow-auto bg-gray-50">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="text-center">
+  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+  //           <p className="mt-4 text-gray-600">Loading...</p>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   // Get display name from employee data or fallback to email
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
        <ProtectedRoute allowedRoles={['team-lead']}>
-<div className="flex h-screen bg-gray-50">
-      <Sidebar userType="team-lead" />
-      <div className="flex-1 flex flex-col">
-        <Header title="Teamlead Portal" subtitle={`Welcome back, ${displayName}`} userType="team-lead" />
+<div className="flex h-screen overflow-hidden">
+         <Sidebar userType="team-lead" />
+         <div className="flex-1 flex flex-col overflow-auto">
+           <Header
+             title="Team Lead Portal"
+             subtitle={`Welcome, ${displayName}`}
+             userType="team-lead"
+           />
 
 
         {/* Enhanced Header Cards */}
-        <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="p-6 bg-gradient-to-r ">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Check-in Time Card */}
             <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-emerald-500">

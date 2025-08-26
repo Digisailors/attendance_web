@@ -402,19 +402,19 @@ const calculateExperience = (joinDate: string | null): string => {
   const displayName = teamLeadData?.name || user?.email?.split("@")[0] || "Team Lead"
   const displayDesignation = teamLeadData?.designation || teamLeadInfo?.designation || "Team Lead"
 
-  if (loading && !teamLeadId) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading team lead data...</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading && !teamLeadId) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading team lead data...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   return (
     <ProtectedRoute allowedRoles={['team-lead']}>         

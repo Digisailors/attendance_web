@@ -15,7 +15,7 @@ import {
   UserPlus,
   CheckCircle,
   BarChart3,
-  Award,
+ Timer,
   Building2,
   Menu,
   X
@@ -95,8 +95,8 @@ export function Sidebar({ userType, className }: SidebarProps) {
           { icon: Home, label: 'Dashboard', href: '/employee/dashboard' },
           { icon: Calendar, label: 'Leave Application', href: '/employee/leave' },
           { icon: FileText, label: 'Permission Request', href: '/employee/permission' },
+          { icon: Timer, label: 'Overtime', href: '/employee/Overtime' },
           { icon: Settings, label: 'History', href: '/employee/history' },
-          { icon: Calendar, label: 'Overtime', href: '/employee/Overtime' },
         ]
       case 'team-lead':
         return [
@@ -104,15 +104,15 @@ export function Sidebar({ userType, className }: SidebarProps) {
           { icon: Users, label: 'Add Team Members', href: '/team-lead/team' },
           { icon: BriefcaseBusiness, label: 'Work Submission', href: '/team-lead/work-submission' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/team-lead/lap' },
-          { icon: BarChart3, label: 'Leave', href: '/team-lead/leave' },
-          { icon: Settings, label: 'Permission', href: '/team-lead/permission' },
+          { icon: Calendar, label: 'Leave', href: '/team-lead/leave' },
+          { icon: FileText, label: 'Permission', href: '/team-lead/permission' },
+          { icon: Timer, label: 'Overtime', href: '/team-lead/Overtime' },
           { icon: Settings, label: 'History', href: '/team-lead/history' },
-          { icon: Calendar, label: 'Overtime', href: '/team-lead/Overtime' },
         ]
       case 'manager':
         return [
           { icon: Home, label: 'Dashboard', href: '/manager/dashboard' },
-          { icon: Home, label: 'Final Approvals', href: '/manager/finalapprovel' },
+          { icon: BriefcaseBusiness, label: 'Final Approvals', href: '/manager/finalapprovel' },
           { icon: CheckCircle, label: 'Leave and Permission', href: '/manager/lap' },
         ]
       default:

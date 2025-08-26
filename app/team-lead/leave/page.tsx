@@ -176,19 +176,19 @@ export default function LeaveApplicationTeamLead() {
 
   const displayName = leadData?.name || user?.email?.split("@")[0] || "Team Lead";
 
-  if (loading) {
-    return (
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex flex-col overflow-auto">
-          <Header title="Team Lead Portal" subtitle="Loading..." userType="team-lead" />
-          <div className="flex-1 flex items-center justify-center p-4">
-            <div className="text-lg">Loading...</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen overflow-hidden">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex flex-col overflow-auto">
+  //         <Header title="Team Lead Portal" subtitle="Loading..." userType="team-lead" />
+  //         <div className="flex-1 flex items-center justify-center p-4">
+  //           <div className="text-lg">Loading...</div>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <ProtectedRoute allowedRoles={['team-lead']}>

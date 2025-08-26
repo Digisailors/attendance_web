@@ -195,14 +195,9 @@ export default function PermissionRequestPage() {
   return (
     <ProtectedRoute allowedRoles={['employee', 'intern']}>
     <div className="flex h-screen bg-gray-50">
-      {/* Fixed Sidebar */}
-      <div className="fixed left-0 top-0 h-full z-40">
-        <Sidebar userType="employee" />
-      </div>
-      
-      {/* Main Content Area with left margin for sidebar */}
-      <div className="flex-1 flex flex-col ml-64">
-        <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
+         <Sidebar userType="employee" />
+        <div className="flex-1 flex flex-col">
+          <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
         
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto">

@@ -182,43 +182,34 @@ export default function LeaveApplicationPage() {
 
   const displayName = employeeData?.name || user?.email?.split('@')[0] || "Employee";
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gray-50">
-        {/* Fixed Sidebar */}
-        <div className="fixed left-0 top-0 h-full z-10">
-          <Sidebar userType="employee" />
-        </div>
-        {/* Main content with left margin to account for fixed sidebar */}
-        <div className="flex-1 ml-64"> {/* Adjust ml-64 based on your sidebar width */}
-          <Header
-            title="Employee Portal"
-            subtitle="Loading..."
-            userType="employee"
-          />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-lg">Loading...</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex min-h-screen bg-gray-50">
+  //       {/* Fixed Sidebar */}
+  //       <div className="fixed left-0 top-0 h-full z-10">
+  //         <Sidebar userType="employee" />
+  //       </div>
+  //       {/* Main content with left margin to account for fixed sidebar */}
+  //       <div className="flex-1 ml-64"> {/* Adjust ml-64 based on your sidebar width */}
+  //         <Header
+  //           title="Employee Portal"
+  //           subtitle="Loading..."
+  //           userType="employee"
+  //         />
+  //         <div className="flex-1 flex items-center justify-center">
+  //           <div className="text-lg">Loading...</div>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <ProtectedRoute allowedRoles={['employee','intern']}>
-    <div className="flex min-h-screen bg-gray-50">
-      {/* Fixed Sidebar */}
-      <div className="fixed left-0 top-0 h-full z-10">
-        <Sidebar userType="employee" />
-      </div>
-      
-      {/* Main content area with left margin and independent scroll */}
-      <div className="flex-1 ml-64 flex flex-col"> {/* Adjust ml-64 based on your sidebar width */}
-        <Header
-          title="Employee Portal"
-          subtitle={`Welcome back, ${displayName}`} 
-          userType="employee"
-        />
+  <div className="flex h-screen bg-gray-50">
+         <Sidebar userType="employee" />
+        <div className="flex-1 flex flex-col">
+          <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
         
         {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto">

@@ -456,19 +456,19 @@ export default function EmployeeAttendanceDetail() {
     return months[parseInt(month) - 1] || 'Unknown';
   };
 
-  if (loading) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="admin" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading employee data...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="admin" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading employee data...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   if (error || !employeeData) {
     return (

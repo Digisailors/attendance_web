@@ -689,19 +689,19 @@ export default function TeamLeaderDashboard() {
   const currentSubmissions = activeTab === 'work' ? filteredWorkSubmissions : filteredOTSubmissions;
   const currentStats = activeTab === 'work' ? stats.work : stats.ot;
 
-  if (loading) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center ml-64">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading dashboard...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex items-center justify-center ml-64">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading dashboard...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -1234,7 +1234,7 @@ const OTSubmissionCard: React.FC<{
       </div>
 
       {/* Actions - Show buttons for pending status */}
-      {submission.status === 'pending' && (
+      {submission.status === 'Pending' && (
         <div className="px-4 pb-4">
           <div className="flex space-x-2">
             <Button

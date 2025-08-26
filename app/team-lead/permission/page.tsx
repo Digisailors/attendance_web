@@ -174,34 +174,32 @@ export default function TeamLeadPermissionPage() {
 
   const displayName = leadData?.name || user?.email?.split("@")[0] || "Team Lead";
 
-  if (loading) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <div className="fixed left-0 top-0 h-full z-10">
-          <Sidebar userType="team-lead" />
-        </div>
-        <div className="flex-1 ml-64 flex flex-col">
-          <Header title="Team Lead Portal" subtitle="Loading..." userType="team-lead" />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-lg">Loading...</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <div className="fixed left-0 top-0 h-full z-10">
+  //         <Sidebar userType="team-lead" />
+  //       </div>
+  //       <div className="flex-1 ml-64 flex flex-col">
+  //         <Header title="Team Lead Portal" subtitle="Loading..." userType="team-lead" />
+  //         <div className="flex-1 flex items-center justify-center">
+  //           <div className="text-lg">Loading...</div>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <ProtectedRoute allowedRoles={['team-lead']}>
-    <div className="flex bg-gray-50">
-      {/* Fixed Sidebar */}
-      <div className="fixed left-0 top-0 h-full z-10">
-        <Sidebar userType="team-lead" />
-      </div>
-      
-      {/* Main Content - Scrollable */}
-      <div className="flex-1 ml-64 min-h-screen">
-        <div className="flex flex-col">
-          <Header title="Team Lead Portal" subtitle={`Welcome, ${displayName}`} userType="team-lead" />
+<div className="flex h-screen overflow-hidden">
+         <Sidebar userType="team-lead" />
+         <div className="flex-1 flex flex-col overflow-auto">
+           <Header
+             title="Team Lead Portal"
+             subtitle={`Welcome, ${displayName}`}
+             userType="team-lead"
+           />
 
           <div className="w-full max-w-[900px] mx-auto p-6">
             <h1 className="text-2xl font-bold mb-1">Permission Request</h1>
@@ -293,7 +291,7 @@ export default function TeamLeadPermissionPage() {
           </div>
         </div>
       </div>
-    </div>
+  
   </ProtectedRoute>
   );
 }

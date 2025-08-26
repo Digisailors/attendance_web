@@ -239,7 +239,7 @@ export default function AttendanceOverview() {
   const router = useRouter()
 
   // FIXED: Function to fetch overtime hours for each employee
-  const fetchOvertimeHours = async (employees: DashboardEmployee[]) => {
+  const fetchOvertimeHours = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
     try {
       console.log("🕐 Fetching overtime hours for employees:", employees.length)
       
@@ -276,44 +276,50 @@ export default function AttendanceOverview() {
               
               return {
                 ...employee,
-                otHours: roundedOtHours
+                otHours: roundedOtHours,
+                totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
               }
             } else {
               console.error(`❌ Failed to fetch overtime hours for ${employee.name}:`, response.status)
               return {
                 ...employee,
-                otHours: 0
+                otHours: 0,
+                totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
               }
             }
           } catch (err) {
             console.error(`❌ Error fetching overtime hours for employee ${employee.name}:`, err)
             return {
               ...employee,
-              otHours: 0
+              otHours: 0,
+              totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
             }
           }
         })
       )
 
-      console.log("✅ Updated employees with overtime hours:", updatedEmployees.map(emp => ({
+      console.log("✅ Updated employees with overtime hours and correct totalDays:", updatedEmployees.map(emp => ({
         name: emp.name,
         id: emp.id,
-        otHours: emp.otHours
+        otHours: emp.otHours,
+        totalDays: emp.totalDays
       })))
       return updatedEmployees
     } catch (err) {
       console.error("❌ Error in fetchOvertimeHours:", err)
       return employees.map(emp => ({
         ...emp,
-        otHours: 0
+        otHours: 0,
+        totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
       }))
     }
   }
 
-  // Fixed function to fetch attendance summary for each employee (removed permissions and leaves)
-  const fetchAttendanceSummary = async (employees: DashboardEmployee[]) => {
+  // FIXED: Updated fetchAttendanceSummary to properly use and maintain totalDays
+  const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
     try {
-      console.log("Fetching attendance summary for employees:", employees.length)
+      console.log("📊 Fetching attendance summary for employees:", employees.length)
+      console.log("📊 Using totalDaysToUse:", totalDaysToUse)
       
       const updatedEmployees = await Promise.all(
         employees.map(async (employee) => {
@@ -324,47 +330,61 @@ export default function AttendanceOverview() {
             
             if (response.ok) {
               const summaryData = await response.json()
-              console.log(`Attendance summary for ${employee.name}:`, summaryData)
+              console.log(`📊 Attendance summary for ${employee.name}:`, summaryData)
               
               return {
                 ...employee,
                 workingDays: summaryData.working_days || 0,
                 missedDays: summaryData.missed_days || 0,
-                totalDays: summaryData.total_days || currentMonthTotalDays
+                // FIXED: Always use the totalDaysToUse parameter
+                totalDays: totalDaysToUse
               }
             } else {
-              console.error(`Failed to fetch attendance summary for ${employee.name}:`, response.status)
+              console.error(`❌ Failed to fetch attendance summary for ${employee.name}:`, response.status)
               return {
                 ...employee,
                 workingDays: 0,
-                missedDays: currentMonthTotalDays
+                missedDays: totalDaysToUse,
+                // FIXED: Always use the totalDaysToUse parameter
+                totalDays: totalDaysToUse
               }
             }
           } catch (err) {
-            console.error(`Error fetching attendance summary for employee ${employee.name}:`, err)
+            console.error(`❌ Error fetching attendance summary for employee ${employee.name}:`, err)
             return {
               ...employee,
               workingDays: 0,
-              missedDays: currentMonthTotalDays
+              missedDays: totalDaysToUse,
+              // FIXED: Always use the totalDaysToUse parameter
+              totalDays: totalDaysToUse
             }
           }
         })
       )
 
-      console.log("Updated employees with attendance summary:", updatedEmployees)
+      console.log("✅ Updated employees with attendance summary and correct totalDays:", 
+        updatedEmployees.map(emp => ({
+          name: emp.name,
+          totalDays: emp.totalDays,
+          workingDays: emp.workingDays,
+          missedDays: emp.missedDays
+        }))
+      )
       return updatedEmployees
     } catch (err) {
-      console.error("Error in fetchAttendanceSummary:", err)
+      console.error("❌ Error in fetchAttendanceSummary:", err)
       return employees.map(emp => ({
         ...emp,
         workingDays: 0,
-        missedDays: currentMonthTotalDays
+        missedDays: totalDaysToUse,
+        // FIXED: Always use the totalDaysToUse parameter
+        totalDays: totalDaysToUse
       }))
     }
   }
 
   // Fixed function to fetch leave and permission counts for all employees
-  const fetchRequestCounts = async (employees: DashboardEmployee[]) => {
+  const fetchRequestCounts = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
     try {
       console.log("Fetching request counts for employees:", employees.length)
       
@@ -405,7 +425,8 @@ export default function AttendanceOverview() {
               permissionRequestCount: permissionCount,
               // Add these for AddEmployeeModal compatibility
               leaves: leaveCount,
-              permissions: permissionCount
+              permissions: permissionCount,
+              totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
             }
           } catch (err) {
             console.error(`Error fetching counts for employee ${employee.name}:`, err)
@@ -414,7 +435,8 @@ export default function AttendanceOverview() {
               leaveRequestCount: 0,
               permissionRequestCount: 0,
               leaves: 0,
-              permissions: 0
+              permissions: 0,
+              totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
             }
           }
         })
@@ -429,26 +451,41 @@ export default function AttendanceOverview() {
         leaveRequestCount: 0,
         permissionRequestCount: 0,
         leaves: 0,
-        permissions: 0
+        permissions: 0,
+        totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
       }))
     }
   }
 
-  // Fetch current month's total days setting
+  // FIXED: Improved fetchMonthTotalDays with better error handling
   const fetchMonthTotalDays = async () => {
     try {
+      console.log(`🗓️ Fetching total days for ${selectedMonth}/${selectedYear}`)
       const response = await fetch(`/api/monthly-settings?month=${selectedMonth}&year=${selectedYear}`)
       if (response.ok) {
         const data = await response.json()
-        setCurrentMonthTotalDays(data.totalDays || 28)
-        setNewTotalDays(data.totalDays || 28)
+        const totalDays = data.totalDays || 28
+        console.log(`✅ Monthly total days fetched: ${totalDays}`)
+        setCurrentMonthTotalDays(totalDays)
+        setNewTotalDays(totalDays)
+        return totalDays
+      } else {
+        console.error(`❌ Failed to fetch monthly settings:`, response.status)
+        const defaultDays = 28
+        setCurrentMonthTotalDays(defaultDays)
+        setNewTotalDays(defaultDays)
+        return defaultDays
       }
     } catch (err) {
-      console.error("Error fetching monthly settings:", err)
+      console.error("❌ Error fetching monthly settings:", err)
+      const defaultDays = 28
+      setCurrentMonthTotalDays(defaultDays)
+      setNewTotalDays(defaultDays)
+      return defaultDays
     }
   }
 
-  // Update total days for the current month
+  // FIXED: Update total days and refresh employee data immediately
   const updateMonthTotalDays = async () => {
     if (newTotalDays < 1 || newTotalDays > 31) {
       toast({
@@ -484,10 +521,14 @@ export default function AttendanceOverview() {
         variant: "default",
       })
 
+      // FIXED: Update the current month total days immediately
+      console.log(`🔄 Updating currentMonthTotalDays from ${currentMonthTotalDays} to ${newTotalDays}`)
       setCurrentMonthTotalDays(newTotalDays)
       setTotalDaysDialogOpen(false)
-      // Refresh the employee list to reflect the changes
-      await fetchEmployees(currentPage)
+      
+      // FIXED: Immediately refresh employee data with new total days
+      console.log(`🔄 Refreshing employee data with new total days: ${newTotalDays}`)
+      await fetchEmployees(currentPage, false, searchTerm, newTotalDays)
     } catch (err) {
       console.error("Error updating total days:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to update total days"
@@ -501,11 +542,15 @@ export default function AttendanceOverview() {
     }
   }
 
-  // FIXED: Optimized fetch employees function with better performance
-  const fetchEmployees = async (page = 1, resetPagination = false, searchQuery = searchTerm) => {
+  // FIXED: Updated fetchEmployees to accept totalDays parameter and use it consistently
+  const fetchEmployees = async (page = 1, resetPagination = false, searchQuery = searchTerm, totalDaysOverride?: number) => {
     try {
       setLoading(true)
       setError(null)
+      
+      // Use the override value if provided, otherwise use current state
+      const totalDaysToUse = totalDaysOverride !== undefined ? totalDaysOverride : currentMonthTotalDays
+      console.log(`🔢 Using totalDays: ${totalDaysToUse} (override: ${totalDaysOverride}, current: ${currentMonthTotalDays})`)
       
       // ALWAYS reset to page 1 when searching or filtering
       const finalPage = (searchQuery.trim() || selectedMode !== 'All Modes' || selectedStatus !== 'All Status') ? 1 : (resetPagination ? 1 : page)
@@ -518,7 +563,8 @@ export default function AttendanceOverview() {
         month: selectedMonth,
         year: selectedYear,
         page: finalPage,
-        resetPagination
+        resetPagination,
+        totalDaysToUse
       })
       
       // Build query parameters
@@ -587,21 +633,22 @@ export default function AttendanceOverview() {
         setPagination(data.pagination)
         setCurrentPage(finalPage)
         
-        // First fetch attendance summary for all employees
-        console.log(`📊 Fetching attendance data...`)
-        const employeesWithAttendance = await fetchAttendanceSummary(data.employees)
+        // FIXED: Pass totalDaysToUse to all data fetching functions
+        console.log(`📊 Fetching attendance data with totalDays: ${totalDaysToUse}...`)
+        const employeesWithAttendance = await fetchAttendanceSummary(data.employees, totalDaysToUse)
         
-        // FIXED: Then fetch overtime hours with proper logging
+        // Then fetch overtime hours
         console.log(`⏰ Fetching overtime hours for all employees...`)
-        const employeesWithOT = await fetchOvertimeHours(employeesWithAttendance)
+        const employeesWithOT = await fetchOvertimeHours(employeesWithAttendance, totalDaysToUse)
         
         // Finally fetch request counts
         console.log(`📋 Fetching request counts...`)
-        const employeesWithCounts = await fetchRequestCounts(employeesWithOT)
+        const employeesWithCounts = await fetchRequestCounts(employeesWithOT, totalDaysToUse)
         
-        console.log(`✅ Final employee data with OT hours:`, employeesWithCounts.map(emp => ({
+        console.log(`✅ Final employee data with correct totalDays:`, employeesWithCounts.map(emp => ({
           name: emp.name,
           id: emp.id,
+          totalDays: emp.totalDays, // Should now consistently show the correct value
           otHours: emp.otHours,
           workingDays: emp.workingDays
         })))
@@ -667,7 +714,7 @@ export default function AttendanceOverview() {
         setSearchTimeoutId(timeoutId)
       }
     },
-    [selectedMonth, selectedYear, selectedMode, selectedStatus, searchTimeoutId]
+    [selectedMonth, selectedYear, selectedMode, selectedStatus, searchTimeoutId, currentMonthTotalDays]
   )
 
   // FIXED: Enhanced search input handler with instant response
@@ -684,10 +731,17 @@ export default function AttendanceOverview() {
     fetchEmployees(1, true)
   }
 
+  // FIXED: Updated useEffect to fetch total days first, then employees with correct totalDays
   useEffect(() => {
-    console.log("🔄 Month/Year changed - refetching data")
-    fetchEmployees(1, true)
-    fetchMonthTotalDays()
+    console.log("🔄 Month/Year changed - fetching total days first, then employees")
+    const loadData = async () => {
+      // First fetch the total days for this month
+      const totalDays = await fetchMonthTotalDays()
+      console.log(`📊 Total days loaded: ${totalDays}, now fetching employees with this value`)
+      // Then fetch employees with the correct total days
+      await fetchEmployees(1, true, "", totalDays) // Pass totalDays as override
+    }
+    loadData()
     // eslint-disable-next-line
   }, [selectedMonth, selectedYear])
 
@@ -981,7 +1035,8 @@ export default function AttendanceOverview() {
       id: emp.id,
       name: emp.name,
       workingDays: emp.workingDays,
-      otHours: emp.otHours, // This should now show correct values
+      totalDays: emp.totalDays, // Add totalDays to debug
+      otHours: emp.otHours,
       missedDays: emp.missedDays,
       leaveRequestCount: emp.leaveRequestCount,
       permissionRequestCount: emp.permissionRequestCount
@@ -1003,19 +1058,19 @@ export default function AttendanceOverview() {
     }
   }, [])
 
-  if (loading && !isSearching) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="admin" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading employees...</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading && !isSearching) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="admin" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading employees...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   return (
     <ProtectedRoute allowedRoles={['admin']}>
@@ -1299,7 +1354,7 @@ export default function AttendanceOverview() {
                                 <Badge className={getWorkModeBadge(employee.workMode)}>{employee.workMode}</Badge>
                               </TableCell>
                               <TableCell className="text-center font-medium">
-                                {employee.totalDays || currentMonthTotalDays} Days
+                                {employee.totalDays} Days
                               </TableCell>
                               <TableCell className="text-center font-medium text-green-600">
                                 {employee.workingDays} Days

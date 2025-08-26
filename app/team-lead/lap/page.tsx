@@ -636,33 +636,33 @@ const rejected = processedRequests.filter((r: LeaveRequest) => r.status === "Rej
     })
   }
 
-  if (loading && !teamLeadId) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>Loading team lead data...</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading && !teamLeadId) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="flex items-center space-x-2">
+  //           <Loader2 className="w-6 h-6 animate-spin" />
+  //           <span>Loading team lead data...</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
-  if (loading) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading requests...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <Sidebar userType="team-lead" />
+  //       <div className="flex-1 flex items-center justify-center">
+  //         <div className="text-center">
+  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+  //           <p className="mt-4 text-gray-600">Loading requests...</p>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   // Get duration statistics for current filtered requests
   const currentLeaveStats = getDurationStatistics(filterLeaveRequests(leaveRequests))
@@ -670,14 +670,14 @@ const rejected = processedRequests.filter((r: LeaveRequest) => r.status === "Rej
 
   return (
     <ProtectedRoute allowedRoles={['team-lead']}>
-    <div className="flex min-h-screen overflow-auto bg-gray-50">
-      <Sidebar userType="team-lead" />
-      <div className="flex-1 flex flex-col">
-        <Header
-          title="Leave & Permission Requests"
+  <div className="flex h-screen overflow-hidden">
+         <Sidebar userType="team-lead" />
+         <div className="flex-1 flex flex-col overflow-auto">
+           <Header
+             title="Leave & Permission Requests"
           subtitle="Review and manage leave and permission requests from your team members"
           userType="team-lead"
-        />
+           />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-7xl mx-auto space-y-6">
             {/* Team Lead Info */}
