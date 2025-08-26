@@ -1,5 +1,5 @@
 "use client"
-import ProtectedRoute from '@/components/ProtectedRoute'
+
 import { useState, useEffect } from "react"
 import { Play, Square, Clock, Calendar, CheckCircle, Timer, Upload, X, Image as ImageIcon, Menu, User, LogOut, Home, Clock as ClockIcon, FileText, Settings } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -376,111 +376,12 @@ const handleOTEnd = async () => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
-    <ProtectedRoute allowedRoles={['employee','intern']}>
-    <div className="flex h-screen bg-gray-50">
-       <Sidebar userType="employee" />
-      <div className="flex-1 flex flex-col">
-        <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
+     <div className="flex h-screen bg-gray-50 overflow-hidden">
+           <Sidebar userType="employee" />
+          <div className="flex-1 flex flex-col min-w-0">
+            <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
 
-        {/* Enhanced Header Cards */}
-        <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* OT Start Time Card */}
-            <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-emerald-500">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <div className="p-2 bg-emerald-100 rounded-lg">
-                      <Play className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Start Time</h3>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {otStartTime ? formatTime(otStartTime) : "Not Started"}
-                  </p>
-                  {otStartTime && (
-                    <p className="text-xs text-emerald-600 mt-1 font-medium">
-                      ✓ OT started successfully
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* OT End Time Card */}
-            <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-rose-500">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <div className="p-2 bg-rose-100 rounded-lg">
-                      <Square className="w-5 h-5 text-rose-600" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT End Time</h3>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {otEndTime ? formatTime(otEndTime) : "Not Ended"}
-                  </p>
-                  {otEndTime && (
-                    <p className="text-xs text-rose-600 mt-1 font-medium">
-                      ✓ OT ended successfully
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Status Card */}
-            <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-blue-500">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <CheckCircle className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Status</h3>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {isOTEnded ? "Completed" : isOTStarted ? "In Progress" : "Not Started"}
-                  </p>
-                  <div className="flex items-center mt-2">
-                    <div className={`w-2 h-2 rounded-full mr-2 ${
-                      isOTEnded ? 'bg-red-500' : isOTStarted ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-                    }`}></div>
-                    <p className={`text-xs font-medium ${
-                      isOTEnded ? 'text-red-600' : isOTStarted ? 'text-green-600' : 'text-gray-500'
-                    }`}>
-                      {isOTEnded ? 'OT session completed' : isOTStarted ? 'Currently working OT' : 'Ready to start OT'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* OT Hours Card */}
-            <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-amber-500">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <div className="p-2 bg-amber-100 rounded-lg">
-                      <Timer className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Hours</h3>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {getCurrentOTHours().toFixed(2)} hours
-                  </p>
-                  <p className={`text-xs mt-1 font-medium ${
-                    getCurrentOTHours() > 0 ? 'text-amber-600' : 'text-gray-500'
-                  }`}>
-                    {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT hours` : 'No OT hours yet'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Success Notifications */}
+        {/* Success Notifications - Fixed Position */}
         {showOTStartNotification && (
           <div className="fixed top-20 right-6 z-50 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 animate-pulse">
             <div className="w-2 h-2 bg-white rounded-full"></div>
@@ -502,361 +403,280 @@ const handleOTEnd = async () => {
           </div>
         )}
 
-        {/* WARNING: Only show if work is submitted but images are missing (after refresh) */}
-        {isOTStarted && !isOTEnded && isWorkSubmitted && uploadedImages.length === 0 && (
-          <div className="mx-6 mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-              <p className="text-red-800 text-sm font-medium">
-                ⚠️ Images missing! Page refresh pannirikingala? Please re-upload your 2 work evidence images to end OT.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* WARNING: Only show if work is submitted but less than 2 images */}
-        {isOTStarted && !isOTEnded && isWorkSubmitted && uploadedImages.length > 0 && uploadedImages.length < 2 && (
-          <div className="mx-6 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-              <p className="text-amber-800 text-sm font-medium">
-                Upload {2 - uploadedImages.length} more image(s) to complete your OT submission.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Main Content */}
-        <div className="flex items-center justify-center min-h-[calc(100vh-300px)] px-4">
-          <div className="w-full max-w-2xl">
-            <div className="bg-white rounded-lg shadow-sm border">
-              {/* Post-OT End Summary View */}
-              {isOTEnded ? (
-                <div className="p-6 space-y-6">
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <CheckCircle className="w-8 h-8 text-green-600" />
+        {/* Main Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Enhanced Header Cards */}
+          <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* OT Start Time Card */}
+              <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-emerald-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="p-2 bg-emerald-100 rounded-lg">
+                        <Play className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Start Time</h3>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900">OT Session Completed</h2>
-                    <p className="text-gray-600">Your overtime request has been submitted successfully</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {otStartTime ? formatTime(otStartTime) : "Not Started"}
+                    </p>
+                    {otStartTime && (
+                      <p className="text-xs text-emerald-600 mt-1 font-medium">
+                        ✓ OT started successfully
+                      </p>
+                    )}
                   </div>
+                </div>
+              </div>
 
-                  {/* OT Summary */}
-                  <div className="bg-gray-50 rounded-lg p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="text-sm font-medium text-gray-600">Start Time</div>
-                        <div className="text-lg font-semibold text-gray-900">{formatTime(otStartTime!)}</div>
+              {/* OT End Time Card */}
+              <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-rose-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="p-2 bg-rose-100 rounded-lg">
+                        <Square className="w-5 h-5 text-rose-600" />
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-600">End Time</div>
-                        <div className="text-lg font-semibold text-gray-900">{formatTime(otEndTime!)}</div>
+                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT End Time</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {otEndTime ? formatTime(otEndTime) : "Not Ended"}
+                    </p>
+                    {otEndTime && (
+                      <p className="text-xs text-rose-600 mt-1 font-medium">
+                        ✓ OT ended successfully
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Card */}
+              <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-blue-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <CheckCircle className="w-5 h-5 text-blue-600" />
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-600">Total Hours</div>
-                        <div className="text-lg font-semibold text-gray-900">{calculateOTHours()} hours</div>
+                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Status</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {isOTEnded ? "Completed" : isOTStarted ? "In Progress" : "Not Started"}
+                    </p>
+                    <div className="flex items-center mt-2">
+                      <div className={`w-2 h-2 rounded-full mr-2 ${
+                        isOTEnded ? 'bg-red-500' : isOTStarted ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                      }`}></div>
+                      <p className={`text-xs font-medium ${
+                        isOTEnded ? 'text-red-600' : isOTStarted ? 'text-green-600' : 'text-gray-500'
+                      }`}>
+                        {isOTEnded ? 'OT session completed' : isOTStarted ? 'Currently working OT' : 'Ready to start OT'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* OT Hours Card */}
+              <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 p-6 border-l-4 border-amber-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="p-2 bg-amber-100 rounded-lg">
+                        <Timer className="w-5 h-5 text-amber-600" />
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-600">Status</div>
-                        <div className="text-lg font-semibold text-amber-600">Pending Approval</div>
+                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Hours</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {getCurrentOTHours().toFixed(2)} hours
+                    </p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      getCurrentOTHours() > 0 ? 'text-amber-600' : 'text-gray-500'
+                    }`}>
+                      {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT hours` : 'No OT hours yet'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* WARNING: Only show if work is submitted but images are missing (after refresh) */}
+          {isOTStarted && !isOTEnded && isWorkSubmitted && uploadedImages.length === 0 && (
+            <div className="mx-6 mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <p className="text-red-800 text-sm font-medium">
+                  ⚠️ Images missing! Page refresh pannirikingala? Please re-upload your 2 work evidence images to end OT.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* WARNING: Only show if work is submitted but less than 2 images */}
+          {isOTStarted && !isOTEnded && isWorkSubmitted && uploadedImages.length > 0 && uploadedImages.length < 2 && (
+            <div className="mx-6 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                <p className="text-amber-800 text-sm font-medium">
+                  Upload {2 - uploadedImages.length} more image(s) to complete your OT submission.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Main Content */}
+          <div className="px-6 py-6">
+            <div className="max-w-2xl mx-auto">
+              <div className="bg-white rounded-lg shadow-sm border">
+                {/* Post-OT End Summary View */}
+                {isOTEnded ? (
+                  <div className="p-6 space-y-6">
+                    <div className="text-center mb-6">
+                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle className="w-8 h-8 text-green-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900">OT Session Completed</h2>
+                      <p className="text-gray-600">Your overtime request has been submitted successfully</p>
+                    </div>
+
+                    {/* OT Summary */}
+                    <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Start Time</div>
+                          <div className="text-lg font-semibold text-gray-900">{formatTime(otStartTime!)}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">End Time</div>
+                          <div className="text-lg font-semibold text-gray-900">{formatTime(otEndTime!)}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Total Hours</div>
+                          <div className="text-lg font-semibold text-gray-900">{calculateOTHours()} hours</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Status</div>
+                          <div className="text-lg font-semibold text-amber-600">Pending Approval</div>
+                        </div>
+                      </div>
+                      
+                      <div className="border-t pt-4">
+                        <div className="text-sm font-medium text-gray-600 mb-2">Work Details</div>
+                        <div className="text-gray-900 mb-2"><strong>Type:</strong> {workType}</div>
+                        <div className="text-gray-900 mb-3"><strong>Description:</strong> {workDescription}</div>
+                        
+                        {previewImages.length > 0 && (
+                          <div>
+                            <div className="text-sm font-medium text-gray-600 mb-2">Uploaded Evidence</div>
+                            <div className="flex space-x-2">
+                              {previewImages.map((preview, index) => (
+                                <img 
+                                  key={index}
+                                  src={preview} 
+                                  alt={`Work evidence ${index + 1}`}
+                                  className="w-20 h-20 object-cover rounded-md border"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="border-t pt-4">
-                      <div className="text-sm font-medium text-gray-600 mb-2">Work Details</div>
-                      <div className="text-gray-900 mb-2"><strong>Type:</strong> {workType}</div>
-                      <div className="text-gray-900 mb-3"><strong>Description:</strong> {workDescription}</div>
-                      
-                      {previewImages.length > 0 && (
-                        <div>
-                          <div className="text-sm font-medium text-gray-600 mb-2">Uploaded Evidence</div>
-                          <div className="flex space-x-2">
-                            {previewImages.map((preview, index) => (
-                              <img 
-                                key={index}
-                                src={preview} 
-                                alt={`Work evidence ${index + 1}`}
-                                className="w-20 h-20 object-cover rounded-md border"
-                              />
-                            ))}
+
+                    <button
+                      onClick={handleStartNewOTSession}
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                    >
+                      Start New OT Session
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stage 1: OT Start */}
+                    <div className="p-6 border-b">
+                      <div className="flex items-center space-x-3 mb-6">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center">
+                            <Play className="w-4 h-4 text-green-600" />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-4 rounded-full bg-green-500"></div>
+                            <span className="text-lg font-medium text-gray-900">OT Start</span>
+                          </div>
+                        </div>
+                      </div>
+                      {!isOTStarted ? (
+                        <button
+                          onClick={handleOTStart}
+                          className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                        >
+                          <Play className="w-4 h-4 text-white" />
+                          <span>Start OT</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center space-x-3">
+                          <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                            <CheckCircle className="w-3 h-3 text-green-600 rounded-full" />
+                          </div>
+                          <div>
+                            <div className="text-sm text-green-600 font-medium">
+                              OT started at {formatTime(otStartTime!)}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Current OT Hours: {getCurrentOTHours().toFixed(2)} hours
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
-                  </div>
 
-                  <button
-                    onClick={handleStartNewOTSession}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-                  >
-                    Start New OT Session
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {/* Stage 1: OT Start */}
-                  <div className="p-6 border-b">
-                    <div className="flex items-center space-x-3 mb-6">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center">
-                          <Play className="w-4 h-4 text-green-600" />
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-4 rounded-full bg-green-500"></div>
-                          <span className="text-lg font-medium text-gray-900">OT Start</span>
-                        </div>
-                      </div>
-                    </div>
-                    {!isOTStarted ? (
-                      <button
-                        onClick={handleOTStart}
-                        className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
-                      >
-                        <Play className="w-4 h-4 text-white" />
-                        <span>Start OT</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center space-x-3">
-                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
-                          <CheckCircle className="w-3 h-3 text-green-600 rounded-full" />
-                        </div>
-                        <div>
-                          <div className="text-sm text-green-600 font-medium">
-                            OT started at {formatTime(otStartTime!)}
+                    {/* Stage 2: Work Submission Form - Only show if OT started but work not submitted */}
+                    {isOTStarted && !isWorkSubmitted && (
+                      <div className="p-6 border-b">
+                        <div className="flex items-center space-x-3 mb-6">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center">
+                            <span className="text-blue-600 text-lg">📝</span>
                           </div>
-                          <div className="text-xs text-gray-500">
-                            Current OT Hours: {getCurrentOTHours().toFixed(2)} hours
+                          <span className="text-lg font-medium text-gray-900">OT Work Submission Form</span>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Work Description</label>
+                            <textarea
+                              value={workDescription}
+                              onChange={(e) => setWorkDescription(e.target.value)}
+                              placeholder="Describe your OT work in detail..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              rows={3}
+                            />
                           </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stage 2: Work Submission Form - Only show if OT started but work not submitted */}
-                  {isOTStarted && !isWorkSubmitted && (
-                    <div className="p-6 border-b">
-                      <div className="flex items-center space-x-3 mb-6">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 text-lg">📝</span>
-                        </div>
-                        <span className="text-lg font-medium text-gray-900">OT Work Submission Form</span>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Work Description</label>
-                          <textarea
-                            value={workDescription}
-                            onChange={(e) => setWorkDescription(e.target.value)}
-                            placeholder="Describe your OT work in detail..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            rows={3}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Work Type</label>
-                          <select
-                            value={workType}
-                            onChange={(e) => setWorkType(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Select work type</option>
-                            <option value="Work from office">Work from office</option>
-                            <option value="Work from home">Work from home</option>
-                          </select>
-                        </div>
-                        
-                        {/* Image Upload Section */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Upload Work Evidence (Required: 2 images)
-                          </label>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Work Type</label>
+                            <select
+                              value={workType}
+                              onChange={(e) => setWorkType(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="">Select work type</option>
+                              <option value="Work from office">Work from office</option>
+                              <option value="Work from home">Work from home</option>
+                            </select>
+                          </div>
                           
-                          <div className="flex items-center space-x-4 mb-4">
-                            <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                              <div className="text-center">
-                                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                <span className="text-sm text-gray-500">Upload Image</span>
-                              </div>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={handleImageUpload}
-                                className="hidden"
-                                disabled={uploadedImages.length >= 2}
-                              />
+                          {/* Image Upload Section */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Upload Work Evidence (Required: 2 images)
                             </label>
                             
-                            <div className="text-sm text-gray-600">
-                              <p>• Upload exactly 2 images</p>
-                              <p>• Max file size: 5MB each</p>
-                              <p>• Accepted formats: JPG, PNG, GIF</p>
-                              <p className="font-medium text-blue-600">
-                                Uploaded: {uploadedImages.length}/2
-                              </p>
-                            </div>
-                          </div>
-
-                          {previewImages.length > 0 && (
-                            <div className="grid grid-cols-2 gap-4">
-                              {previewImages.map((preview, index) => (
-                                <div key={index} className="relative">
-                                  <img
-                                    src={preview}
-                                    alt={`Preview ${index + 1}`}
-                                    className="w-full h-32 object-cover rounded-lg border"
-                                  />
-                                  <button
-                                    onClick={() => removeImage(index)}
-                                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                  <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                                    Image {index + 1}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={handleSubmitWork}
-                          disabled={!workType || !workDescription || uploadedImages.length !== 2}
-                          className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
-                        >
-                          <ImageIcon className="w-4 h-4" />
-                          <span>Submit OT Work</span>
-                        </button>
-                        
-                        {uploadedImages.length < 2 && (
-                          <p className="text-sm text-red-600">Please upload exactly 2 images to submit your work.</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Stage 3: Work Submitted & OT End */}
-                  {isOTStarted && isWorkSubmitted && (
-                    <div className="p-6">
-                      <div className="space-y-6">
-                        {/* Work Submitted Status */}
-                        <div>
-                          <div className="flex items-center space-x-3 mb-4">
-                            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                              <span className="text-blue-600 text-sm">📝</span>
-                            </div>
-                            <span className="text-lg font-medium text-gray-900">OT Work Submission Form</span>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                            <div>
-                              <div className="text-sm font-medium text-gray-700">Work Description</div>
-                              <div className="text-gray-900 mt-1">{workDescription}</div>
-                            </div>
-                            <div>
-                              <div className="text-sm font-medium text-gray-700">Work Type</div>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                                <span className="text-gray-900">{workType}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm font-medium text-gray-700 mb-2">Uploaded Evidence</div>
-                              <div className="flex space-x-2">
-                                {previewImages.map((preview, index) => (
-                                  <img 
-                                    key={index}
-                                    src={preview} 
-                                    alt={`Work evidence ${index + 1}`}
-                                    className="w-16 h-16 object-cover rounded-md border"
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2 text-green-600">
-                              <CheckCircle className="w-4 h-4 rounded-full flex items-center justify-center" />
-                              <span className="text-sm font-medium">OT work submitted successfully</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Re-upload Images Section - Only show if work submitted but no images */}
-                        {uploadedImages.length === 0 && (
-                          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <div className="text-red-800 mb-3">
-                              <strong>⚠️ Images Missing!</strong> Page refresh aayiruchu. Please re-upload your work evidence images.
-                            </div>
-                            
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Re-upload Work Evidence (Required: 2 images)
-                              </label>
-                              
-                              <div className="flex items-center space-x-4 mb-4">
-                                <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-red-300 rounded-lg cursor-pointer hover:bg-red-50 transition-colors">
-                                  <div className="text-center">
-                                    <Upload className="w-8 h-8 text-red-400 mx-auto mb-2" />
-                                    <span className="text-sm text-red-500">Re-upload Images</span>
-                                  </div>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    multiple
-                                    onChange={handleImageUpload}
-                                    className="hidden"
-                                    disabled={uploadedImages.length >= 2}
-                                  />
-                                </label>
-                                
-                                <div className="text-sm text-red-600">
-                                  <p>• Upload exactly 2 images</p>
-                                  <p>• Max file size: 5MB each</p>
-                                  <p>• Same images you uploaded before</p>
-                                  <p className="font-medium text-red-700">
-                                    Uploaded: {uploadedImages.length}/2
-                                  </p>
-                                </div>
-                              </div>
-
-                              {previewImages.length > 0 && (
-                                <div className="grid grid-cols-2 gap-4">
-                                  {previewImages.map((preview, index) => (
-                                    <div key={index} className="relative">
-                                      <img
-                                        src={preview}
-                                        alt={`Re-uploaded ${index + 1}`}
-                                        className="w-full h-32 object-cover rounded-lg border border-green-300"
-                                      />
-                                      <button
-                                        onClick={() => removeImage(index)}
-                                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                      <div className="absolute bottom-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
-                                        ✓ Image {index + 1}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Additional image upload if less than 2 images */}
-                        {uploadedImages.length > 0 && uploadedImages.length < 2 && (
-                          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                            <div className="text-amber-800 mb-3">
-                              <strong>Upload {2 - uploadedImages.length} more image(s)</strong> to complete your submission.
-                            </div>
-                            
                             <div className="flex items-center space-x-4 mb-4">
-                              <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors">
+                              <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                                 <div className="text-center">
-                                  <Upload className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                                  <span className="text-sm text-amber-500">Add More Images</span>
+                                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                  <span className="text-sm text-gray-500">Upload Image</span>
                                 </div>
                                 <input
                                   type="file"
@@ -868,55 +688,236 @@ const handleOTEnd = async () => {
                                 />
                               </label>
                               
-                              <div className="text-sm text-amber-600">
-                                <p>• Need {2 - uploadedImages.length} more image(s)</p>
+                              <div className="text-sm text-gray-600">
+                                <p>• Upload exactly 2 images</p>
                                 <p>• Max file size: 5MB each</p>
-                                <p className="font-medium text-amber-700">
+                                <p>• Accepted formats: JPG, PNG, GIF</p>
+                                <p className="font-medium text-blue-600">
                                   Uploaded: {uploadedImages.length}/2
                                 </p>
                               </div>
                             </div>
-                          </div>
-                        )}
 
-                        {/* OT End Section */}
-                        <div className="border-t pt-6">
-                          <div className="flex items-center space-x-3 mb-4">
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center">
-                              <Square className="w-4 h-4 text-red-600" />
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full bg-red-500"></div>
-                              <span className="text-lg font-medium text-gray-900">OT End</span>
-                            </div>
+                            {previewImages.length > 0 && (
+                              <div className="grid grid-cols-2 gap-4">
+                                {previewImages.map((preview, index) => (
+                                  <div key={index} className="relative">
+                                    <img
+                                      src={preview}
+                                      alt={`Preview ${index + 1}`}
+                                      className="w-full h-32 object-cover rounded-lg border"
+                                    />
+                                    <button
+                                      onClick={() => removeImage(index)}
+                                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                                      Image {index + 1}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div className="mb-4">
-                            <div className="text-sm text-gray-700">
-                              <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} hours
-                            </div>
-                          </div>
+
                           <button
-                            onClick={handleOTEnd}
-                            disabled={isSubmittingWorkLog || uploadedImages.length !== 2}
-                            className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                            onClick={handleSubmitWork}
+                            disabled={!workType || !workDescription || uploadedImages.length !== 2}
+                            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
                           >
-                            <Square className="w-4 h-4 text-white" />
-                            <span>{isSubmittingWorkLog ? "Submitting to API..." : "End OT"}</span>
+                            <ImageIcon className="w-4 h-4" />
+                            <span>Submit OT Work</span>
                           </button>
-                          {uploadedImages.length !== 2 && (
-                            <p className="text-sm text-red-600 mt-2">Please upload exactly 2 images before ending OT.</p>
+                          
+                          {uploadedImages.length < 2 && (
+                            <p className="text-sm text-red-600">Please upload exactly 2 images to submit your work.</p>
                           )}
                         </div>
                       </div>
-                    </div>
-                  )}
-                </>
-              )}
+                    )}
+
+                    {/* Stage 3: Work Submitted & OT End */}
+                    {isOTStarted && isWorkSubmitted && (
+                      <div className="p-6">
+                        <div className="space-y-6">
+                          {/* Work Submitted Status */}
+                          <div>
+                            <div className="flex items-center space-x-3 mb-4">
+                              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-blue-600 text-sm">📝</span>
+                              </div>
+                              <span className="text-lg font-medium text-gray-900">OT Work Submission Form</span>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                              <div>
+                                <div className="text-sm font-medium text-gray-700">Work Description</div>
+                                <div className="text-gray-900 mt-1">{workDescription}</div>
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium text-gray-700">Work Type</div>
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                                  <span className="text-gray-900">{workType}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium text-gray-700 mb-2">Uploaded Evidence</div>
+                                <div className="flex space-x-2">
+                                  {previewImages.map((preview, index) => (
+                                    <img 
+                                      key={index}
+                                      src={preview} 
+                                      alt={`Work evidence ${index + 1}`}
+                                      className="w-16 h-16 object-cover rounded-md border"
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2 text-green-600">
+                                <CheckCircle className="w-4 h-4 rounded-full flex items-center justify-center" />
+                                <span className="text-sm font-medium">OT work submitted successfully</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Re-upload Images Section - Only show if work submitted but no images */}
+                          {uploadedImages.length === 0 && (
+                            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                              <div className="text-red-800 mb-3">
+                                <strong>⚠️ Images Missing!</strong> Page refresh aayiruchu. Please re-upload your work evidence images.
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Re-upload Work Evidence (Required: 2 images)
+                                </label>
+                                
+                                <div className="flex items-center space-x-4 mb-4">
+                                  <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-red-300 rounded-lg cursor-pointer hover:bg-red-50 transition-colors">
+                                    <div className="text-center">
+                                      <Upload className="w-8 h-8 text-red-400 mx-auto mb-2" />
+                                      <span className="text-sm text-red-500">Re-upload Images</span>
+                                    </div>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      onChange={handleImageUpload}
+                                      className="hidden"
+                                      disabled={uploadedImages.length >= 2}
+                                    />
+                                  </label>
+                                  
+                                  <div className="text-sm text-red-600">
+                                    <p>• Upload exactly 2 images</p>
+                                    <p>• Max file size: 5MB each</p>
+                                    <p>• Same images you uploaded before</p>
+                                    <p className="font-medium text-red-700">
+                                      Uploaded: {uploadedImages.length}/2
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {previewImages.length > 0 && (
+                                  <div className="grid grid-cols-2 gap-4">
+                                    {previewImages.map((preview, index) => (
+                                      <div key={index} className="relative">
+                                        <img
+                                          src={preview}
+                                          alt={`Re-uploaded ${index + 1}`}
+                                          className="w-full h-32 object-cover rounded-lg border border-green-300"
+                                        />
+                                        <button
+                                          onClick={() => removeImage(index)}
+                                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                                        >
+                                          <X className="w-4 h-4" />
+                                        </button>
+                                        <div className="absolute bottom-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
+                                          ✓ Image {index + 1}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Additional image upload if less than 2 images */}
+                          {uploadedImages.length > 0 && uploadedImages.length < 2 && (
+                            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                              <div className="text-amber-800 mb-3">
+                                <strong>Upload {2 - uploadedImages.length} more image(s)</strong> to complete your submission.
+                              </div>
+                              
+                              <div className="flex items-center space-x-4 mb-4">
+                                <label className="flex items-center justify-center w-32 h-32 border-2 border-dashed border-amber-300 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors">
+                                  <div className="text-center">
+                                    <Upload className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+                                    <span className="text-sm text-amber-500">Add More Images</span>
+                                  </div>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleImageUpload}
+                                    className="hidden"
+                                    disabled={uploadedImages.length >= 2}
+                                  />
+                                </label>
+                                
+                                <div className="text-sm text-amber-600">
+                                  <p>• Need {2 - uploadedImages.length} more image(s)</p>
+                                  <p>• Max file size: 5MB each</p>
+                                  <p className="font-medium text-amber-700">
+                                    Uploaded: {uploadedImages.length}/2
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* OT End Section */}
+                          <div className="border-t pt-6">
+                            <div className="flex items-center space-x-3 mb-4">
+                              <div className="w-6 h-6 rounded-full flex items-center justify-center">
+                                <Square className="w-4 h-4 text-red-600" />
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full bg-red-500"></div>
+                                <span className="text-lg font-medium text-gray-900">OT End</span>
+                              </div>
+                            </div>
+                            <div className="mb-4">
+                              <div className="text-sm text-gray-700">
+                                <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} hours
+                              </div>
+                            </div>
+                            <button
+                              onClick={handleOTEnd}
+                              disabled={isSubmittingWorkLog || uploadedImages.length !== 2}
+                              className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                            >
+                              <Square className="w-4 h-4 text-white" />
+                              <span>{isSubmittingWorkLog ? "Submitting to API..." : "End OT"}</span>
+                            </button>
+                            {uploadedImages.length !== 2 && (
+                              <p className="text-sm text-red-600 mt-2">Please upload exactly 2 images before ending OT.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-    </ProtectedRoute>
   )
 }
