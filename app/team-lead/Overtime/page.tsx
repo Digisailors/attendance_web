@@ -1,5 +1,5 @@
 "use client"
-import ProtectedRoute from '@/components/ProtectedRoute'
+
 import { useState, useEffect } from "react"
 import { Play, Square, Clock, Calendar, CheckCircle, Timer, Upload, X, Image as ImageIcon, Menu, User, LogOut, Home, Clock as ClockIcon, FileText, Settings } from "lucide-react"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -375,11 +375,14 @@ const calculateOTHours = (): string => {
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
-    <ProtectedRoute allowedRoles={['team-lead']}>
-   <div className="flex h-screen bg-gray-50">
-         <Sidebar userType="team-lead" />
-         <div className="flex-1 flex flex-col">
-           <Header title="Teamlead Portal" subtitle={`Welcome back, ${displayName}`} userType="team-lead" />
+   <div className="flex h-screen overflow-hidden">
+       <Sidebar userType="team-lead" />
+       <div className="flex-1 flex flex-col overflow-auto">
+         <Header
+           title="Team Lead Portal"
+           subtitle={`Welcome, ${displayName}`}
+           userType="team-lead"
+         />
 
         {/* Enhanced Header Cards */}
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -466,12 +469,12 @@ const calculateOTHours = (): string => {
                     <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Hours</h3>
                   </div>
                   <p className="text-2xl font-bold text-gray-900">
-                    {getCurrentOTHours().toFixed(2)} hours
+                    {getCurrentOTHours().toFixed(2)}minutes
                   </p>
                   <p className={`text-xs mt-1 font-medium ${
                     getCurrentOTHours() > 0 ? 'text-amber-600' : 'text-gray-500'
                   }`}>
-                    {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT hours` : 'No OT hours yet'}
+                    {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT minutes` : 'No OT hours yet'}
                   </p>
                 </div>
               </div>
@@ -526,8 +529,8 @@ const calculateOTHours = (): string => {
         )}
 
         {/* Main Content */}
-        <div className="flex items-center justify-center min-h-[calc(100vh-300px)] px-4">
-          <div className="w-full max-w-2xl">
+         <div className="flex-1 px-6 py-6">
+          <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-lg shadow-sm border">
               {/* Post-OT End Summary View */}
               {isOTEnded ? (
@@ -553,7 +556,7 @@ const calculateOTHours = (): string => {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-600">Total Hours</div>
-                        <div className="text-lg font-semibold text-gray-900">{calculateOTHours()} hours</div>
+                        <div className="text-lg font-semibold text-gray-900">{calculateOTHours()} minutes</div>
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-600">Status</div>
@@ -624,7 +627,7 @@ const calculateOTHours = (): string => {
                             OT started at {formatTime(otStartTime!)}
                           </div>
                           <div className="text-xs text-gray-500">
-                            Current OT Hours: {getCurrentOTHours().toFixed(2)} hours
+                            Current OT Hours: {getCurrentOTHours().toFixed(2)} minutes
                           </div>
                         </div>
                       </div>
@@ -891,7 +894,7 @@ const calculateOTHours = (): string => {
                           </div>
                           <div className="mb-4">
                             <div className="text-sm text-gray-700">
-                              <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} hours
+                              <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} minutes
                             </div>
                           </div>
                           <button
@@ -916,6 +919,5 @@ const calculateOTHours = (): string => {
         </div>
       </div>
     </div>
-    </ProtectedRoute>
   )
 }
