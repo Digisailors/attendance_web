@@ -902,7 +902,7 @@ const handleOTEnd = async () => {
                               className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
                             >
                               <Square className="w-4 h-4 text-white" />
-                              <span>{isSubmittingWorkLog ? "Submitting to API..." : "End OT"}</span>
+                              <span>{isSubmittingWorkLog ? "Submitting to Team Lead" : "End OT"}</span>
                             </button>
                             {uploadedImages.length !== 2 && (
                               <p className="text-sm text-red-600 mt-2">Please upload exactly 2 images before ending OT.</p>
