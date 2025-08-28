@@ -43,6 +43,35 @@ export default function LoginPage() {
   const [showNewPass, setShowNewPass] = useState(false)
   const [showConfirmPass, setShowConfirmPass] = useState(false)
 
+  // Function to validate if employee exists in employee database
+  const validateEmployeeExists = async (email: string, userType: string) => {
+    try {
+     const { data, error } = await supabase
+  .from("employees") // table name correct ah iruku
+  .select("*")
+  .eq("email_address", email) // <-- column name update
+
+  .eq("is_active", true);
+
+      console.log('Employee validation result:', { data, error, email, userType })
+
+      // If no data found or error occurred
+      if (error && error.code === 'PGRST116') {
+        // No rows found
+        return { exists: false, employeeData: null }
+      }
+      
+      if (error || !data || data.length === 0) {
+        return { exists: false, employeeData: null }
+      }
+
+      return { exists: true, employeeData: data[0] }
+    } catch (err) {
+      console.log('Employee validation error:', err)
+      return { exists: false, employeeData: null }
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -50,12 +79,65 @@ export default function LoginPage() {
 
     try {
       if (isSignup) {
+        // Validate required fields
+        if (!email || !password || !userType) {
+          setError('All fields are required')
+          toast({
+            title: 'Error',
+            description: 'All fields are required',
+            variant: 'destructive'
+          })
+          return
+        }
+
+        // First, validate if the employee exists in the employee database
+        const { exists, employeeData } = await validateEmployeeExists(email, userType)
+        
+        console.log('Employee validation:', { exists, email, userType })
+        
+        if (!exists) {
+          setError('You are not authorized to create an account.')
+          toast({
+            title: 'Access Denied',
+            description: 'You are not authorized to create an account.',
+            variant: 'destructive'
+          })
+          setIsLoading(false)
+          return
+        }
+
+        // Check if user already has an account
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+
+        if (existingUser && existingUser.length > 0) {
+          setError('Account already exists for this email. Please sign in instead.')
+          toast({
+            title: 'Account Exists',
+            description: 'Account already exists for this email. Please sign in instead.',
+            variant: 'destructive'
+          })
+          setIsLoading(false)
+          return
+        }
+
+        // Create user account with employee data
         const hashedPassword = await simpleHash(password)
         const { error } = await supabase
           .from('users')
-          .insert([{ email, password: hashedPassword, user_type: userType }])
+          .insert([{ 
+            email, 
+            password: hashedPassword, 
+            user_type: userType,
+       
+          
+          
+          }])
 
         if (error) {
+          console.log('User creation error:', error)
           setError(error.code === '23505' ? 'Email already exists' : error.message)
           toast({
             title: 'Error',
@@ -66,12 +148,14 @@ export default function LoginPage() {
         }
 
         toast({
-          title: 'Account Created',
-          description: 'Account created. Please sign in.',
+          title: 'Account Created Successfully',
+          description: 'Your account has been created. Please sign in.',
           variant: 'default'
         })
         setIsSignup(false)
         setPassword('')
+        setEmail('')
+        setUserType('')
       } else {
         const { data, error } = await supabase
           .from('users')
@@ -104,12 +188,14 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify({
           id: data.id,
           email: data.email,
-          userType: data.user_type
+          userType: data.user_type,
+          fullName: data.full_name,
+          department: data.department
         }))
 
         toast({
           title: 'Login Successful',
-          description: `Welcome back, ${data.user_type}!`,
+          description: `Welcome back, ${data.full_name || data.user_type}!`,
           variant: 'default'
         })
 
@@ -120,7 +206,7 @@ export default function LoginPage() {
           case 'intern':
             router.push('/employee/dashboard'); break
           case 'team-lead':
-            router.push('/team-lead/team'); break
+            router.push('/team-lead/dashboard'); break
           case 'manager':
             router.push('/manager/finalapprovel'); break
           default:
@@ -224,7 +310,12 @@ export default function LoginPage() {
                       Employee
                     </div>
                   </SelectItem>
-       
+                  <SelectItem value="intern">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                      Intern
+                    </div>
+                  </SelectItem>
                   <SelectItem value="team-lead">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -240,7 +331,6 @@ export default function LoginPage() {
                 </SelectContent>
               </Select>
             </div>
-
 
             <div>
               <Label>Email</Label>
@@ -306,6 +396,16 @@ export default function LoginPage() {
               </button>
             </div>
           </form>
+
+          {/* Information note for signup */}
+          {isSignup && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Only authorized employees can create accounts. 
+                If you encounter issues, please contact your administrator.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
