@@ -425,10 +425,7 @@ const calculateExperience = (joinDate: string | null): string => {
         <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Link href="/team-lead" className="flex items-center text-gray-600 hover:text-gray-900">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Dashboard
-              </Link>
+           
               <div className="flex items-center space-x-2">
                 <Users className="w-6 h-6 text-blue-600" />
                 <div>
