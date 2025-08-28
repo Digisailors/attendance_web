@@ -310,12 +310,7 @@ export default function LoginPage() {
                       Employee
                     </div>
                   </SelectItem>
-                  <SelectItem value="intern">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                      Intern
-                    </div>
-                  </SelectItem>
+               
                   <SelectItem value="team-lead">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
