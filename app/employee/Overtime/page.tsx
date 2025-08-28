@@ -509,7 +509,7 @@ const handleOTEnd = async () => {
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                 <p className="text-red-800 text-sm font-medium">
-                  ⚠️ Images missing! Page refresh pannirikingala? Please re-upload your 2 work evidence images to end OT.
+                  ⚠️ Images missing!.
                 </p>
               </div>
             </div>
@@ -786,7 +786,7 @@ const handleOTEnd = async () => {
                           {uploadedImages.length === 0 && (
                             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
                               <div className="text-red-800 mb-3">
-                                <strong>⚠️ Images Missing!</strong> Page refresh aayiruchu. Please re-upload your work evidence images.
+                                <strong>⚠️ Images Missing!</strong>
                               </div>
                               
                               <div>
