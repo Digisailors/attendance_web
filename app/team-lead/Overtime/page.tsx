@@ -43,6 +43,11 @@ export default function OTDashboard() {
   const [uploadedImages, setUploadedImages] = useState<File[]>([])
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [isSubmittingOT, setIsSubmittingOT] = useState(false)
+  
+  // Updated state for check-in AND check-out validation
+  const [hasCheckedInAndOut, setHasCheckedInAndOut] = useState<boolean>(false)
+  const [checkInValidationLoading, setCheckInValidationLoading] = useState(true)
+  const [todayCheckInData, setTodayCheckInData] = useState<any>(null)
 
   // Helper function to get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
@@ -76,6 +81,45 @@ export default function OTDashboard() {
     return null
   }
 
+  // UPDATED FUNCTION: Check if employee has checked in AND checked out today
+  const checkTodayCheckInStatus = async (empId: string) => {
+    try {
+      setCheckInValidationLoading(true)
+      const today = getTodayDate()
+      const response = await fetch(`/api/employees/${empId}/worklog?date=${today}`)
+      
+      if (!response.ok) {
+        console.error("Failed to fetch check-in status")
+        return null
+      }
+      
+      const data = await response.json()
+      
+      // Check if employee has BOTH checked in AND checked out today
+      const hasCheckedIn = !!(data && data.check_in)
+      const hasCheckedOut = !!(data && data.check_out)
+      const canStartOT = hasCheckedIn && hasCheckedOut
+      
+      console.log("Today's check-in/out status:", { 
+        hasCheckedIn, 
+        hasCheckedOut, 
+        canStartOT, 
+        checkInTime: data?.check_in,
+        checkOutTime: data?.check_out 
+      })
+      
+      setHasCheckedInAndOut(canStartOT)
+      setTodayCheckInData(data)
+      
+      return data
+    } catch (error) {
+      console.error("Error checking today's check-in status:", error)
+      return null
+    } finally {
+      setCheckInValidationLoading(false)
+    }
+  }
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -105,6 +149,14 @@ export default function OTDashboard() {
 
     fetchUserData();
   }, [])
+
+  // Check today's check-in AND check-out status when employee data loads
+  useEffect(() => {
+    if (employeeData?.employee_id || user?.email) {
+      const empId = employeeData?.employee_id || user?.email || "fallback"
+      checkTodayCheckInStatus(empId)
+    }
+  }, [employeeData?.employee_id, user?.email])
 
   // Load saved state when employee data is available
   useEffect(() => {
@@ -155,7 +207,14 @@ export default function OTDashboard() {
     return () => clearInterval(timer)
   }, [])
 
+  // UPDATED FUNCTION: Check if user has checked in AND checked out before starting OT
   const handleOTStart = () => {
+    // Check if user has completed their regular day (check-in AND check-out)
+    if (!hasCheckedInAndOut) {
+      alert("You must complete your regular work day (check-in and check-out) before starting OT. Please go to the main dashboard to check out first.")
+      return
+    }
+
     const startMoment = new Date()
     setIsOTStarted(true)
     setOTStartTime(startMoment)
@@ -297,9 +356,6 @@ const handleOTEnd = async () => {
   }
 };
 
-
-
-
   const handleStartNewOTSession = () => {
     // Clean up preview URLs
     previewImages.forEach(url => URL.revokeObjectURL(url))
@@ -329,7 +385,8 @@ const handleOTEnd = async () => {
       hour12: true,
     })
   }
-const calculateOTHours = (): string => {
+
+ const calculateOTHours = (): string => {
   if (otStartTime && otEndTime) {
     const diffMs = otEndTime.getTime() - otStartTime.getTime();
     const totalMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
@@ -341,8 +398,6 @@ const calculateOTHours = (): string => {
   }
   return '0h 0m';
 };
-
-
 
   const getCurrentOTHours = () => {
     if (otStartTime && !otEndTime) {
@@ -359,18 +414,18 @@ const calculateOTHours = (): string => {
     return 0
   }
 
-  // if (loading) {
-  //   return (
-  //     <div className="flex min-h-screen bg-gray-50">
-  //       <div className="flex-1 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //           <p className="mt-4 text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
+  if (loading || checkInValidationLoading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
@@ -383,6 +438,63 @@ const calculateOTHours = (): string => {
            subtitle={`Welcome, ${displayName}`}
            userType="team-lead"
          />
+
+        {/* UPDATED: Check-in AND Check-out Warning Banner */}
+        {!hasCheckedInAndOut && !isOTStarted && (
+          <div className="mx-6 mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                <Clock className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <div className="text-red-800 font-medium">Regular Work Day Completion Required</div>
+                <div className="text-red-700 text-sm">
+                  {todayCheckInData?.check_in && !todayCheckInData?.check_out ? (
+                    "You have checked in but haven't checked out yet. Please complete your regular work day (check-out) before starting OT."
+                  ) : !todayCheckInData?.check_in ? (
+                    "You haven't checked in for today yet. Please check in and complete your regular work day before starting OT."
+                  ) : (
+                    "You must complete your regular work day (check-in and check-out) before starting OT."
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Display current check-in/out status */}
+        {todayCheckInData && hasCheckedInAndOut && (
+          <div className="mx-6 mb-4 bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              </div>
+              <div>
+                <div className="text-green-800 font-medium">Regular Work Day Completed</div>
+                <div className="text-green-700 text-sm">
+                  Checked in at {todayCheckInData.check_in} and checked out at {todayCheckInData.check_out}. You can start OT now.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Display partial completion status */}
+        {todayCheckInData?.check_in && !todayCheckInData?.check_out && !hasCheckedInAndOut && (
+          <div className="mx-6 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <div className="text-amber-800 font-medium">Work Day In Progress</div>
+                <div className="text-amber-700 text-sm">
+                  Checked in at {todayCheckInData.check_in}. Please check out first to complete your regular work day before starting OT.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Enhanced Header Cards */}
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -469,12 +581,12 @@ const calculateOTHours = (): string => {
                     <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">OT Hours</h3>
                   </div>
                   <p className="text-2xl font-bold text-gray-900">
-                    {getCurrentOTHours().toFixed(2)}minutes
+                    {getCurrentOTHours().toFixed(2)} hours
                   </p>
                   <p className={`text-xs mt-1 font-medium ${
                     getCurrentOTHours() > 0 ? 'text-amber-600' : 'text-gray-500'
                   }`}>
-                    {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT minutes` : 'No OT hours yet'}
+                    {isOTStarted && !isOTEnded ? 'Live counting...' : getCurrentOTHours() > 0 ? `Total OT hours` : 'No OT hours yet'}
                   </p>
                 </div>
               </div>
@@ -510,7 +622,7 @@ const calculateOTHours = (): string => {
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full"></div>
               <p className="text-red-800 text-sm font-medium">
-                ⚠️ Images missing! Page refresh pannirikingala? Please re-upload your 2 work evidence images to end OT.
+                ⚠️ Images missing! Please re-upload your 2 work evidence images to end OT.
               </p>
             </div>
           </div>
@@ -556,7 +668,7 @@ const calculateOTHours = (): string => {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-600">Total Hours</div>
-                        <div className="text-lg font-semibold text-gray-900">{calculateOTHours()} minutes</div>
+                        <div className="text-lg font-semibold text-gray-900">{calculateOTHours()}</div>
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-600">Status</div>
@@ -610,13 +722,25 @@ const calculateOTHours = (): string => {
                       </div>
                     </div>
                     {!isOTStarted ? (
-                      <button
-                        onClick={handleOTStart}
-                        className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
-                      >
-                        <Play className="w-4 h-4 text-white" />
-                        <span>Start OT</span>
-                      </button>
+                      <div>
+                        <button
+                          onClick={handleOTStart}
+                          disabled={!hasCheckedInAndOut}
+                          className={`px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2 ${
+                            hasCheckedInAndOut 
+                              ? 'bg-green-500 hover:bg-green-600 text-white' 
+                              : 'bg-gray-400 cursor-not-allowed text-white'
+                          }`}
+                        >
+                          <Play className="w-4 h-4 text-white" />
+                          <span>Start OT</span>
+                        </button>
+                        {!hasCheckedInAndOut && (
+                          <p className="text-sm text-red-600 mt-2">
+                            You must complete your regular work day (check-in and check-out) before starting OT.
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex items-center space-x-3">
                         <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
@@ -627,7 +751,7 @@ const calculateOTHours = (): string => {
                             OT started at {formatTime(otStartTime!)}
                           </div>
                           <div className="text-xs text-gray-500">
-                            Current OT Hours: {getCurrentOTHours().toFixed(2)} minutes
+                            Current OT Hours: {getCurrentOTHours().toFixed(2)} hours
                           </div>
                         </div>
                       </div>
@@ -787,7 +911,7 @@ const calculateOTHours = (): string => {
                         {uploadedImages.length === 0 && (
                           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
                             <div className="text-red-800 mb-3">
-                              <strong>⚠️ Images Missing!</strong> Page refresh aayiruchu. Please re-upload your work evidence images.
+                              <strong>⚠️ Images Missing!</strong> Please re-upload your work evidence images.
                             </div>
                             
                             <div>
@@ -894,7 +1018,7 @@ const calculateOTHours = (): string => {
                           </div>
                           <div className="mb-4">
                             <div className="text-sm text-gray-700">
-                              <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} minutes
+                              <strong>Current OT Hours:</strong> {getCurrentOTHours().toFixed(2)} hours
                             </div>
                           </div>
                           <button
@@ -903,7 +1027,7 @@ const calculateOTHours = (): string => {
                             className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
                           >
                             <Square className="w-4 h-4 text-white" />
-                            <span>{isSubmittingWorkLog ? "Submitting to API..." : "End OT"}</span>
+                            <span>{isSubmittingWorkLog ? "Submitting to Team lead..." : "End OT"}</span>
                           </button>
                           {uploadedImages.length !== 2 && (
                             <p className="text-sm text-red-600 mt-2">Please upload exactly 2 images before ending OT.</p>
