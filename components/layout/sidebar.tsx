@@ -89,6 +89,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
       case 'admin':
         return [
           { icon: Home, label: 'Dashboard', href: '/admin/dashboard' },
+          { icon: Calendar, label: 'Reports', href: '/admin/reports' }
         ]
       case 'employee':
         return [
@@ -97,6 +98,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
           { icon: FileText, label: 'Permission Request', href: '/employee/permission' },
           { icon: Timer, label: 'Overtime', href: '/employee/Overtime' },
           { icon: Settings, label: 'History', href: '/employee/history' },
+          { icon: Timer, label: 'Profile', href: '/employee/profile' },
         ]
       case 'team-lead':
         return [
@@ -108,6 +110,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
           { icon: FileText, label: 'Permission', href: '/team-lead/permission' },
           { icon: Timer, label: 'Overtime', href: '/team-lead/Overtime' },
           { icon: Settings, label: 'History', href: '/team-lead/history' },
+          { icon: Timer, label: 'Profile', href: '/team-lead/profile' },
         ]
       case 'manager':
         return [
