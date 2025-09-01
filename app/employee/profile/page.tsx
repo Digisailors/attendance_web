@@ -1,4 +1,4 @@
-'use client'
+"use client"
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -74,12 +74,10 @@ interface DailyWorkLog {
   status: string;
   description: string;
 }
-
 interface ApiResponse {
   employee: EmployeeData;
   dailyWorkLog: DailyWorkLog[];
 }
-
 interface OvertimeData {
   total_hours: number;
   records_count: number;
@@ -822,10 +820,7 @@ export default function EmployeeProfile() {
                   </div>
                 </CardContent>
               </Card>
-
-              
-            
-            </div>
+</div>
           </main>
         </div>
       </div>
