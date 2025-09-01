@@ -1,4 +1,4 @@
-"use client";
+'use client'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -125,12 +125,17 @@ export default function EmployeeProfile() {
     return now.getFullYear().toString();
   };
 
+
+  
+
   // Get employee ID from session/auth context (you'll need to implement this)
   const getCurrentEmployeeId = () => {
     // This should come from your authentication context
     // For now, returning a placeholder - replace with actual implementation
     return localStorage.getItem('employeeId') || sessionStorage.getItem('employeeId') || '1';
   };
+  
+  
 
   // Optimized date range generation with memory limits
   const generateDateRange = (month: string, year: string) => {
@@ -177,8 +182,20 @@ export default function EmployeeProfile() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [selectedYear, setSelectedYear] = useState(getCurrentYear());
   const router = useRouter();
-  const employeeId = getCurrentEmployeeId(); // Get current employee ID
-
+ 
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = localStorage.getItem('employeeId') || sessionStorage.getItem('employeeId') || '1';
+    setEmployeeId(id);
+  }, []);
+  
+  useEffect(() => {
+    if (employeeId && selectedMonth && selectedYear) {
+      fetchEmployeeData();
+    }
+  }, [employeeId, selectedMonth, selectedYear]);
+  
+  
   // Memoize total calculated hours to prevent unnecessary recalculations
   const totalCalculatedHours = useMemo(() => {
     return dailyWorkLog.reduce((total, log) => {
