@@ -102,7 +102,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
       case 'admin':
         return [
           { icon: Home, label: 'Dashboard', href: '/admin/dashboard' },
-          { icon: Calendar, label: 'Reports', href: '/admin/reports' }
+          { icon: Calendar, label: 'Reports', href: '/admin/report' }
         ]
       case 'employee':
         return [
