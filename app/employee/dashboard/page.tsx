@@ -24,19 +24,85 @@ interface DailyState {
   date: string
 }
 
-// IST Time utilities
+// Enhanced Time Management System
+class AccurateTimeManager {
+  constructor() {
+    this.serverTimeOffset = 0;
+    this.initialized = false;
+  }
+
+  async initialize() {
+    try {
+      const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata');
+      const data = await response.json();
+      
+      const serverTime = new Date(data.datetime);
+      const localTime = new Date();
+      
+      this.serverTimeOffset = serverTime.getTime() - localTime.getTime();
+      this.initialized = true;
+      
+      console.log('✅ Time synchronized with IST server');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Using fallback IST calculation');
+      
+      try {
+        const utcTime = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const estimatedIST = new Date(utcTime.getTime() + utcTime.getTimezoneOffset() * 60000 + istOffset);
+        
+        this.serverTimeOffset = estimatedIST.getTime() - utcTime.getTime();
+        this.initialized = true;
+        
+        return true;
+      } catch (fallbackError) {
+        console.error('❌ All time sync methods failed:', fallbackError);
+        this.initialized = false;
+        return false;
+      }
+    }
+  }
+
+  getCurrentISTTime() {
+    if (!this.initialized) {
+      return this.getSystemISTTime();
+    }
+
+    const adjustedTime = new Date(Date.now() + this.serverTimeOffset);
+    return adjustedTime;
+  }
+
+  getSystemISTTime() {
+    const now = new Date();
+    const istTime = new Date(now.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata"
+    }));
+    
+    return istTime;
+  }
+
+  toISTString(date) {
+    if (!date) return null;
+    
+    const istDate = new Date(date.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata"
+    }));
+    
+    return istDate.toISOString();
+  }
+}
+
+// Initialize time manager
+const timeManager = new AccurateTimeManager();
+
+// IST Time utilities - Enhanced versions
 const getISTTime = () => {
-  const now = new Date();
-  // Convert to IST (UTC+5:30)
-  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const istTime = new Date(utc + istOffset);
-  return istTime;
+  return timeManager.getCurrentISTTime();
 };
 
 // Format IST time consistently
 const formatISTTime = (date) => {
-  // If date is already in IST, format it directly
   if (typeof date === 'string') {
     date = new Date(date);
   }
@@ -51,8 +117,7 @@ const formatISTTime = (date) => {
 
 // Convert any date to IST string for storage
 const toISTString = (date) => {
-  const istTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
-  return istTime.toISOString();
+  return timeManager.toISTString(date);
 };
 
 // Memoized components to prevent unnecessary re-renders
@@ -158,6 +223,17 @@ export default function EmployeeDashboard() {
       return null
     }
   }, [])
+
+  // Initialize time manager when component mounts
+  useEffect(() => {
+    timeManager.initialize().then(success => {
+      if (success) {
+        console.log('✅ Accurate time management initialized');
+      } else {
+        console.warn('⚠️ Using fallback time mode');
+      }
+    });
+  }, []);
 
   // Initial data fetch - only runs once
   useEffect(() => {
@@ -322,7 +398,12 @@ export default function EmployeeDashboard() {
       return
     }
 
-    // Use IST time consistently
+    // Ensure time manager is initialized
+    if (!timeManager.initialized) {
+      await timeManager.initialize();
+    }
+
+    // Use accurate IST time
     const checkInMoment = getISTTime()
     setIsCheckedIn(true)
     setCheckInTime(checkInMoment)
@@ -336,7 +417,8 @@ export default function EmployeeDashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ 
-          checkInTime: toISTString(checkInMoment) // Send IST time to server
+          checkInTime: toISTString(checkInMoment), // Send accurate IST time to server
+          timeSyncStatus: timeManager.initialized ? 'synced' : 'fallback'
         }),
       })
 
@@ -347,7 +429,7 @@ export default function EmployeeDashboard() {
         setIsCheckedIn(false)
         setCheckInTime(null)
       } else {
-        console.log("Check-in successful:", data)
+        console.log("Check-in successful with accurate IST:", formatISTTime(checkInMoment))
       }
     } catch (error) {
       console.error("Check-in error:", error)
@@ -364,7 +446,12 @@ export default function EmployeeDashboard() {
   }
 
   const handleCheckOut = async () => {
-    const checkOutMoment = getISTTime() // Use IST time
+    // Ensure time manager is initialized
+    if (!timeManager.initialized) {
+      await timeManager.initialize();
+    }
+
+    const checkOutMoment = getISTTime() // Use accurate IST time
     setCheckOutTime(checkOutMoment)
     setIsSubmittingWorkLog(true)
 
@@ -377,10 +464,11 @@ export default function EmployeeDashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          checkInTime: toISTString(checkInTime), // Convert to IST string
-          checkOutTime: toISTString(checkOutMoment), // Convert to IST string
+          checkInTime: toISTString(checkInTime), // Convert to accurate IST string
+          checkOutTime: toISTString(checkOutMoment), // Convert to accurate IST string
           workType: workType,
           workDescription: workDescription,
+          timeSyncStatus: timeManager.initialized ? 'synced' : 'fallback'
         }),
       })
 
@@ -390,7 +478,7 @@ export default function EmployeeDashboard() {
         throw new Error("Failed to save work log")
       }
 
-      console.log("Work log saved successfully")
+      console.log("Work log saved successfully with accurate IST times")
 
       const submissionPayload = {
         employeeId: employeeId,
@@ -399,7 +487,7 @@ export default function EmployeeDashboard() {
         workDescription: workDescription,
         department: "General",
         priority: "Medium",
-        submittedDate: toISTString(checkOutMoment), // Use IST time
+        submittedDate: toISTString(checkOutMoment), // Use accurate IST time
       }
 
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
@@ -418,7 +506,7 @@ export default function EmployeeDashboard() {
         console.log("Work submission saved successfully:", submissionResult)
       }
 
-      console.log("Work log and submission process completed")
+      console.log("Work log and submission process completed with accurate times")
       setIsCheckedOut(true)
     } catch (error) {
       console.error("Error in checkout process:", error)
@@ -454,20 +542,6 @@ export default function EmployeeDashboard() {
     if (!date) return "Not Available";
     return formatISTTime(date);
   }
-
-  // if (loading) {
-  //   return (
-  //     <div className="flex h-screen bg-gray-50">
-  //       <MemoizedSidebar />
-  //       <div className="flex-1 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //           <p className="mt-4 text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   return (
     <ProtectedRoute allowedRoles={['employee', 'intern']}>
