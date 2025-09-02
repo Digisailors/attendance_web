@@ -1,4 +1,5 @@
 "use client"
+
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -92,15 +93,74 @@ const debounce = (func: Function, delay: number) => {
 }
 
 // Transform backend daily data to expected format
-const transformBackendData = (backendResponse: any): DailyAttendanceEmployee[] => {
+// Transform backend daily data to expected format
+const transformBackendData = (backendResponse: any, selectedDate: string): DailyAttendanceEmployee[] => {
   if (!backendResponse?.employees || !Array.isArray(backendResponse.employees)) {
     console.log("No employees array found in backend response")
     return []
   }
 
-  return backendResponse.employees.map((record: any) => {
-    const attendanceStatus: AttendanceStatus = record.attendanceStatus || "Absent"
+  const todayStr = new Date().toISOString().split('T')[0]
 
+  return backendResponse.employees.map((record: any) => {
+    let attendanceStatus: AttendanceStatus = "Absent"
+  
+    const recordDate = new Date(selectedDate).toISOString().split('T')[0]
+  
+    // First, determine basic attendance status
+    if (record.checkInTime && record.checkOutTime) {
+      // Both check-in and check-out exist
+      attendanceStatus = "Present"
+    } 
+    else if (record.checkInTime && !record.checkOutTime) {
+      // Only check-in exists
+      if (recordDate === todayStr) {
+        // For today, if there's check-in but no check-out, consider as Present
+        attendanceStatus = "Present"
+      } else {
+        // For past dates, if there's no check-out, consider as Absent
+        attendanceStatus = "Absent"
+      }
+    }
+    // If no check-in time, status remains "Absent"
+
+    // Now check for Late status - this overrides Present if check-in is after 9 AM
+    if (record.checkInTime) {
+      try {
+        let checkInDate;
+        
+        // Handle different time formats
+        if (/^\d{2}:\d{2}(:\d{2})?$/.test(record.checkInTime)) {
+          // Plain time format (HH:mm or HH:mm:ss)
+          const today = new Date(selectedDate);
+          const [hours, minutes, seconds = 0] = record.checkInTime.split(':').map(Number);
+          checkInDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, seconds);
+        } else {
+          // Full datetime format
+          checkInDate = new Date(record.checkInTime);
+        }
+        
+        if (!isNaN(checkInDate.getTime())) {
+          // Create 9:00 AM for the same date
+          const nineAM = new Date(checkInDate);
+          nineAM.setHours(9, 0, 0, 0);
+
+          // If employee checked in after 9 AM, mark as Late
+          if (checkInDate > nineAM && attendanceStatus !== "Absent") {
+            attendanceStatus = "Late";
+            console.log(`Employee ${record.name} marked as Late - Check-in: ${record.checkInTime}, Cutoff: 9:00 AM`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error parsing check-in time for employee ${record.name}:`, error);
+      }
+    }
+
+    // Preserve backend "Late" status if explicitly set
+    if (record.attendanceStatus === "Late") {
+      attendanceStatus = "Late"
+    }
+  
     return {
       id: record.id,
       name: record.name,
@@ -116,6 +176,9 @@ const transformBackendData = (backendResponse: any): DailyAttendanceEmployee[] =
     }
   })
 }
+
+
+
 
 // Validate and normalize pagination data
 const normalizePagination = (paginationData: any, dataLength: number): PaginationInfo => {
@@ -267,7 +330,8 @@ export default function ReportsPage() {
       const backendData = await response.json()
       console.log("Backend response:", backendData)
       
-      const transformedEmployees = transformBackendData(backendData)
+      const transformedEmployees = transformBackendData(backendData, selectedDate)
+
       const normalizedPagination = normalizePagination(backendData.pagination, transformedEmployees.length)
       const normalizedSummary = normalizeSummary(backendData.summary, transformedEmployees, selectedDate)
   

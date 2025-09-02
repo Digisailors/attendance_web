@@ -288,22 +288,89 @@ export default function EmployeeAttendanceDetail() {
       });
       
       // Create complete work log with all dates (limited to prevent memory issues)
-      const completeWorkLog: DailyWorkLog[] = dateRange.slice(0, 31).map(({ dateKey, displayDate }) => {
-        if (workLogMap.has(dateKey)) {
-          return workLogMap.get(dateKey)!;
-        } else {
-          return {
-            date: displayDate,
-            checkIn: "--",
-            checkOut: "--",
-            hours: "0",
-            otHours: "0",
-            project: "No Work Assigned",
-            status: "Leave",
-            description: "No work logged for this date"
-          };
-        }
-      });
+    // Create complete work log with all dates (limited to prevent memory issues)
+// Create complete work log with all dates (limited to prevent memory issues)
+// Fixed logic section for the completeWorkLog mapping
+
+// Complete fixed logic for fetchEmployeeData function
+
+const completeWorkLog: DailyWorkLog[] = dateRange.slice(0, 31).map(({ dateKey, displayDate }) => {
+  if (workLogMap.has(dateKey)) {
+    const log = workLogMap.get(dateKey)!;
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date();
+    const todayStr = today.getFullYear() + '-' + 
+                   String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                   String(today.getDate()).padStart(2, '0');
+
+    let finalStatus: string = "Absent";
+
+    // Both check-in & check-out present → Present
+    if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-" && 
+        log.checkOut && log.checkOut !== "--" && log.checkOut !== "-") {
+      finalStatus = "Present";
+    }
+    // Only check-in present
+    else if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-" && 
+             (!log.checkOut || log.checkOut === "--" || log.checkOut === "-")) {
+      
+      // If it's today's date, show as Present (ongoing work)
+      if (dateKey === todayStr) {
+        finalStatus = "Present";
+      } else {
+        // Past dates with only check-in → Absent (incomplete attendance)
+        finalStatus = "Absent";
+      }
+    }
+    // Explicit Leave/Permission status
+    else if (log.status === "Leave" || log.status === "Permission") {
+      finalStatus = log.status;
+    }
+    // No check-in at all → Absent (unless explicitly Leave/Permission)
+    else {
+      finalStatus = "Absent";
+    }
+
+    return {
+      ...log,
+      status: finalStatus,
+    };
+  } else {
+    // No log entry exists for this date → default to Absent
+    return {
+      date: displayDate,
+      checkIn: "--",
+      checkOut: "--",
+      hours: "0",
+      otHours: "0",
+      project: "No Work Assigned",
+      status: "Absent",
+      description: "No work logged for this date",
+    };
+  }
+});
+
+// Calculate actual counts from the processed work log
+const actualWorkingDays = completeWorkLog.filter(log => log.status === "Present").length;
+const actualLeaveCount = completeWorkLog.filter(log => log.status === "Leave").length;
+const actualPermissionCount = completeWorkLog.filter(log => log.status === "Permission").length;
+const actualAbsentCount = completeWorkLog.filter(log => log.status === "Absent").length;
+
+// Update employee data with correct counts
+const correctedEmployeeData = {
+  ...data.employee,
+  workingDays: actualWorkingDays,
+  leaves: actualLeaveCount,
+  permissions: actualPermissionCount,
+  missedDays: actualAbsentCount
+};
+
+setEmployeeData(correctedEmployeeData);
+setDailyWorkLog(completeWorkLog);
+
+
+      
       
       setDailyWorkLog(completeWorkLog);
       

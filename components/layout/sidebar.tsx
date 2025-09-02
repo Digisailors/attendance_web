@@ -24,6 +24,9 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
+import { createPortal } from "react-dom"
+
+
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -45,12 +48,20 @@ export function Sidebar({ userType, className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
-  const [isLoggingOut, setIsLoggingOut] = useState(false) // Add this state
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isMounted, setIsMounted] = useState(false) // Add this to prevent hydration issues
   const pathname = usePathname()
   const router = useRouter()
 
+  // Prevent hydration mismatches
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
   // Handle responsive behavior
   useEffect(() => {
+    if (!isMounted) return // Don't run until mounted
+
     const handleResize = () => {
       if (window.innerWidth >= 768) {
         setMobileOpen(false)
@@ -63,7 +74,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
     handleResize() // Initial check
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [isMounted])
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -72,6 +83,8 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
   // Prevent body scroll when mobile sidebar is open
   useEffect(() => {
+    if (!isMounted) return
+
     if (mobileOpen) {
       document.body.style.overflow = 'hidden'
     } else {
@@ -82,14 +95,14 @@ export function Sidebar({ userType, className }: SidebarProps) {
     return () => {
       document.body.style.overflow = 'unset'
     }
-  }, [mobileOpen])
+  }, [mobileOpen, isMounted])
 
   const getMenuItems = () => {
     switch (userType) {
       case 'admin':
         return [
           { icon: Home, label: 'Dashboard', href: '/admin/dashboard' },
-          { icon: Calendar, label: 'Reports', href: '/admin/report' }
+          { icon: Calendar, label: 'Reports', href: '/admin/reports' }
         ]
       case 'employee':
         return [
@@ -142,6 +155,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
   const userTypeInfo = getUserTypeDisplay()
 
+  // Improved logout handler with better error handling
   const handleLogout = async () => {
     // Prevent multiple logout attempts
     if (isLoggingOut) return
@@ -157,9 +171,9 @@ export function Sidebar({ userType, className }: SidebarProps) {
           localStorage.removeItem('user')
           localStorage.removeItem('token')
           localStorage.removeItem('authToken')
-          // Clear all localStorage items that start with 'employee_daily_state_'
+          // Clear all localStorage items that start with 'employee_'
           Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('employee_daily_state_')) {
+            if (key.startsWith('employee_')) {
               localStorage.removeItem(key)
             }
           })
@@ -180,20 +194,33 @@ export function Sidebar({ userType, className }: SidebarProps) {
         console.warn('Error clearing cookies:', cookieError)
       }
 
-      // Close dialogs and mobile sidebar
-      setLogoutDialogOpen(false)
-      setMobileOpen(false)
-
       console.log('Redirecting to login...')
 
       // Use replace instead of push to prevent back navigation
-      router.replace('/login')
+      await router.replace('/login')
       
     } catch (error) {
       console.error('Logout error:', error)
       // Fallback to direct navigation
       window.location.replace('/login')
+    } finally {
+      // Always reset states even if there's an error
+      setIsLoggingOut(false)
+      setLogoutDialogOpen(false)
+      setMobileOpen(false)
     }
+  }
+
+  // Improved dialog close handler
+  const handleDialogClose = () => {
+    if (!isLoggingOut) {
+      setLogoutDialogOpen(false)
+    }
+  }
+
+  // Don't render until mounted to prevent hydration issues
+  if (!isMounted) {
+    return null
   }
 
   // Mobile menu toggle button (to be placed in your header/navbar)
@@ -276,46 +303,63 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
       {/* Footer with Logout */}
       <div className="p-4 border-t border-gray-200">
-        <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              disabled={isLoggingOut}
-              className={cn(
-                "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50",
-                collapsed && "md:justify-center md:px-2"
-              )}
-            >
-              <LogOut className="h-4 w-4" />
-              {(!collapsed || window.innerWidth < 768) && (
-                <span className="ml-2">{isLoggingOut ? 'Logging out...' : 'Logout'}</span>
-              )}
-            </Button>
-          </AlertDialogTrigger>
+        {/* Simple logout button */}
+        <Button
+          variant="ghost"
+          disabled={isLoggingOut}
+          onClick={() => {
+            console.log('Logout button clicked')
+            setLogoutDialogOpen(true)
+          }}
+          className={cn(
+            "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50",
+            collapsed && "md:justify-center md:px-2"
+          )}
+        >
+          <LogOut className="h-4 w-4" />
+          {(!collapsed || (typeof window !== 'undefined' && window.innerWidth < 768)) && (
+            <span className="ml-2">{isLoggingOut ? 'Logging out...' : 'Logout'}</span>
+          )}
+        </Button>
 
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure you want to logout?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will log you out and redirect you to the login page.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel 
-                disabled={isLoggingOut}
-                onClick={() => setLogoutDialogOpen(false)}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction 
-                disabled={isLoggingOut}
-                onClick={handleLogout}
-              >
-                {isLoggingOut ? 'Logging out...' : 'Logout'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* Custom Modal - More stable than AlertDialog */}
+        {logoutDialogOpen &&
+  createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl w-96 max-w-[90vw]">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Confirm Logout
+          </h3>
+          <p className="text-gray-600 mb-6">
+            Are you sure you want to logout? This will end your current session and redirect you to the login page.
+          </p>
+
+          <div className="flex gap-3 justify-end">
+            <Button
+              variant="outline"
+              disabled={isLoggingOut}
+              onClick={() => setLogoutDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isLoggingOut}
+              onClick={handleLogout}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isLoggingOut ? 'Logging out...' : 'Logout'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body   // 🔑 Render to body, not inside Sidebar
+  )
+}
+
+
+
       </div>
     </div>
   )

@@ -316,72 +316,112 @@ export default function AttendanceOverview() {
   }
 
   // FIXED: Updated fetchAttendanceSummary to properly use and maintain totalDays
-  const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
-    try {
-      console.log("📊 Fetching attendance summary for employees:", employees.length)
-      console.log("📊 Using totalDaysToUse:", totalDaysToUse)
-      
-      const updatedEmployees = await Promise.all(
-        employees.map(async (employee) => {
-          try {
-            const response = await fetch(
-              `/api/attendance-summary?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
-            )
+ // UPDATED: fetchAttendanceSummary with check-in/check-out logic
+const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
+  try {
+    console.log("📊 Fetching attendance summary for employees:", employees.length)
+    console.log("📊 Using totalDaysToUse:", totalDaysToUse)
+    
+    const updatedEmployees = await Promise.all(
+      employees.map(async (employee) => {
+        try {
+          // Fetch individual attendance records instead of summary
+          const response = await fetch(
+            `/api/attendance?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
+          )
+          
+          if (response.ok) {
+            const attendanceData = await response.json()
+            console.log(`📊 Raw attendance data for ${employee.name}:`, attendanceData)
             
-            if (response.ok) {
-              const summaryData = await response.json()
-              console.log(`📊 Attendance summary for ${employee.name}:`, summaryData)
-              
-              return {
-                ...employee,
-                workingDays: summaryData.working_days || 0,
-                missedDays: summaryData.missed_days || 0,
-                // FIXED: Always use the totalDaysToUse parameter
-                totalDays: totalDaysToUse
-              }
-            } else {
-              console.error(`❌ Failed to fetch attendance summary for ${employee.name}:`, response.status)
-              return {
-                ...employee,
-                workingDays: 0,
-                missedDays: totalDaysToUse,
-                // FIXED: Always use the totalDaysToUse parameter
-                totalDays: totalDaysToUse
-              }
+            let workingDays = 0
+            let leaveCount = 0
+            
+            // Process each attendance record
+            if (attendanceData.attendance && Array.isArray(attendanceData.attendance)) {
+              attendanceData.attendance.forEach((record: any) => {
+                const hasCheckIn = record.check_in_time || record.checkInTime
+                const hasCheckOut = record.check_out_time || record.checkOutTime
+                
+                if (hasCheckIn && hasCheckOut) {
+                  // Both check-in and check-out present = working day
+                  workingDays++
+                  console.log(`✅ Working day for ${employee.name} on ${record.date}: Check-in: ${hasCheckIn}, Check-out: ${hasCheckOut}`)
+                } else if (hasCheckIn && !hasCheckOut) {
+                  // Only check-in present = count as leave
+                  leaveCount++
+                  console.log(`🏠 Leave day for ${employee.name} on ${record.date}: Check-in only, no check-out`)
+                }
+                // If no check-in at all, it's neither working nor leave (absent)
+              })
             }
-          } catch (err) {
-            console.error(`❌ Error fetching attendance summary for employee ${employee.name}:`, err)
+            
+            // Calculate missed days (total days - working days - leave days)
+            const missedDays = Math.max(0, totalDaysToUse - workingDays - leaveCount)
+            
+            console.log(`📊 Summary for ${employee.name}:`, {
+              totalDays: totalDaysToUse,
+              workingDays,
+              leaveCount,
+              missedDays
+            })
+            
+            return {
+              ...employee,
+              workingDays,
+              missedDays,
+              totalDays: totalDaysToUse,
+              // Update leave request count with calculated leave days
+              leaveRequestCount: leaveCount,
+              leaves: leaveCount
+            }
+          } else {
+            console.error(`❌ Failed to fetch attendance for ${employee.name}:`, response.status)
             return {
               ...employee,
               workingDays: 0,
               missedDays: totalDaysToUse,
-              // FIXED: Always use the totalDaysToUse parameter
-              totalDays: totalDaysToUse
+              totalDays: totalDaysToUse,
+              leaveRequestCount: 0,
+              leaves: 0
             }
           }
-        })
-      )
+        } catch (err) {
+          console.error(`❌ Error fetching attendance for employee ${employee.name}:`, err)
+          return {
+            ...employee,
+            workingDays: 0,
+            missedDays: totalDaysToUse,
+            totalDays: totalDaysToUse,
+            leaveRequestCount: 0,
+            leaves: 0
+          }
+        }
+      })
+    )
 
-      console.log("✅ Updated employees with attendance summary and correct totalDays:", 
-        updatedEmployees.map(emp => ({
-          name: emp.name,
-          totalDays: emp.totalDays,
-          workingDays: emp.workingDays,
-          missedDays: emp.missedDays
-        }))
-      )
-      return updatedEmployees
-    } catch (err) {
-      console.error("❌ Error in fetchAttendanceSummary:", err)
-      return employees.map(emp => ({
-        ...emp,
-        workingDays: 0,
-        missedDays: totalDaysToUse,
-        // FIXED: Always use the totalDaysToUse parameter
-        totalDays: totalDaysToUse
+    console.log("✅ Updated employees with attendance logic:", 
+      updatedEmployees.map(emp => ({
+        name: emp.name,
+        totalDays: emp.totalDays,
+        workingDays: emp.workingDays,
+        missedDays: emp.missedDays,
+        leaveCount: emp.leaveRequestCount
       }))
-    }
+    )
+    return updatedEmployees
+  } catch (err) {
+    console.error("❌ Error in fetchAttendanceSummary:", err)
+    return employees.map(emp => ({
+      ...emp,
+      workingDays: 0,
+      missedDays: totalDaysToUse,
+      totalDays: totalDaysToUse,
+      leaveRequestCount: 0,
+      leaves: 0
+    }))
   }
+}
 
   // Fixed function to fetch leave and permission counts for all employees
   const fetchRequestCounts = async (employees: DashboardEmployee[], totalDaysToUse: number) => {

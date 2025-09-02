@@ -1,4 +1,4 @@
-"use client";
+'use client'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -84,6 +84,71 @@ interface OvertimeData {
   total_hours: number;
   records_count: number;
 }
+
+// Function to calculate experience from date of joining to current date
+const calculateExperience = (dateOfJoining: string): string => {
+  if (!dateOfJoining) return "N/A";
+  
+  try {
+    const joiningDate = new Date(dateOfJoining);
+    const currentDate = new Date();
+    
+    // Check if joining date is valid
+    if (isNaN(joiningDate.getTime())) {
+      return "Invalid Date";
+    }
+    
+    // Calculate difference
+    let years = currentDate.getFullYear() - joiningDate.getFullYear();
+    let months = currentDate.getMonth() - joiningDate.getMonth();
+    let days = currentDate.getDate() - joiningDate.getDate();
+    
+    // Adjust for negative days
+    if (days < 0) {
+      months--;
+      const lastMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0);
+      days += lastMonth.getDate();
+    }
+    
+    // Adjust for negative months
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+    
+    // Format the experience string
+    const parts = [];
+    if (years > 0) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+    }
+    if (months > 0) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+    }
+    if (days > 0 && years === 0) { // Show days only if less than a year
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : 'Just joined';
+  } catch (error) {
+    console.error('Error calculating experience:', error);
+    return "Error calculating";
+  }
+};
+
+// Function to get experience badge color based on duration
+const getExperienceBadgeColor = (experience: string): string => {
+  if (experience === "N/A" || experience === "Invalid Date" || experience === "Error calculating") {
+    return "bg-gray-100 text-gray-800";
+  }
+  
+  const yearMatch = experience.match(/(\d+) year/);
+  const years = yearMatch ? parseInt(yearMatch[1]) : 0;
+  
+  if (years >= 5) return "bg-purple-100 text-purple-800"; // Senior
+  if (years >= 2) return "bg-blue-100 text-blue-800"; // Experienced  
+  if (years >= 1) return "bg-green-100 text-green-800"; // Junior
+  return "bg-yellow-100 text-yellow-800"; // Fresher
+};
 
 const getStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
@@ -177,7 +242,25 @@ export default function EmployeeProfile() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [selectedYear, setSelectedYear] = useState(getCurrentYear());
   const router = useRouter();
-  const employeeId = getCurrentEmployeeId(); // Get current employee ID
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+
+  // Calculate experience whenever employee data changes
+  const calculatedExperience = useMemo(() => {
+    if (!employeeData?.dateOfJoining) return "N/A";
+    return calculateExperience(employeeData.dateOfJoining);
+  }, [employeeData?.dateOfJoining]);
+
+  useEffect(() => {
+    const id = localStorage.getItem('employeeId') || sessionStorage.getItem('employeeId') || '1';
+    setEmployeeId(id);
+  }, []);
+  
+  useEffect(() => {
+    if (employeeId && selectedMonth && selectedYear) {
+      fetchEmployeeData();
+    }
+  }, [employeeId, selectedMonth, selectedYear]);
+  
 
   // Memoize total calculated hours to prevent unnecessary recalculations
   const totalCalculatedHours = useMemo(() => {
@@ -316,8 +399,48 @@ export default function EmployeeProfile() {
       // Create complete work log with all dates (limited to prevent memory issues)
       const completeWorkLog: DailyWorkLog[] = dateRange.slice(0, 31).map(({ dateKey, displayDate }) => {
         if (workLogMap.has(dateKey)) {
-          return workLogMap.get(dateKey)!;
+          const log = workLogMap.get(dateKey)!;
+
+          // Get today's date in YYYY-MM-DD format
+          const today = new Date();
+          const todayStr = today.getFullYear() + '-' + 
+                         String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                         String(today.getDate()).padStart(2, '0');
+
+          let finalStatus: string = "Absent";
+
+          // Both check-in & check-out present → Present
+          if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-" && 
+              log.checkOut && log.checkOut !== "--" && log.checkOut !== "-") {
+            finalStatus = "Present";
+          }
+          // Only check-in present
+          else if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-" && 
+                   (!log.checkOut || log.checkOut === "--" || log.checkOut === "-")) {
+            
+            // If it's today's date, show as Present (ongoing work)
+            if (dateKey === todayStr) {
+              finalStatus = "Present";
+            } else {
+              // Past dates with only check-in → Absent (incomplete attendance)
+              finalStatus = "Absent";
+            }
+          }
+          // Explicit Leave/Permission status
+          else if (log.status === "Leave" || log.status === "Permission") {
+            finalStatus = log.status;
+          }
+          // No check-in at all → Absent (unless explicitly Leave/Permission)
+          else {
+            finalStatus = "Absent";
+          }
+
+          return {
+            ...log,
+            status: finalStatus,
+          };
         } else {
+          // No log entry exists for this date → default to Absent
           return {
             date: displayDate,
             checkIn: "--",
@@ -325,12 +448,28 @@ export default function EmployeeProfile() {
             hours: "0",
             otHours: "0",
             project: "No Work Assigned",
-            status: "Leave",
-            description: "No work logged for this date"
+            status: "Absent",
+            description: "No work logged for this date",
           };
         }
       });
-      
+
+      // Calculate actual counts from the processed work log
+      const actualWorkingDays = completeWorkLog.filter(log => log.status === "Present").length;
+      const actualLeaveCount = completeWorkLog.filter(log => log.status === "Leave").length;
+      const actualPermissionCount = completeWorkLog.filter(log => log.status === "Permission").length;
+      const actualAbsentCount = completeWorkLog.filter(log => log.status === "Absent").length;
+
+      // Update employee data with correct counts
+      const correctedEmployeeData = {
+        ...data.employee,
+        workingDays: actualWorkingDays,
+        leaves: actualLeaveCount,
+        permissions: actualPermissionCount,
+        missedDays: actualAbsentCount
+      };
+
+      setEmployeeData(correctedEmployeeData);
       setDailyWorkLog(completeWorkLog);
       
       // Fetch additional data
@@ -371,8 +510,9 @@ export default function EmployeeProfile() {
       doc.setFontSize(12);
       doc.text(`Name: ${employeeData.name}`, 14, 25);
       doc.text(`Designation: ${employeeData.designation}`, 14, 32);
-      doc.text(`Month: ${getMonthName(selectedMonth)} ${selectedYear}`, 14, 39);
-      doc.text(`Total Hours (Including OT): ${totalCalculatedHours.toFixed(1)}`, 14, 46);
+      doc.text(`Experience: ${calculatedExperience}`, 14, 39);
+      doc.text(`Month: ${getMonthName(selectedMonth)} ${selectedYear}`, 14, 46);
+      doc.text(`Total Hours (Including OT): ${totalCalculatedHours.toFixed(1)}`, 14, 53);
 
       // Process table data in chunks to prevent memory issues
       const chunkSize = 20; // Process 20 rows at a time
@@ -405,7 +545,7 @@ export default function EmployeeProfile() {
       ];
 
       autoTable(doc, {
-        startY: 52,
+        startY: 59,
         head: [tableColumn],
         body: chunks,
         styles: { fontSize: 8 }, // Smaller font to fit more content
@@ -438,6 +578,7 @@ export default function EmployeeProfile() {
 
       const csvContent = [
         ['Employee:', employeeData.name],
+        ['Experience:', calculatedExperience],
         ['Month:', `${getMonthName(selectedMonth)} ${selectedYear}`],
         ['Total Hours (Including OT):', totalCalculatedHours.toFixed(1)],
         [''],
@@ -574,6 +715,9 @@ export default function EmployeeProfile() {
                           <Badge className="bg-white bg-opacity-20 text-white border-white border-opacity-30">
                             {employeeData.status}
                           </Badge>
+                          <Badge className={`${getExperienceBadgeColor(calculatedExperience)} border-white border-opacity-30`}>
+                            Experience: {calculatedExperience}
+                          </Badge>
                         </div>
                       </div>
                     </div>
@@ -617,11 +761,11 @@ export default function EmployeeProfile() {
                           <span className="text-sm font-medium">{employeeData.dateOfJoining}</span>
                         </div>
                       )}
-                      {employeeData.experience && (
+                      {employeeData.dateOfJoining && (
                         <div className="flex items-center space-x-2">
                           <TrendingUp className="w-4 h-4 text-gray-500" />
                           <span className="text-sm text-gray-600">Experience:</span>
-                          <span className="text-sm font-medium">{employeeData.experience}</span>
+                          <span className="text-sm font-medium text-blue-600">{calculatedExperience}</span>
                         </div>
                       )}
                     </div>
@@ -691,7 +835,26 @@ export default function EmployeeProfile() {
                         {dailyWorkLog.length} days shown
                       </Badge>
                     </div>
-                    
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        onClick={handleExportPDF} 
+                        size="sm" 
+                        variant="outline"
+                        className="flex items-center space-x-1"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>PDF</span>
+                      </Button>
+                      <Button 
+                        onClick={handleExportExcel} 
+                        size="sm" 
+                        variant="outline"
+                        className="flex items-center space-x-1"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Excel</span>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -805,9 +968,6 @@ export default function EmployeeProfile() {
                   </div>
                 </CardContent>
               </Card>
-
-              
-            
             </div>
           </main>
         </div>
