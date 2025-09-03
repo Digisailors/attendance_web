@@ -50,7 +50,6 @@ export default function EmployeeDashboard() {
     return `employee_daily_state_${employeeId}_${getTodayDate()}`
   }
 
-  // Save state to localStorage (Note: This won't work in Claude artifacts)
   // Save state to localStorage
   const saveStateToStorage = (employeeId: string, state: DailyState) => {
     try {
@@ -60,7 +59,6 @@ export default function EmployeeDashboard() {
     }
   }
 
-  // Load state from localStorage (Note: This won't work in Claude artifacts)
   // Load state from localStorage
   const loadStateFromStorage = (employeeId: string): DailyState | null => {
     try {
@@ -72,11 +70,10 @@ export default function EmployeeDashboard() {
     }
   }
 
-  // Clean up old states (optional - clean states older than 7 days)
-  // Clean up old states (optional - clean states older than 7 days)
+  // Clean up old states (optional - clean states older than 30 days)
   const cleanupOldStates = (employeeId: string) => {
     try {
-      // Remove states older than 7 days
+      // Remove states older than 30 days
       const today = new Date();
       for (let i = 1; i <= 30; i++) {
         const pastDate = new Date(today);
@@ -89,11 +86,22 @@ export default function EmployeeDashboard() {
     }
   }
 
- 
-useEffect(() => {
+  // Utility to fetch today's check-in status
+  const fetchTodayCheckInStatus = async (employeeId: string) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await fetch(`/api/employees/${employeeId}/worklog?date=${today}`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (error) {
+      console.error("Error fetching check-in status:", error);
+      return null;
+    }
+  };
+
+  useEffect(() => {
     const fetchUserData = async () => {
       try {
-      
         const userData = localStorage.getItem("user");
         if (userData) {
           const parsedUser = JSON.parse(userData);
@@ -121,45 +129,62 @@ useEffect(() => {
     fetchUserData();
   }, [])
 
-
   // Load saved state when employee data is available
-    useEffect(() => {
+  useEffect(() => {
     const syncCheckInStatus = async () => {
       if (employeeData?.employee_id || user?.email) {
         const employeeId = employeeData?.employee_id || user?.email || "fallback";
         // Clean up old states
         cleanupOldStates(employeeId);
+        
+        // First, load from localStorage
+        const savedState = loadStateFromStorage(employeeId);
+        
         // Fetch today's status from backend
         const dbStatus = await fetchTodayCheckInStatus(employeeId);
+        
         if (dbStatus && dbStatus.check_in) {
           setIsCheckedIn(true);
           setCheckInTime(new Date(`${dbStatus.date}T${dbStatus.check_in}`));
           setIsCheckedOut(!!dbStatus.check_out);
           setCheckOutTime(dbStatus.check_out ? new Date(`${dbStatus.date}T${dbStatus.check_out}`) : null);
-          setWorkType(dbStatus.project || "");
-          setWorkDescription(dbStatus.description || "");
-          setIsWorkSubmitted(!!dbStatus.check_out);
+          setWorkType(dbStatus.project || (savedState?.workType || ""));
+          // Preserve work description from localStorage if not checked out, otherwise use DB value
+          setWorkDescription(dbStatus.check_out ? (dbStatus.description || "") : (savedState?.workDescription || dbStatus.description || ""));
+          setIsWorkSubmitted(!!dbStatus.check_out || (savedState?.isWorkSubmitted || false));
+          
           // Save synced state to localStorage
           const syncedState: DailyState = {
             isCheckedIn: true,
             isCheckedOut: !!dbStatus.check_out,
             checkInTime: new Date(`${dbStatus.date}T${dbStatus.check_in}`).toISOString(),
             checkOutTime: dbStatus.check_out ? new Date(`${dbStatus.date}T${dbStatus.check_out}`).toISOString() : null,
-            workType: dbStatus.project || "",
-            workDescription: dbStatus.description || "",
-            isWorkSubmitted: !!dbStatus.check_out,
+            workType: dbStatus.project || (savedState?.workType || ""),
+            workDescription: dbStatus.check_out ? (dbStatus.description || "") : (savedState?.workDescription || dbStatus.description || ""),
+            isWorkSubmitted: !!dbStatus.check_out || (savedState?.isWorkSubmitted || false),
             date: dbStatus.date
           };
           saveStateToStorage(employeeId, syncedState);
         } else {
-          // No check-in today in DB
-          setIsCheckedIn(false);
-          setCheckInTime(null);
-          setIsCheckedOut(false);
-          setCheckOutTime(null);
-          setWorkType("");
-          setWorkDescription("");
-          setIsWorkSubmitted(false);
+          // No check-in today in DB, but check if we have saved state from localStorage
+          if (savedState) {
+            setIsCheckedIn(savedState.isCheckedIn);
+            setCheckInTime(savedState.checkInTime ? new Date(savedState.checkInTime) : null);
+            setIsCheckedOut(savedState.isCheckedOut);
+            setCheckOutTime(savedState.checkOutTime ? new Date(savedState.checkOutTime) : null);
+            setWorkType(savedState.workType);
+            setWorkDescription(savedState.workDescription); // Preserve work description from localStorage
+            setIsWorkSubmitted(savedState.isWorkSubmitted);
+          } else {
+            // Reset states only if no saved state
+            setIsCheckedIn(false);
+            setCheckInTime(null);
+            setIsCheckedOut(false);
+            setCheckOutTime(null);
+            setWorkType("");
+            setWorkDescription("");
+            setIsWorkSubmitted(false);
+          }
         }
       }
     };
@@ -238,9 +263,6 @@ const handleCheckIn = async () => {
     setShowCheckInNotification(false)
   }, 3000)
 }
-
-
-
 
   const handleSubmitWork = () => {
     if (workType && workDescription) {
@@ -322,20 +344,15 @@ const handleCheckIn = async () => {
   }
 }
 
-// Utility to fetch today's check-in status
-const fetchTodayCheckInStatus = async (employeeId: string) => {
-  const today = new Date().toISOString().split('T')[0];
-  const res = await fetch(`/api/employees/${employeeId}/worklog?date=${today}`);
-  if (!res.ok) return null;
-  return res.json();
-};
-
-
-
   const handleStartNewDay = () => {
-    // Clear today's state
+    // Clear today's state from localStorage
     if (employeeData?.employee_id || user?.email) {
       const empId = employeeData?.employee_id || user?.email || "fallback"
+      try {
+        localStorage.removeItem(getStorageKey(empId))
+      } catch (error) {
+        console.error("Error clearing localStorage:", error)
+      }
       console.log(`Cleared state for new day: ${empId}`)
     }
 
@@ -364,21 +381,6 @@ const fetchTodayCheckInStatus = async (employeeId: string) => {
     }
     return 0;
   }
-
-  // Show loading state while fetching user data
-  // if (loading) {
-  //   return (
-  //     <div className="flex min-h-screen overflow-auto bg-gray-50">
-  //       <Sidebar userType="team-lead" />
-  //       <div className="flex-1 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //           <p className="mt-4 text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   // Get display name from employee data or fallback to email
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
