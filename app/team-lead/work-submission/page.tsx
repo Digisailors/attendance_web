@@ -91,9 +91,10 @@ interface ImageModalProps {
   onNext: () => void;
   onPrevious: () => void;
   title: string;
+  onImageSelect: (index: number) => void;
 }
 
-// Image Modal Component
+// Enhanced Image Modal Component with better controls and responsiveness
 const ImageModal: React.FC<ImageModalProps> = ({
   isOpen,
   onClose,
@@ -101,9 +102,13 @@ const ImageModal: React.FC<ImageModalProps> = ({
   currentIndex,
   onNext,
   onPrevious,
-  title
+  title,
+  onImageSelect
 }) => {
   const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -119,16 +124,44 @@ const ImageModal: React.FC<ImageModalProps> = ({
         case 'ArrowRight':
           if (currentIndex < images.length - 1) onNext();
           break;
+        case '+':
+        case '=':
+          setZoom(Math.min(3, zoom + 0.25));
+          break;
+        case '-':
+          setZoom(Math.max(0.5, zoom - 0.25));
+          break;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentIndex, images.length, onClose, onNext, onPrevious]);
+  }, [isOpen, currentIndex, images.length, onClose, onNext, onPrevious, zoom]);
 
   useEffect(() => {
     setZoom(1);
+    setImagePosition({ x: 0, y: 0 });
   }, [currentIndex]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && zoom > 1) {
+      setImagePosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   if (!isOpen) return null;
 
@@ -136,14 +169,14 @@ const ImageModal: React.FC<ImageModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black bg-opacity-90"
+        className="absolute inset-0 bg-black bg-opacity-95"
         onClick={onClose}
       />
       
       {/* Modal Content */}
-      <div className="relative z-10 max-w-6xl max-h-full w-full mx-4">
+      <div className="relative z-10 max-w-7xl max-h-full w-full mx-4">
         {/* Header */}
-        <div className="bg-white rounded-t-lg p-4 flex items-center justify-between">
+        <div className="bg-white rounded-t-lg p-4 flex items-center justify-between shadow-lg">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
             <p className="text-sm text-gray-600">
@@ -159,19 +192,36 @@ const ImageModal: React.FC<ImageModalProps> = ({
                 size="sm"
                 onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
                 disabled={zoom <= 0.5}
+                title="Zoom Out (-)"
               >
                 <ZoomOut className="w-4 h-4" />
               </Button>
-              <span className="px-2 text-sm font-medium">{Math.round(zoom * 100)}%</span>
+              <span className="px-3 text-sm font-medium min-w-[60px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setZoom(Math.min(3, zoom + 0.25))}
                 disabled={zoom >= 3}
+                title="Zoom In (+)"
               >
                 <ZoomIn className="w-4 h-4" />
               </Button>
             </div>
+
+            {/* Reset Zoom */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setZoom(1);
+                setImagePosition({ x: 0, y: 0 });
+              }}
+              title="Reset Zoom (1:1)"
+            >
+              1:1
+            </Button>
 
             {/* Download */}
             <Button
@@ -183,6 +233,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
                 link.download = `evidence-${currentIndex + 1}.jpg`;
                 link.click();
               }}
+              title="Download Image"
             >
               <Download className="w-4 h-4" />
             </Button>
@@ -195,6 +246,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
                   size="sm"
                   onClick={onPrevious}
                   disabled={currentIndex === 0}
+                  title="Previous Image (←)"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
@@ -203,6 +255,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
                   size="sm"
                   onClick={onNext}
                   disabled={currentIndex === images.length - 1}
+                  title="Next Image (→)"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -214,6 +267,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
               variant="ghost"
               size="sm"
               onClick={onClose}
+              title="Close (Esc)"
             >
               <X className="w-4 h-4" />
             </Button>
@@ -221,36 +275,68 @@ const ImageModal: React.FC<ImageModalProps> = ({
         </div>
 
         {/* Image Container */}
-        <div className="bg-white rounded-b-lg p-4 max-h-[80vh] overflow-auto">
-          <div className="flex justify-center">
+        <div className="bg-black rounded-b-lg max-h-[85vh] overflow-hidden relative">
+          <div 
+            className="flex justify-center items-center min-h-[60vh] max-h-[85vh] overflow-auto cursor-move"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          >
             <img
               src={images[currentIndex]}
               alt={`Evidence ${currentIndex + 1}`}
-              className="max-w-full max-h-full object-contain transition-transform duration-200"
+              className="max-w-full max-h-full object-contain transition-transform duration-200 select-none"
               style={{ 
-                transform: `scale(${zoom})`,
-                cursor: zoom > 1 ? 'grab' : 'default'
+                transform: `scale(${zoom}) translate(${imagePosition.x}px, ${imagePosition.y}px)`,
+                cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
               }}
               draggable={false}
+              onLoad={() => {
+                // Reset position when image loads
+                setImagePosition({ x: 0, y: 0 });
+              }}
             />
           </div>
+
+          {/* Image Navigation Overlays */}
+          {images.length > 1 && (
+            <>
+              {currentIndex > 0 && (
+                <button
+                  onClick={onPrevious}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-3 rounded-full transition-all duration-200"
+                  title="Previous Image"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+              
+              {currentIndex < images.length - 1 && (
+                <button
+                  onClick={onNext}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-3 rounded-full transition-all duration-200"
+                  title="Next Image"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         {/* Image Thumbnails */}
         {images.length > 1 && (
-          <div className="bg-gray-100 p-4 rounded-b-lg">
+          <div className="bg-gray-900 p-4 rounded-b-lg">
             <div className="flex justify-center space-x-2 overflow-x-auto">
               {images.map((image, index) => (
                 <button
                   key={index}
-                  onClick={() => {
-                    const event = new CustomEvent('imageSelect', { detail: { index } });
-                    window.dispatchEvent(event);
-                  }}
-                  className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                  onClick={() => onImageSelect(index)}
+                  className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
                     index === currentIndex 
-                      ? 'border-blue-500 ring-2 ring-blue-200' 
-                      : 'border-gray-300 hover:border-gray-400'
+                      ? 'border-blue-500 ring-2 ring-blue-200 opacity-100' 
+                      : 'border-gray-500 hover:border-gray-300 opacity-70 hover:opacity-100'
                   }`}
                 >
                   <img
@@ -296,12 +382,15 @@ export default function TeamLeaderDashboard() {
 
   // Image Modal Functions
   const openImageModal = (images: string[], startIndex: number = 0, title: string) => {
-    setImageModal({
-      isOpen: true,
-      images,
-      currentIndex: startIndex,
-      title
-    });
+    const validImages = images.filter(img => img && img.trim() !== '');
+    if (validImages.length > 0) {
+      setImageModal({
+        isOpen: true,
+        images: validImages,
+        currentIndex: Math.min(startIndex, validImages.length - 1),
+        title
+      });
+    }
   };
 
   const closeImageModal = () => {
@@ -322,18 +411,12 @@ export default function TeamLeaderDashboard() {
     }));
   };
 
-  // Listen for image selection from thumbnails
-  useEffect(() => {
-    const handleImageSelect = (event: any) => {
-      setImageModal(prev => ({
-        ...prev,
-        currentIndex: event.detail.index
-      }));
-    };
-
-    window.addEventListener('imageSelect', handleImageSelect);
-    return () => window.removeEventListener('imageSelect', handleImageSelect);
-  }, []);
+  const selectImage = (index: number) => {
+    setImageModal(prev => ({
+      ...prev,
+      currentIndex: index
+    }));
+  };
 
   // Get user data from localStorage and fetch team lead details
   useEffect(() => {
@@ -403,7 +486,8 @@ export default function TeamLeaderDashboard() {
   const fetchOTSubmissions = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/employees/Overtime');
+      // Filter OT submissions by team_lead_id to show only assigned employees
+      const response = await fetch(`/api/employees/Overtime?team_lead_id=${teamLeadId}`);
       if (response.ok) {
         const data = await response.json();
         const formattedData = data.map((item: any) => ({
@@ -414,7 +498,7 @@ export default function TeamLeaderDashboard() {
           start_time: item.start_time,
           end_time: item.end_time,
           reason: item.reason,
-          status: item.status || 'pending',
+          status: item.status || 'Pending',
           image1: item.image1,
           image2: item.image2,
           created_at: item.created_at,
@@ -644,6 +728,7 @@ export default function TeamLeaderDashboard() {
   const getStatusBadge = (status: string) => {
     const statusStyles = {
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      Pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
       approved: 'bg-green-100 text-green-800 border-green-200',
       rejected: 'bg-red-100 text-red-800 border-red-200',
       'Pending Team Lead': 'bg-blue-100 text-blue-800 border-blue-200',
@@ -653,6 +738,7 @@ export default function TeamLeaderDashboard() {
 
     const statusIcons = {
       pending: <Clock className="w-3 h-3" />,
+      Pending: <Clock className="w-3 h-3" />,
       approved: <CheckCircle className="w-3 h-3" />,
       rejected: <X className="w-3 h-3" />,
       'Pending Team Lead': <Clock className="w-3 h-3" />,
@@ -682,32 +768,21 @@ export default function TeamLeaderDashboard() {
   const filteredOTSubmissions = otSubmissions.filter(item => {
     const matchesSearch = item.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.reason.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || 
+                         (statusFilter === 'pending' && item.status === 'Pending') ||
+                         (statusFilter === 'approved' && item.status === 'approved') ||
+                         (statusFilter === 'rejected' && item.status === 'rejected');
     return matchesSearch && matchesStatus;
   });
 
   const currentSubmissions = activeTab === 'work' ? filteredWorkSubmissions : filteredOTSubmissions;
   const currentStats = activeTab === 'work' ? stats.work : stats.ot;
 
-  // if (loading) {
-  //   return (
-  //     <div className="flex h-screen bg-gray-50">
-  //       <Sidebar userType="team-lead" />
-  //       <div className="flex-1 flex items-center justify-center ml-64">
-  //         <div className="flex items-center space-x-2">
-  //           <Loader2 className="w-6 h-6 animate-spin" />
-  //           <span>Loading dashboard...</span>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // }
-
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar userType="team-lead" />
       
-      {/* Image Modal */}
+      {/* Enhanced Image Modal */}
       <ImageModal
         isOpen={imageModal.isOpen}
         onClose={closeImageModal}
@@ -715,6 +790,7 @@ export default function TeamLeaderDashboard() {
         currentIndex={imageModal.currentIndex}
         onNext={nextImage}
         onPrevious={previousImage}
+        onImageSelect={selectImage}
         title={imageModal.title}
       />
       
@@ -1121,7 +1197,7 @@ const WorkSubmissionCard: React.FC<{
   );
 };
 
-// OT Submission Card Component
+// Enhanced OT Submission Card Component with Full Image Modal Support
 const OTSubmissionCard: React.FC<{
   submission: OTSubmission;
   isSelected: boolean;
@@ -1143,7 +1219,22 @@ const OTSubmissionCard: React.FC<{
   getStatusBadge,
   onImageClick
 }) => {
-  const otImages = [submission.image1, submission.image2].filter(Boolean);
+  // Filter out empty or invalid image URLs
+  const otImages = [submission.image1, submission.image2].filter(img => 
+    img && img.trim() !== '' && img !== 'null' && img !== 'undefined'
+  );
+  
+  const handleImageClick = (imageIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (otImages.length > 0) {
+      onImageClick(
+        otImages, 
+        imageIndex, 
+        `OT Evidence - ${submission.employee_name} (${new Date(submission.ot_date).toLocaleDateString()})`
+      );
+    }
+  };
   
   return (
     <div className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border-2 ${
@@ -1163,7 +1254,7 @@ const OTSubmissionCard: React.FC<{
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">{submission.employee_name}</h3>
-                {/* <p className="text-xs text-gray-500">ID: {submission.employee_id}</p> */}
+                <p className="text-xs text-gray-500">ID: {submission.employees?.employee_id || submission.employee_id}</p>
               </div>
             </div>
           </div>
@@ -1177,7 +1268,7 @@ const OTSubmissionCard: React.FC<{
           </div>
           <div className="flex items-center space-x-2 text-gray-600">
             <Timer className="w-4 h-4" />
-            <span>{submission.total_hours}</span>
+            <span className="font-medium text-orange-700">{submission.total_hours}</span>
           </div>
         </div>
       </div>
@@ -1185,65 +1276,110 @@ const OTSubmissionCard: React.FC<{
       {/* Content */}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-gray-500">Start Time:</span>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <span className="text-gray-500 text-xs">Start Time:</span>
             <p className="font-medium text-gray-900">{submission.start_time}</p>
           </div>
-          <div>
-            <span className="text-gray-500">End Time:</span>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <span className="text-gray-500 text-xs">End Time:</span>
             <p className="font-medium text-gray-900">{submission.end_time}</p>
           </div>
         </div>
 
         <div>
           <h4 className="text-sm font-medium text-gray-900 mb-2">OT Reason</h4>
-          <p className="text-sm text-gray-600 line-clamp-2">{submission.reason}</p>
+          <div className="bg-orange-50 p-3 rounded-lg">
+            <p className="text-sm text-gray-700">{submission.reason}</p>
+          </div>
         </div>
 
-        {/* Images */}
+        {/* Enhanced Images Section with Full Modal Support */}
         {otImages.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center space-x-2">
-              <ImageIcon className="w-4 h-4" />
+            <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center space-x-2">
+              <ImageIcon className="w-4 h-4 text-orange-600" />
               <span>OT Evidence Images ({otImages.length})</span>
             </h4>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid gap-3 ${otImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {otImages.map((image, index) => (
-                <div key={index} className="relative group cursor-pointer">
-                  <img
-                    src={image}
-                    alt={`OT evidence ${index + 1}`}
-                    className="w-full h-24 object-cover rounded-lg border border-gray-200 transition-transform duration-200 group-hover:scale-105"
-                    onClick={() => onImageClick(
-                      otImages, 
-                      index, 
-                      `OT Evidence - ${submission.employee_name}`
-                    )}
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                    <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                  </div>
-                  <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 rounded">
-                    {index + 1}
+                <div 
+                  key={index} 
+                  className="relative group cursor-pointer"
+                  onClick={(e) => handleImageClick(index, e)}
+                >
+                  <div className="relative overflow-hidden rounded-lg border-2 border-orange-200 hover:border-orange-400 transition-all duration-200 bg-orange-50">
+                    <img
+                      src={image}
+                      alt={`OT evidence ${index + 1}`}
+                      className="w-full h-32 object-cover transition-all duration-200 group-hover:scale-110"
+                      onError={(e) => {
+                        console.error(`Failed to load image: ${image}`);
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                    
+                    {/* Hover Overlay with Enhanced Visual Feedback */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center">
+                      <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 transform scale-90 group-hover:scale-100 transition-transform duration-200">
+                        <Eye className="w-6 h-6 text-white drop-shadow-lg" />
+                      </div>
+                    </div>
+                    
+                    {/* Image Number Badge */}
+                    <div className="absolute top-2 left-2 bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-medium shadow-lg">
+                      Image {index + 1}
+                    </div>
+                    
+                    {/* Click to View Hint */}
+                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      Click to enlarge
+                    </div>
+                    
+                    {/* Loading State */}
+                    <div className="absolute inset-0 bg-orange-100 flex items-center justify-center opacity-0 group-hover:opacity-0">
+                      <Loader2 className="w-6 h-6 text-orange-600 animate-spin" />
+                    </div>
                   </div>
                 </div>
               ))}
+            </div>
+            
+            {/* Enhanced Gallery Preview with Better Instructions */}
+            <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200">
+              <div className="flex items-center space-x-2 text-orange-700">
+                <Eye className="w-4 h-4 flex-shrink-0" />
+                <p className="text-xs font-medium">
+                  Click any image to view full-screen with zoom, navigation controls, and download options
+                </p>
+              </div>
+              {otImages.length > 1 && (
+                <p className="text-xs text-orange-600 mt-1 ml-6">
+                  Use arrow keys or navigation buttons to browse between images
+                </p>
+              )}
             </div>
           </div>
         )}
       </div>
 
       {/* Actions - Show buttons for pending status */}
-      {submission.status === 'Pending' && (
-        <div className="px-4 pb-4">
+      {submission.status === 'pending' && (
+        <div className="px-4 pb-4 border-t border-gray-100 pt-4">
           <div className="flex space-x-2">
             <Button
               onClick={onApprove}
               disabled={processingId !== null}
-              className="flex-1 bg-green-500 hover:bg-green-600"
+              className="flex-1 bg-green-500 hover:bg-green-600 text-white"
             >
               <CheckCircle className="w-4 h-4 mr-2" />
-              {processingId === submission.id ? "Approving..." : "Approve"}
+              {processingId === submission.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  Approving...
+                </>
+              ) : (
+                "Approve"
+              )}
             </Button>
             <Button
               onClick={onReject}
@@ -1252,8 +1388,41 @@ const OTSubmissionCard: React.FC<{
               className="flex-1"
             >
               <X className="w-4 h-4 mr-2" />
-              {processingId === submission.id ? "Rejecting..." : "Reject"}
+              {processingId === submission.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  Rejecting...
+                </>
+              ) : (
+                "Reject"
+              )}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {submission.status === 'approved' && (
+        <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+          <div className="bg-green-50 p-3 rounded-md border border-green-200">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <p className="text-sm text-green-700 font-medium">
+                OT Request Approved Successfully
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {submission.status === 'rejected' && (
+        <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+          <div className="bg-red-50 p-3 rounded-md border border-red-200">
+            <div className="flex items-center space-x-2">
+              <X className="w-4 h-4 text-red-600" />
+              <p className="text-sm text-red-700 font-medium">
+                OT Request Rejected
+              </p>
+            </div>
           </div>
         </div>
       )}
