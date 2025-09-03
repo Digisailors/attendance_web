@@ -546,7 +546,7 @@ setDailyWorkLog(completeWorkLog);
             <p className="text-red-600 mb-4">{error || 'Employee not found'}</p>
             <Button onClick={handleNavigate}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
+              Back
             </Button>
           </div>
         </div>
