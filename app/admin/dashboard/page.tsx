@@ -195,6 +195,7 @@ const monthNames = [
   "July", "August", "September", "October", "November", "December"
 ]
 
+// Get current month and year as defaults
 const now = new Date()
 const defaultMonth = (now.getMonth() + 1).toString()
 const defaultYear = now.getFullYear().toString()
@@ -215,7 +216,7 @@ export default function AttendanceOverview() {
   const [selectedMode, setSelectedMode] = useState<string>("All Modes")
   const [selectedStatus, setSelectedStatus] = useState<string>("All Status")
 
-  // Month/Year selection
+  // Month/Year selection - defaults to current month/year
   const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth)
   const [selectedYear, setSelectedYear] = useState<string>(defaultYear)
 
@@ -226,235 +227,209 @@ export default function AttendanceOverview() {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
+  
   // New states for total days management
   const [totalDaysDialogOpen, setTotalDaysDialogOpen] = useState(false)
   const [currentMonthTotalDays, setCurrentMonthTotalDays] = useState<number>(28)
   const [newTotalDays, setNewTotalDays] = useState<number>(28)
   const [totalDaysLoading, setTotalDaysLoading] = useState(false)
   
-  // FIXED: Improved search state management
   const [isSearching, setIsSearching] = useState(false)
   const [searchTimeoutId, setSearchTimeoutId] = useState<NodeJS.Timeout | null>(null)
   
   const router = useRouter()
 
-  // FIXED: Function to fetch overtime hours for each employee
-  const fetchOvertimeHours = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
+  // Fetch overtime hours for selected month/year
+  const fetchOvertimeHours = async (employees: DashboardEmployee[], totalDaysToUse: number, month: string, year: string) => {
     try {
-      console.log("🕐 Fetching overtime hours for employees:", employees.length)
+      console.log(`Fetching overtime hours for ${employees.length} employees for ${month}/${year}`)
       
       const updatedEmployees = await Promise.all(
         employees.map(async (employee) => {
           try {
-            const response = await fetch(
-              `/api/overtime-summary?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
-            )
+            // Ensure month is zero-padded
+            const paddedMonth = month.padStart(2, '0')
+            const apiUrl = `/api/overtime-summary?employeeId=${encodeURIComponent(employee.id)}&month=${paddedMonth}&year=${year}`
+            
+            console.log(`Fetching OT for ${employee.name}: ${apiUrl}`)
+            
+            const response = await fetch(apiUrl, {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              cache: "no-store",
+            })
             
             if (response.ok) {
               const overtimeData = await response.json()
-              console.log(`✅ Raw overtime data for ${employee.name} (${employee.id}):`, overtimeData)
+              console.log(`Overtime response for ${employee.name}:`, overtimeData)
               
-              // FIXED: Extract OT hours from the API response properly
               let otHours = 0
               
-              // Try different possible sources for the actual overtime hours
-              if (overtimeData.total_hours && overtimeData.total_hours > 0) {
-                // If top-level total_hours has a value, use it
+              // Try multiple possible response structures
+              if (typeof overtimeData === 'number') {
+                otHours = overtimeData
+              } else if (overtimeData.totalHours !== undefined) {
+                otHours = overtimeData.totalHours
+              } else if (overtimeData.total_hours !== undefined) {
                 otHours = overtimeData.total_hours
-              } else if (overtimeData.sample_record && overtimeData.sample_record.total_hours) {
-                // If sample_record has total_hours, use that
-                otHours = overtimeData.sample_record.total_hours
-              } else if (overtimeData.debug_info && overtimeData.debug_info.sample_record && overtimeData.debug_info.sample_record.total_hours) {
-                // If debug_info.sample_record has total_hours, use that
-                otHours = overtimeData.debug_info.sample_record.total_hours
+              } else if (overtimeData.hours !== undefined) {
+                otHours = overtimeData.hours
+              } else if (overtimeData.otHours !== undefined) {
+                otHours = overtimeData.otHours
+              } else if (overtimeData.data && overtimeData.data.total_hours !== undefined) {
+                otHours = overtimeData.data.total_hours
+              } else if (overtimeData.result && overtimeData.result.total_hours !== undefined) {
+                otHours = overtimeData.result.total_hours
               }
               
-              // Round to 2 decimal places
+              // Ensure otHours is a valid number
+              otHours = isNaN(otHours) ? 0 : Math.max(0, otHours)
               const roundedOtHours = Math.round(otHours * 100) / 100
               
-              console.log(`💡 Setting OT hours for ${employee.name}: ${roundedOtHours}h (from ${otHours})`)
+              console.log(`Setting OT hours for ${employee.name}: ${roundedOtHours}h`)
               
               return {
                 ...employee,
                 otHours: roundedOtHours,
-                totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
+                totalDays: totalDaysToUse
               }
             } else {
-              console.error(`❌ Failed to fetch overtime hours for ${employee.name}:`, response.status)
+              console.warn(`Failed to fetch overtime for ${employee.name}: ${response.status}`)
               return {
                 ...employee,
                 otHours: 0,
-                totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
+                totalDays: totalDaysToUse
               }
             }
           } catch (err) {
-            console.error(`❌ Error fetching overtime hours for employee ${employee.name}:`, err)
+            console.error(`Error fetching overtime for ${employee.name}:`, err)
             return {
               ...employee,
               otHours: 0,
-              totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
+              totalDays: totalDaysToUse
             }
           }
         })
       )
 
-      console.log("✅ Updated employees with overtime hours and correct totalDays:", updatedEmployees.map(emp => ({
+      console.log("Updated employees with overtime hours:", updatedEmployees.map(emp => ({
         name: emp.name,
         id: emp.id,
-        otHours: emp.otHours,
-        totalDays: emp.totalDays
+        otHours: emp.otHours
       })))
       return updatedEmployees
     } catch (err) {
-      console.error("❌ Error in fetchOvertimeHours:", err)
+      console.error("Error in fetchOvertimeHours:", err)
       return employees.map(emp => ({
         ...emp,
         otHours: 0,
-        totalDays: totalDaysToUse // FIXED: Ensure totalDays is set correctly
+        totalDays: totalDaysToUse
       }))
     }
   }
 
-  // FIXED: Updated fetchAttendanceSummary to properly use and maintain totalDays
- // UPDATED: fetchAttendanceSummary with check-in/check-out logic
-const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
-  try {
-    console.log("📊 Fetching attendance summary for employees:", employees.length)
-    console.log("📊 Using totalDaysToUse:", totalDaysToUse)
-    
-    const updatedEmployees = await Promise.all(
-      employees.map(async (employee) => {
-        try {
-          // Fetch individual attendance records instead of summary
-          const response = await fetch(
-            `/api/attendance?employeeId=${employee.id}&month=${selectedMonth}&year=${selectedYear}`
-          )
-          
-          if (response.ok) {
-            const attendanceData = await response.json()
-            console.log(`📊 Raw attendance data for ${employee.name}:`, attendanceData)
-            
-            let workingDays = 0
-            let leaveCount = 0
-            
-            // Process each attendance record
-            if (attendanceData.attendance && Array.isArray(attendanceData.attendance)) {
-              attendanceData.attendance.forEach((record: any) => {
-                const hasCheckIn = record.check_in_time || record.checkInTime
-                const hasCheckOut = record.check_out_time || record.checkOutTime
-                
-                if (hasCheckIn && hasCheckOut) {
-                  // Both check-in and check-out present = working day
-                  workingDays++
-                  console.log(`✅ Working day for ${employee.name} on ${record.date}: Check-in: ${hasCheckIn}, Check-out: ${hasCheckOut}`)
-                } else if (hasCheckIn && !hasCheckOut) {
-                  // Only check-in present = count as leave
-                  leaveCount++
-                  console.log(`🏠 Leave day for ${employee.name} on ${record.date}: Check-in only, no check-out`)
-                }
-                // If no check-in at all, it's neither working nor leave (absent)
-              })
-            }
-            
-            // Calculate missed days (total days - working days - leave days)
-            const missedDays = Math.max(0, totalDaysToUse - workingDays - leaveCount)
-            
-            console.log(`📊 Summary for ${employee.name}:`, {
-              totalDays: totalDaysToUse,
-              workingDays,
-              leaveCount,
-              missedDays
-            })
-            
-            return {
-              ...employee,
-              workingDays,
-              missedDays,
-              totalDays: totalDaysToUse,
-              // Update leave request count with calculated leave days
-              leaveRequestCount: leaveCount,
-              leaves: leaveCount
-            }
-          } else {
-            console.error(`❌ Failed to fetch attendance for ${employee.name}:`, response.status)
-            return {
-              ...employee,
-              workingDays: 0,
-              missedDays: totalDaysToUse,
-              totalDays: totalDaysToUse,
-              leaveRequestCount: 0,
-              leaves: 0
-            }
-          }
-        } catch (err) {
-          console.error(`❌ Error fetching attendance for employee ${employee.name}:`, err)
-          return {
-            ...employee,
-            workingDays: 0,
-            missedDays: totalDaysToUse,
-            totalDays: totalDaysToUse,
-            leaveRequestCount: 0,
-            leaves: 0
-          }
-        }
-      })
-    )
-
-    console.log("✅ Updated employees with attendance logic:", 
-      updatedEmployees.map(emp => ({
-        name: emp.name,
-        totalDays: emp.totalDays,
-        workingDays: emp.workingDays,
-        missedDays: emp.missedDays,
-        leaveCount: emp.leaveRequestCount
-      }))
-    )
-    return updatedEmployees
-  } catch (err) {
-    console.error("❌ Error in fetchAttendanceSummary:", err)
-    return employees.map(emp => ({
-      ...emp,
-      workingDays: 0,
-      missedDays: totalDaysToUse,
-      totalDays: totalDaysToUse,
-      leaveRequestCount: 0,
-      leaves: 0
-    }))
-  }
-}
-
-  // Fixed function to fetch leave and permission counts for all employees
-  const fetchRequestCounts = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
+  // Process attendance data while preserving backend workingDays
+  const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysToUse: number) => {
     try {
-      console.log("Fetching request counts for employees:", employees.length)
+      console.log(`Processing attendance data - preserving backend workingDays for ${employees.length} employees`)
       
       const updatedEmployees = await Promise.all(
         employees.map(async (employee) => {
           try {
-            // Fetch leave request count
+            // IMPORTANT: Preserve the workingDays from backend, don't recalculate
+            console.log(`Preserving backend data for ${employee.name}:`, {
+              id: employee.id,
+              workingDays: employee.workingDays,
+              totalDays: totalDaysToUse
+            })
+            
+            // Calculate missed days based on backend workingDays
+            const missedDays = Math.max(0, totalDaysToUse - employee.workingDays)
+            
+            return {
+              ...employee,
+              workingDays: employee.workingDays, // PRESERVE backend value
+              missedDays,
+              totalDays: totalDaysToUse,
+            }
+          } catch (err) {
+            console.error(`Error processing attendance for employee ${employee.name}:`, err)
+            return {
+              ...employee,
+              missedDays: totalDaysToUse - employee.workingDays,
+              totalDays: totalDaysToUse,
+            }
+          }
+        })
+      )
+
+      console.log("Final attendance data with preserved workingDays:", 
+        updatedEmployees.map(emp => ({
+          name: emp.name,
+          id: emp.id,
+          totalDays: emp.totalDays,
+          workingDays: emp.workingDays,
+          missedDays: emp.missedDays
+        }))
+      )
+      return updatedEmployees
+    } catch (err) {
+      console.error("Error in fetchAttendanceSummary:", err)
+      return employees.map(emp => ({
+        ...emp,
+        missedDays: totalDaysToUse - emp.workingDays,
+        totalDays: totalDaysToUse,
+      }))
+    }
+  }
+
+  // Fetch leave and permission counts for selected month/year
+  const fetchRequestCounts = async (employees: DashboardEmployee[], totalDaysToUse: number, month: string, year: string) => {
+    try {
+      console.log(`Fetching request counts for ${employees.length} employees for ${month}/${year}`)
+      
+      const updatedEmployees = await Promise.all(
+        employees.map(async (employee) => {
+          try {
+            // Ensure month is zero-padded for API calls
+            const paddedMonth = month.padStart(2, '0')
+            
+            // Fetch leave request count for selected month/year
             const leaveResponse = await fetch(
-              `/api/leave-request?employeeId=${employee.id}&count=true&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`
+              `/api/leave-request?employeeId=${encodeURIComponent(employee.id)}&count=true&month=${paddedMonth}&year=${year}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+              }
             )
             
             let leaveCount = 0
             if (leaveResponse.ok) {
               const leaveData = await leaveResponse.json()
               leaveCount = leaveData.count || 0
-              console.log(`Leave count for ${employee.name} (${employee.id}):`, leaveCount)
+              console.log(`Leave count for ${employee.name} (${month}/${year}):`, leaveCount)
             } else {
               console.error(`Failed to fetch leave count for ${employee.name}:`, leaveResponse.status)
             }
 
-            // Fetch permission request count
+            // Fetch permission request count for selected month/year
             const permissionResponse = await fetch(
-              `/api/permission-request?employeeId=${employee.id}&count=true&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`
+              `/api/permission-request?employeeId=${encodeURIComponent(employee.id)}&count=true&month=${paddedMonth}&year=${year}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+              }
             )
             
             let permissionCount = 0
             if (permissionResponse.ok) {
               const permissionData = await permissionResponse.json()
               permissionCount = permissionData.count || 0
-              console.log(`Permission count for ${employee.name} (${employee.id}):`, permissionCount)
+              console.log(`Permission count for ${employee.name} (${month}/${year}):`, permissionCount)
             } else {
               console.error(`Failed to fetch permission count for ${employee.name}:`, permissionResponse.status)
             }
@@ -463,10 +438,11 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
               ...employee,
               leaveRequestCount: leaveCount,
               permissionRequestCount: permissionCount,
-              // Add these for AddEmployeeModal compatibility
               leaves: leaveCount,
               permissions: permissionCount,
-              totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
+              totalDays: totalDaysToUse,
+              // PRESERVE the workingDays from backend
+              workingDays: employee.workingDays
             }
           } catch (err) {
             console.error(`Error fetching counts for employee ${employee.name}:`, err)
@@ -476,13 +452,21 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
               permissionRequestCount: 0,
               leaves: 0,
               permissions: 0,
-              totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
+              totalDays: totalDaysToUse,
+              workingDays: employee.workingDays // PRESERVE the workingDays from backend
             }
           }
         })
       )
 
-      console.log("Updated employees with counts:", updatedEmployees)
+      console.log("Final employees with counts and preserved workingDays:", 
+        updatedEmployees.map(emp => ({
+          name: emp.name,
+          id: emp.id,
+          workingDays: emp.workingDays,
+          totalDays: emp.totalDays
+        }))
+      )
       return updatedEmployees
     } catch (err) {
       console.error("Error in fetchRequestCounts:", err)
@@ -492,32 +476,37 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
         permissionRequestCount: 0,
         leaves: 0,
         permissions: 0,
-        totalDays: totalDaysToUse // FIXED: Ensure totalDays is maintained
+        totalDays: totalDaysToUse,
+        workingDays: emp.workingDays // PRESERVE the workingDays from backend
       }))
     }
   }
 
-  // FIXED: Improved fetchMonthTotalDays with better error handling
-  const fetchMonthTotalDays = async () => {
+  // Fetch total days setting for the selected month/year
+  const fetchMonthTotalDays = async (month: string = selectedMonth, year: string = selectedYear) => {
     try {
-      console.log(`🗓️ Fetching total days for ${selectedMonth}/${selectedYear}`)
-      const response = await fetch(`/api/monthly-settings?month=${selectedMonth}&year=${selectedYear}`)
+      console.log(`Fetching total days for ${month}/${year}`)
+      const response = await fetch(`/api/monthly-settings?month=${month}&year=${year}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      })
       if (response.ok) {
         const data = await response.json()
         const totalDays = data.totalDays || 28
-        console.log(`✅ Monthly total days fetched: ${totalDays}`)
+        console.log(`Monthly total days fetched: ${totalDays}`)
         setCurrentMonthTotalDays(totalDays)
         setNewTotalDays(totalDays)
         return totalDays
       } else {
-        console.error(`❌ Failed to fetch monthly settings:`, response.status)
+        console.error(`Failed to fetch monthly settings:`, response.status)
         const defaultDays = 28
         setCurrentMonthTotalDays(defaultDays)
         setNewTotalDays(defaultDays)
         return defaultDays
       }
     } catch (err) {
-      console.error("❌ Error fetching monthly settings:", err)
+      console.error("Error fetching monthly settings:", err)
       const defaultDays = 28
       setCurrentMonthTotalDays(defaultDays)
       setNewTotalDays(defaultDays)
@@ -525,7 +514,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     }
   }
 
-  // FIXED: Update total days and refresh employee data immediately
+  // Update total days for the selected month/year
   const updateMonthTotalDays = async () => {
     if (newTotalDays < 1 || newTotalDays > 31) {
       toast({
@@ -561,13 +550,11 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
         variant: "default",
       })
 
-      // FIXED: Update the current month total days immediately
-      console.log(`🔄 Updating currentMonthTotalDays from ${currentMonthTotalDays} to ${newTotalDays}`)
+      console.log(`Updating currentMonthTotalDays from ${currentMonthTotalDays} to ${newTotalDays}`)
       setCurrentMonthTotalDays(newTotalDays)
       setTotalDaysDialogOpen(false)
       
-      // FIXED: Immediately refresh employee data with new total days
-      console.log(`🔄 Refreshing employee data with new total days: ${newTotalDays}`)
+      console.log(`Refreshing employee data with new total days: ${newTotalDays}`)
       await fetchEmployees(currentPage, false, searchTerm, newTotalDays)
     } catch (err) {
       console.error("Error updating total days:", err)
@@ -582,57 +569,41 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     }
   }
 
-  // FIXED: Updated fetchEmployees to accept totalDays parameter and use it consistently
+  // MAIN FUNCTION: Fetch employees for the selected month/year
   const fetchEmployees = async (page = 1, resetPagination = false, searchQuery = searchTerm, totalDaysOverride?: number) => {
     try {
       setLoading(true)
       setError(null)
       
-      // Use the override value if provided, otherwise use current state
       const totalDaysToUse = totalDaysOverride !== undefined ? totalDaysOverride : currentMonthTotalDays
-      console.log(`🔢 Using totalDays: ${totalDaysToUse} (override: ${totalDaysOverride}, current: ${currentMonthTotalDays})`)
+      console.log(`Using totalDays: ${totalDaysToUse} for ${selectedMonth}/${selectedYear}`)
       
-      // ALWAYS reset to page 1 when searching or filtering
       const finalPage = (searchQuery.trim() || selectedMode !== 'All Modes' || selectedStatus !== 'All Status') ? 1 : (resetPagination ? 1 : page)
       
-      console.log(`🔍 SEARCH DEBUG: Fetching employees`)
-      console.log(`📊 Parameters:`, {
-        searchQuery: `"${searchQuery}"`,
-        selectedMode,
-        selectedStatus,
-        month: selectedMonth,
-        year: selectedYear,
-        page: finalPage,
-        resetPagination,
-        totalDaysToUse
-      })
+      console.log(`Fetching employees for ${selectedMonth}/${selectedYear} with search: "${searchQuery}"`)
       
-      // Build query parameters
+      // Build query parameters with selected month/year
       const params = new URLSearchParams({
-        month: selectedMonth,
-        year: selectedYear,
+        month: selectedMonth,      // Pass selected month
+        year: selectedYear,        // Pass selected year
         page: finalPage.toString(),
         limit: '10'
       })
 
-      // Add search parameters - FIXED: Always add search even if empty to clear results
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim())
-        console.log(`🔍 Adding search parameter: "${searchQuery.trim()}"`)
       }
       
       if (selectedMode && selectedMode !== 'All Modes') {
         params.append('workMode', selectedMode)
-        console.log(`🏢 Adding work mode filter: "${selectedMode}"`)
       }
       
       if (selectedStatus && selectedStatus !== 'All Status') {
         params.append('status', selectedStatus)
-        console.log(`📈 Adding status filter: "${selectedStatus}"`)
       }
 
       const url = `/api/employees?${params.toString()}`
-      console.log(`🌐 API URL: ${url}`)
+      console.log(`API URL: ${url}`)
 
       const response = await fetch(url, {
         method: "GET",
@@ -644,7 +615,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("❌ API Error:", response.status, errorText)
+        console.error("API Error:", response.status, errorText)
         let errorMessage = `HTTP ${response.status}`
         try {
           const errorData = JSON.parse(errorText)
@@ -656,45 +627,40 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
       }
 
       const data: ApiResponse = await response.json()
-      console.log(`✅ API Response:`, {
-        employeesReceived: data.employees?.length || 0,
+      console.log(`API Response received for ${selectedMonth}/${selectedYear}:`, {
+        employeesCount: data.employees?.length || 0,
         totalCount: data.pagination?.totalCount || 0,
-        currentPage: data.pagination?.currentPage || 1,
-        searchTerm: data.debug?.searchTerm,
-        hasSearch: data.debug?.hasSearch
+        currentPage: data.pagination?.currentPage || 1
       })
 
+      // Process the employee data for the selected month/year
       if (data.employees && Array.isArray(data.employees)) {
-        console.log(`👥 Employee List:`)
+        console.log(`RAW BACKEND DATA - Employee Working Days for ${selectedMonth}/${selectedYear}:`)
         data.employees.forEach((emp, idx) => {
-          console.log(`  ${idx + 1}. ID: ${emp.id}, Name: ${emp.name}`)
+          console.log(`  ${idx + 1}. ${emp.name} (${emp.id}): workingDays = ${emp.workingDays}`)
         })
         
         setPagination(data.pagination)
         setCurrentPage(finalPage)
         
-        // FIXED: Pass totalDaysToUse to all data fetching functions
-        console.log(`📊 Fetching attendance data with totalDays: ${totalDaysToUse}...`)
+        // Process data while preserving backend workingDays
+        console.log(`Processing attendance data while preserving backend workingDays for ${selectedMonth}/${selectedYear}...`)
         const employeesWithAttendance = await fetchAttendanceSummary(data.employees, totalDaysToUse)
         
-        // Then fetch overtime hours
-        console.log(`⏰ Fetching overtime hours for all employees...`)
-        const employeesWithOT = await fetchOvertimeHours(employeesWithAttendance, totalDaysToUse)
+        console.log(`Adding overtime hours for ${selectedMonth}/${selectedYear}...`)
+        const employeesWithOT = await fetchOvertimeHours(employeesWithAttendance, totalDaysToUse, selectedMonth, selectedYear)
         
-        // Finally fetch request counts
-        console.log(`📋 Fetching request counts...`)
-        const employeesWithCounts = await fetchRequestCounts(employeesWithOT, totalDaysToUse)
+        console.log(`Adding request counts for ${selectedMonth}/${selectedYear}...`)
+        const employeesWithCounts = await fetchRequestCounts(employeesWithOT, totalDaysToUse, selectedMonth, selectedYear)
         
-        console.log(`✅ Final employee data with correct totalDays:`, employeesWithCounts.map(emp => ({
-          name: emp.name,
-          id: emp.id,
-          totalDays: emp.totalDays, // Should now consistently show the correct value
-          otHours: emp.otHours,
-          workingDays: emp.workingDays
-        })))
+        console.log(`FINAL DATA - Employee data after processing for ${selectedMonth}/${selectedYear}:`)
+        employeesWithCounts.forEach((emp, idx) => {
+          console.log(`  ${idx + 1}. ${emp.name}: workingDays=${emp.workingDays}, totalDays=${emp.totalDays}, otHours=${emp.otHours}`)
+        })
+        
         setAttendanceData(employeesWithCounts)
       } else {
-        console.log("⚠️ No employees data received")
+        console.log("No employees data received")
         setAttendanceData([])
         setPagination({
           currentPage: 1,
@@ -707,7 +673,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch employees"
-      console.error("❌ Error fetching employees:", errorMessage)
+      console.error("Error fetching employees:", errorMessage)
       setError(errorMessage)
       setAttendanceData([])
       setPagination({
@@ -724,32 +690,29 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     }
   }
 
-  // FIXED: Highly optimized search with instant results
+  // Search functionality
   const performSearch = useCallback(
     (searchValue: string) => {
-      console.log(`🚀 INSTANT SEARCH: "${searchValue}"`)
+      console.log(`Performing search: "${searchValue}" for ${selectedMonth}/${selectedYear}`)
       
-      // Clear any existing timeout
       if (searchTimeoutId) {
         clearTimeout(searchTimeoutId)
         setSearchTimeoutId(null)
       }
       
       if (searchValue.trim() === '') {
-        // INSTANT: If search is cleared, fetch immediately without delay
-        console.log(`🔍 Search cleared - INSTANT fetch`)
+        console.log(`Search cleared - immediate fetch`)
         setIsSearching(true)
         setCurrentPage(1)
         fetchEmployees(1, true, searchValue)
       } else {
-        // SHORT DELAY: For search queries, use minimal delay (100ms)
-        console.log(`🔍 Search query - SHORT delay: "${searchValue}"`)
+        console.log(`Search query - delayed fetch: "${searchValue}"`)
         setIsSearching(true)
         
         const timeoutId = setTimeout(() => {
-          console.log(`🔍 Executing search: "${searchValue}"`)
+          console.log(`Executing search: "${searchValue}"`)
           fetchEmployees(1, true, searchValue)
-        }, 100) // Reduced from 300ms to 100ms for faster response
+        }, 100)
         
         setSearchTimeoutId(timeoutId)
       }
@@ -757,44 +720,36 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     [selectedMonth, selectedYear, selectedMode, selectedStatus, searchTimeoutId, currentMonthTotalDays]
   )
 
-  // FIXED: Enhanced search input handler with instant response
   const handleSearchChange = (value: string) => {
-    console.log(`🔤 Search input changed: "${value}" (length: ${value.length})`)
+    console.log(`Search input changed: "${value}"`)
     setSearchTerm(value)
     performSearch(value)
   }
 
-  // Handle filter changes
   const handleFilterChange = () => {
-    console.log(`🔧 Filter changed - Mode: ${selectedMode}, Status: ${selectedStatus}`)
+    console.log(`Filter changed - Mode: ${selectedMode}, Status: ${selectedStatus}`)
     setCurrentPage(1)
     fetchEmployees(1, true)
   }
 
-  // FIXED: Updated useEffect to fetch total days first, then employees with correct totalDays
+  // CRITICAL: This effect triggers when month or year changes
   useEffect(() => {
-    console.log("🔄 Month/Year changed - fetching total days first, then employees")
+    console.log("Month/Year changed - fetching total days first, then employees")
     const loadData = async () => {
-      // First fetch the total days for this month
-      const totalDays = await fetchMonthTotalDays()
-      console.log(`📊 Total days loaded: ${totalDays}, now fetching employees with this value`)
-      // Then fetch employees with the correct total days
-      await fetchEmployees(1, true, "", totalDays) // Pass totalDays as override
+      const totalDays = await fetchMonthTotalDays(selectedMonth, selectedYear)
+      console.log(`Total days loaded: ${totalDays}, now fetching employees for ${selectedMonth}/${selectedYear}`)
+      await fetchEmployees(1, true, "", totalDays)
     }
     loadData()
-    // eslint-disable-next-line
-  }, [selectedMonth, selectedYear])
+  }, [selectedMonth, selectedYear]) // This dependency array ensures the effect runs when month or year changes
 
-  // Handle mode and status filter changes
   useEffect(() => {
     if (selectedMode !== "All Modes" || selectedStatus !== "All Status") {
-      console.log(`🔧 Filter effect triggered - Mode: ${selectedMode}, Status: ${selectedStatus}`)
+      console.log(`Filter effect triggered - Mode: ${selectedMode}, Status: ${selectedStatus}`)
       handleFilterChange()
     }
-    // eslint-disable-next-line
   }, [selectedMode, selectedStatus])
 
-  // FIXED: Cleanup timeout on component unmount
   useEffect(() => {
     return () => {
       if (searchTimeoutId) {
@@ -807,10 +762,8 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     router.push(`/admin/detail/${employeeId}`)
   }
 
-  // FIXED: Updated handleAddEmployee function with proper type conversion
   const handleAddEmployee = async (newEmployee: ModalEmployee, originalId?: string): Promise<void> => {
     try {
-      // Convert modal employee to dashboard employee format
       const dashboardEmployee = convertModalToDashboard(newEmployee)
 
       const response = await fetch("/api/employees", {
@@ -845,14 +798,12 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
   }
 
   const handleEditEmployee = (employee: DashboardEmployee) => {
-    // Convert dashboard employee to modal employee format
     const modalEmployee = convertDashboardToModal(employee)
     setSelectedEmployee(modalEmployee)
     setEditModalOpen(true)
   }
 
   const handleDeleteEmployee = (employee: DashboardEmployee) => {
-    // Convert to modal format for consistency, but we only need basic info for delete
     const modalEmployee = convertDashboardToModal(employee)
     setSelectedEmployee(modalEmployee)
     setDeleteDialogOpen(true)
@@ -915,7 +866,6 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     setDeletingEmployeeId(null)
   }
 
-  // FIXED: Updated handleUpdateEmployee function with proper type conversion
   const handleUpdateEmployee = async (updatedEmployee: ModalEmployee, originalEmployeeId?: string): Promise<void> => {
     const employeeIdToUpdate = originalEmployeeId || updatedEmployee.id
     
@@ -929,7 +879,6 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     }
 
     try {
-      // Convert modal employee to dashboard employee format
       const dashboardEmployee = convertModalToDashboard(updatedEmployee)
 
       const response = await fetch(`/api/employees/${encodeURIComponent(employeeIdToUpdate)}`, {
@@ -974,7 +923,6 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
     }
   }
 
-  // Updated CSV export with OT Hours instead of permissions and leaves
   const handleExportCSV = () => {
     if (attendanceData.length === 0) {
       toast({
@@ -1029,57 +977,47 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
-      console.log(`📄 Page changed to: ${page}`)
+      console.log(`Page changed to: ${page}`)
       fetchEmployees(page)
     }
   }
 
-  // FIXED: Instant clear functions
   const clearAllFilters = () => {
-    console.log('🧹 INSTANT: Clearing all filters')
+    console.log('Clearing all filters')
     setSearchTerm('')
     setSelectedMode('All Modes')
     setSelectedStatus('All Status')
     setCurrentPage(1)
     setIsSearching(true)
     
-    // Clear any pending search timeout
     if (searchTimeoutId) {
       clearTimeout(searchTimeoutId)
       setSearchTimeoutId(null)
     }
     
-    // Fetch immediately without delay
     fetchEmployees(1, true, '')
   }
 
-  // FIXED: Instant search clear
   const clearSearch = () => {
-    console.log('🧹 INSTANT: Clearing search only')
+    console.log('Clearing search only')
     setSearchTerm('')
     setIsSearching(true)
     
-    // Clear any pending search timeout
     if (searchTimeoutId) {
       clearTimeout(searchTimeoutId)
       setSearchTimeoutId(null)
     }
     
-    // Fetch immediately without delay
     fetchEmployees(1, true, '')
   }
 
-  // FIXED: Debug logging with proper OT hours tracking
   useEffect(() => {
-    console.log("📊 Attendance data updated with OT hours:", attendanceData.map(emp => ({
+    console.log("Current attendance data in state:", attendanceData.map(emp => ({
       id: emp.id,
       name: emp.name,
       workingDays: emp.workingDays,
-      totalDays: emp.totalDays, // Add totalDays to debug
-      otHours: emp.otHours,
-      missedDays: emp.missedDays,
-      leaveRequestCount: emp.leaveRequestCount,
-      permissionRequestCount: emp.permissionRequestCount
+      totalDays: emp.totalDays,
+      otHours: emp.otHours
     })))
   }, [attendanceData])
 
@@ -1092,25 +1030,11 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
 
     const parsedUser = JSON.parse(userData)
     if (parsedUser.userType !== 'admin') {
-      router.push('/unauthorized') // You can create this page
+      router.push('/unauthorized')
     } else {
       setLoading(false)
     }
   }, [])
-
-  // if (loading && !isSearching) {
-  //   return (
-  //     <div className="flex h-screen bg-gray-50">
-  //       <Sidebar userType="admin" />
-  //       <div className="flex-1 flex items-center justify-center">
-  //         <div className="flex items-center space-x-2">
-  //           <Loader2 className="w-6 h-6 animate-spin" />
-  //           <span>Loading employees...</span>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   return (
     <ProtectedRoute allowedRoles={['admin']}>
@@ -1129,6 +1053,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
                 </div>
               </div>
               <div className="flex items-center space-x-4">
+                {/* Month Selection */}
                 <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                   <SelectTrigger className="w-[120px]">
                     <SelectValue />
@@ -1148,11 +1073,13 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
                     <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
+                {/* Year Selection */}
                 <Select value={selectedYear} onValueChange={setSelectedYear}>
                   <SelectTrigger className="w-[100px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="2024">2024</SelectItem>
                     <SelectItem value="2025">2025</SelectItem>
                     <SelectItem value="2026">2026</SelectItem>
                     <SelectItem value="2027">2027</SelectItem>
@@ -1202,6 +1129,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
+                      {/* Total Days Settings Dialog */}
                       <Dialog open={totalDaysDialogOpen} onOpenChange={setTotalDaysDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm">
@@ -1397,7 +1325,9 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
                                 {employee.totalDays} Days
                               </TableCell>
                               <TableCell className="text-center font-medium text-green-600">
-                                {employee.workingDays} Days
+                                <div className="flex items-center justify-center space-x-1">
+                                  <span>{employee.workingDays} Days</span>
+                                </div>
                               </TableCell>
                               <TableCell className="text-center font-medium text-purple-600">
                                 <div className="flex items-center justify-center space-x-1">
@@ -1461,7 +1391,7 @@ const fetchAttendanceSummary = async (employees: DashboardEmployee[], totalDaysT
                         {Math.min(pagination.currentPage * pagination.limit, pagination.totalCount)} of{" "}
                         {pagination.totalCount} employees
                         {(searchTerm || selectedMode !== "All Modes" || selectedStatus !== "All Status") && (
-                          <span className="text-orange-600"> (filtered results)</span>
+                          <span className="text-orange-600 font-medium"> (filtered results)</span>
                         )}
                       </div>
                       <div className="flex items-center space-x-2">
