@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
 import {
   Search,
@@ -92,7 +93,6 @@ const debounce = (func: Function, delay: number) => {
   }
 }
 
-// Transform backend daily data to expected format
 // Transform backend daily data to expected format
 const transformBackendData = (backendResponse: any, selectedDate: string): DailyAttendanceEmployee[] => {
   if (!backendResponse?.employees || !Array.isArray(backendResponse.employees)) {
@@ -176,9 +176,6 @@ const transformBackendData = (backendResponse: any, selectedDate: string): Daily
     }
   })
 }
-
-
-
 
 // Validate and normalize pagination data
 const normalizePagination = (paginationData: any, dataLength: number): PaginationInfo => {
@@ -292,6 +289,10 @@ export default function ReportsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [exportLoading, setExportLoading] = useState(false)
   
+  // Multi-select state for downloads
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set())
+  const [showMultiSelect, setShowMultiSelect] = useState(false)
+  
   const router = useRouter()
 
   // Main fetch function
@@ -385,6 +386,8 @@ export default function ReportsPage() {
     console.log("Status filter changed to:", status)
     setSelectedStatus(status)
     setCurrentPage(1)
+    setSelectedEmployeeIds(new Set()) // Clear selections when filter changes
+    setShowMultiSelect(false) // Hide multi-select when filter changes
     fetchDailyAttendance(1, searchTerm, status, selectedMode)
   }
 
@@ -393,6 +396,7 @@ export default function ReportsPage() {
     console.log("Mode filter changed to:", mode)
     setSelectedMode(mode)
     setCurrentPage(1)
+    setSelectedEmployeeIds(new Set()) // Clear selections when filter changes
     fetchDailyAttendance(1, searchTerm, selectedStatus, mode)
   }
 
@@ -401,6 +405,8 @@ export default function ReportsPage() {
     console.log("Date changed to:", newDate)
     setSelectedDate(newDate)
     setCurrentPage(1)
+    setSelectedEmployeeIds(new Set()) // Clear selections when date changes
+    setShowMultiSelect(false)
     // Reset filters when date changes
     setSearchTerm("")
     setSelectedStatus("All Status")
@@ -426,6 +432,8 @@ export default function ReportsPage() {
     setSelectedStatus("All Status")
     setSelectedMode("All Modes")
     setCurrentPage(1)
+    setSelectedEmployeeIds(new Set())
+    setShowMultiSelect(false)
     fetchDailyAttendance(1, "", "All Status", "All Modes")
   }
   
@@ -436,19 +444,45 @@ export default function ReportsPage() {
     fetchDailyAttendance(1, "", selectedStatus, selectedMode)
   }
 
+  // Multi-select functions
+  const toggleEmployeeSelection = (employeeId: string) => {
+    const newSelected = new Set(selectedEmployeeIds)
+    if (newSelected.has(employeeId)) {
+      newSelected.delete(employeeId)
+    } else {
+      newSelected.add(employeeId)
+    }
+    setSelectedEmployeeIds(newSelected)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedEmployeeIds.size === attendanceData.length) {
+      setSelectedEmployeeIds(new Set())
+    } else {
+      setSelectedEmployeeIds(new Set(attendanceData.map(emp => emp.id)))
+    }
+  }
+
+  const toggleMultiSelectMode = () => {
+    setShowMultiSelect(!showMultiSelect)
+    setSelectedEmployeeIds(new Set())
+  }
+
   // Export functions
-  const getFilteredDataForExport = (exportType: 'all' | 'present' | 'absent'): DailyAttendanceEmployee[] => {
+  const getFilteredDataForExport = (exportType: 'all' | 'present' | 'absent' | 'selected'): DailyAttendanceEmployee[] => {
     switch (exportType) {
       case 'present':
         return attendanceData.filter(emp => emp.attendanceStatus === 'Present' || emp.attendanceStatus === 'Late')
       case 'absent':
         return attendanceData.filter(emp => emp.attendanceStatus === 'Absent')
+      case 'selected':
+        return attendanceData.filter(emp => selectedEmployeeIds.has(emp.id))
       default:
         return attendanceData
     }
   }
 
-  const exportToPDF = async (exportType: 'all' | 'present' | 'absent') => {
+  const exportToPDF = async (exportType: 'all' | 'present' | 'absent' | 'selected') => {
     try {
       setExportLoading(true)
       
@@ -457,7 +491,7 @@ export default function ReportsPage() {
       if (filteredData.length === 0) {
         toast({
           title: "No Data",
-          description: `No ${exportType === 'all' ? '' : exportType} employees found for export`,
+          description: `No ${exportType === 'selected' ? 'selected' : exportType === 'all' ? '' : exportType} employees found for export`,
           variant: "destructive",
         })
         return
@@ -481,8 +515,10 @@ export default function ReportsPage() {
         doc.text(`Total: ${summary.totalEmployees} | Present: ${summary.presentCount} | Absent: ${summary.absentCount} | Late: ${summary.lateCount}`, 14, 38)
       } else if (exportType === 'present') {
         doc.text(`Present Employees: ${summary.presentCount + summary.lateCount}`, 14, 38)
-      } else {
+      } else if (exportType === 'absent') {
         doc.text(`Absent Employees: ${summary.absentCount}`, 14, 38)
+      } else {
+        doc.text(`Selected Employees: ${filteredData.length}`, 14, 38)
       }
 
       const tableData = filteredData.map(emp => [
@@ -525,7 +561,7 @@ export default function ReportsPage() {
     }
   }
 
-  const exportToExcel = async (exportType: 'all' | 'present' | 'absent') => {
+  const exportToExcel = async (exportType: 'all' | 'present' | 'absent' | 'selected') => {
     try {
       setExportLoading(true)
       
@@ -534,7 +570,7 @@ export default function ReportsPage() {
       if (filteredData.length === 0) {
         toast({
           title: "No Data",
-          description: `No ${exportType === 'all' ? '' : exportType} employees found for export`,
+          description: `No ${exportType === 'selected' ? 'selected' : exportType === 'all' ? '' : exportType} employees found for export`,
           variant: "destructive",
         })
         return
@@ -554,7 +590,9 @@ export default function ReportsPage() {
           ? [`Total: ${summary.totalEmployees} | Present: ${summary.presentCount} | Absent: ${summary.absentCount} | Late: ${summary.lateCount}`]
           : exportType === 'present'
           ? [`Present Employees: ${summary.presentCount + summary.lateCount}`]
-          : [`Absent Employees: ${summary.absentCount}`],
+          : exportType === 'absent'
+          ? [`Absent Employees: ${summary.absentCount}`]
+          : [`Selected Employees: ${filteredData.length}`],
         [],
         ['Employee ID', 'Name', 'Designation', 'Work Mode', 'Status', 'Check In Time', 'Check Out Time', 'Total Hours', 'Overtime Hours'],
         ...filteredData.map(emp => [
@@ -626,6 +664,8 @@ export default function ReportsPage() {
     setSelectedStatus(statusFilter)
     setCurrentPage(1)
     setSearchTerm("") // Clear search when clicking summary cards
+    setSelectedEmployeeIds(new Set()) // Clear selections
+    setShowMultiSelect(false) // Hide multi-select
     fetchDailyAttendance(1, "", statusFilter, selectedMode)
   }
 
@@ -668,6 +708,14 @@ export default function ReportsPage() {
   const memoizedTableRows = useMemo(() => {
     return attendanceData.map((employee) => (
       <TableRow key={employee.id} className="hover:bg-gray-50">
+        {showMultiSelect && (
+          <TableCell>
+            <Checkbox
+              checked={selectedEmployeeIds.has(employee.id)}
+              onCheckedChange={() => toggleEmployeeSelection(employee.id)}
+            />
+          </TableCell>
+        )}
         <TableCell>
           <div className="px-1.5 py-0.5 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-xs leading-tight">
             {employee.id.slice(-8)}
@@ -705,7 +753,7 @@ export default function ReportsPage() {
         </TableCell>
       </TableRow>
     ))
-  }, [attendanceData])
+  }, [attendanceData, showMultiSelect, selectedEmployeeIds])
 
   // Check if any filters are active
   const hasActiveFilters = searchTerm || selectedStatus !== "All Status" || selectedMode !== "All Modes"
@@ -718,7 +766,7 @@ export default function ReportsPage() {
           <div className="bg-white border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <Link href="/admin/dashboard" className="flex items-center text-gray-600 hover:text-gray-900">
+                <Link href="/admin" className="flex items-center text-gray-600 hover:text-gray-900">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Dashboard
                 </Link>
@@ -820,20 +868,43 @@ export default function ReportsPage() {
                           {hasActiveFilters && (
                             <span className="text-orange-600 font-medium"> (filtered)</span>
                           )}
+                          {showMultiSelect && selectedEmployeeIds.size > 0 && (
+                            <span className="text-blue-600 font-medium"> • {selectedEmployeeIds.size} selected</span>
+                          )}
                         </CardDescription>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
+                      {/* Bulk Select Toggle Button */}
+                      <Button 
+                        variant={showMultiSelect ? "default" : "outline"} 
+                        size="sm" 
+                        onClick={toggleMultiSelectMode}
+                      >
+                        {showMultiSelect ? (
+                          <>
+                            <X className="w-4 h-4 mr-2" />
+                            Exit Select
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Bulk Select
+                          </>
+                        )}
+                      </Button>
+
+                      {/* Export dropdown */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" disabled={exportLoading}>
+                          {/* <Button variant="outline" size="sm" disabled={exportLoading}>
                             {exportLoading ? (
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             ) : (
                               <Download className="w-4 h-4 mr-2" />
                             )}
                             Export
-                          </Button>
+                          </Button> */}
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuItem onClick={() => exportToPDF('all')}>
@@ -844,22 +915,64 @@ export default function ReportsPage() {
                             <FileSpreadsheet className="mr-2 h-4 w-4" />
                             All - Excel
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => exportToPDF('present')}>
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            Present Only - PDF
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => exportToExcel('present')}>
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            Present Only - Excel
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => exportToPDF('absent')}>
-                            <UserX className="mr-2 h-4 w-4" />
-                            Absent Only - PDF
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => exportToExcel('absent')}>
-                            <UserX className="mr-2 h-4 w-4" />
-                            Absent Only - Excel
-                          </DropdownMenuItem>
+                          
+                          {/* Selected employees export options */}
+                          {showMultiSelect && selectedEmployeeIds.size > 0 && (
+                            <>
+                              <DropdownMenuItem onClick={() => exportToPDF('selected')}>
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                Selected ({selectedEmployeeIds.size}) - PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportToExcel('selected')}>
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                Selected ({selectedEmployeeIds.size}) - Excel
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          
+                          {/* Status-based exports */}
+                          {selectedStatus !== "All Status" && !showMultiSelect && (
+                            <>
+                              <DropdownMenuItem onClick={() => exportToPDF(selectedStatus.toLowerCase() as 'present' | 'absent')}>
+                                {selectedStatus === "Present" ? (
+                                  <UserCheck className="mr-2 h-4 w-4" />
+                                ) : (
+                                  <UserX className="mr-2 h-4 w-4" />
+                                )}
+                                {selectedStatus} Only - PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportToExcel(selectedStatus.toLowerCase() as 'present' | 'absent')}>
+                                {selectedStatus === "Present" ? (
+                                  <UserCheck className="mr-2 h-4 w-4" />
+                                ) : (
+                                  <UserX className="mr-2 h-4 w-4" />
+                                )}
+                                {selectedStatus} Only - Excel
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          
+                          {/* Default present/absent exports when no filter is active */}
+                          {selectedStatus === "All Status" && !showMultiSelect && (
+                            <>
+                              <DropdownMenuItem onClick={() => exportToPDF('present')}>
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                Present Only - PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportToExcel('present')}>
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                Present Only - Excel
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportToPDF('absent')}>
+                                <UserX className="mr-2 h-4 w-4" />
+                                Absent Only - PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportToExcel('absent')}>
+                                <UserX className="mr-2 h-4 w-4" />
+                                Absent Only - Excel
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -918,10 +1031,52 @@ export default function ReportsPage() {
                     )}
                   </div>
 
+                  {/* Multi-select toolbar */}
+                  {showMultiSelect && (
+                    <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            checked={selectedEmployeeIds.size === attendanceData.length && attendanceData.length > 0}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                          <span className="text-sm font-medium">
+                            {selectedEmployeeIds.size === attendanceData.length && attendanceData.length > 0 
+                              ? "Deselect All" 
+                              : "Select All"}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-600">
+                          {selectedEmployeeIds.size} of {attendanceData.length} employees selected
+                        </span>
+                      </div>
+                      {selectedEmployeeIds.size > 0 && (
+                        <div className="flex items-center space-x-2">
+                          <Button size="sm" onClick={() => exportToPDF('selected')}>
+                            <FileText className="w-4 h-4 mr-1" />
+                            Export PDF
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => exportToExcel('selected')}>
+                            <FileSpreadsheet className="w-4 h-4 mr-1" />
+                            Export Excel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="border rounded-lg overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">
+                          {showMultiSelect && (
+                            <TableHead className="w-[50px] text-center">
+                              <Checkbox
+                                checked={selectedEmployeeIds.size === attendanceData.length && attendanceData.length > 0}
+                                onCheckedChange={toggleSelectAll}
+                              />
+                            </TableHead>
+                          )}
                           <TableHead className="w-[80px] text-center">ID</TableHead>
                           <TableHead className="w-[180px]">Employee Name</TableHead>
                           <TableHead className="w-[150px]">Designation</TableHead>
@@ -936,7 +1091,7 @@ export default function ReportsPage() {
                       <TableBody>
                         {loading ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center py-12">
+                            <TableCell colSpan={showMultiSelect ? 10 : 9} className="text-center py-12">
                               <div className="flex flex-col items-center space-y-3">
                                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
                                 <div>
@@ -948,7 +1103,7 @@ export default function ReportsPage() {
                           </TableRow>
                         ) : attendanceData.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center py-8 text-gray-500">
+                            <TableCell colSpan={showMultiSelect ? 10 : 9} className="text-center py-8 text-gray-500">
                               {hasActiveFilters ? (
                                 <div className="space-y-3">
                                   <AlertCircle className="w-8 h-8 text-gray-400 mx-auto" />
