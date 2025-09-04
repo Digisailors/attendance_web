@@ -45,6 +45,20 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { useRouter } from "next/navigation";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
+
+interface LoggedInUser {
+  id: string;
+  email: string;
+  userType: string;
+  fullName?: string;
+  department?: string;
+}
 
 interface EmployeeData {
   id: string;
@@ -84,6 +98,50 @@ interface OvertimeData {
   total_hours: number;
   records_count: number;
 }
+
+// Function to get logged-in user details
+const getLoggedInUser = (): LoggedInUser | null => {
+  if (typeof window === 'undefined') return null;
+  
+  try {
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      return JSON.parse(userData) as LoggedInUser;
+    }
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+  }
+  return null;
+};
+
+// Function to get employee ID from logged-in user's email using direct Supabase query
+const getEmployeeIdFromEmail = async (email: string): Promise<string | null> => {
+  try {
+    console.log('Fetching employee data for email:', email);
+    
+    const { data, error } = await supabase
+      .from('employees')
+      .select('employee_id, id')
+      .eq('email_address', email)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      console.error('Error fetching employee by email:', error);
+      return null;
+    }
+
+    if (data) {
+      console.log('Found employee data:', data);
+      return data.employee_id || data.id;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error in getEmployeeIdFromEmail:', error);
+    return null;
+  }
+};
 
 // Function to calculate experience from date of joining to current date
 const calculateExperience = (dateOfJoining: string): string => {
@@ -189,13 +247,6 @@ export default function EmployeeProfile() {
     const now = new Date();
     return now.getFullYear().toString();
   };
-
-  // Get employee ID from session/auth context (you'll need to implement this)
-  const getCurrentEmployeeId = () => {
-    // This should come from your authentication context
-    // For now, returning a placeholder - replace with actual implementation
-    return localStorage.getItem('employeeId') || sessionStorage.getItem('employeeId') || '1';
-  };
   
   // Optimized date range generation with memory limits
   const generateDateRange = (month: string, year: string) => {
@@ -234,6 +285,7 @@ export default function EmployeeProfile() {
     return dates;
   };
 
+  const [loggedInUser, setLoggedInUser] = useState<LoggedInUser | null>(null);
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [dailyWorkLog, setDailyWorkLog] = useState<DailyWorkLog[]>([]);
   const [overtimeHours, setOvertimeHours] = useState<number>(0);
@@ -251,9 +303,37 @@ export default function EmployeeProfile() {
     return calculateExperience(employeeData.dateOfJoining);
   }, [employeeData?.dateOfJoining]);
   
+  // Initialize user data and employee ID - FIXED TO USE CORRECT EMAIL MATCHING
   useEffect(() => {
-    const id = localStorage.getItem('employeeId') || sessionStorage.getItem('employeeId') || '1';
-    setEmployeeId(id);
+    const initializeUserData = async () => {
+      const user = getLoggedInUser();
+      
+      if (!user) {
+        console.error('No logged-in user found');
+        setError('User not authenticated. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
+      setLoggedInUser(user);
+
+      console.log('Logged-in user:', user);
+
+      // Get employee ID from user's email using direct Supabase query
+      const empId = await getEmployeeIdFromEmail(user.email);
+      
+      if (empId) {
+        console.log('Found employee ID:', empId);
+        setEmployeeId(empId);
+      } else {
+        console.error('No employee found for email:', user.email);
+        setError(`No employee profile found for email: ${user.email}. Please contact your administrator.`);
+        setLoading(false);
+        return;
+      }
+    };
+
+    initializeUserData();
   }, []);
   
   useEffect(() => {
@@ -341,33 +421,80 @@ export default function EmployeeProfile() {
     }
   };
 
+  // FIXED EMPLOYEE DATA FETCHING - Now directly queries employee table based on logged-in user's email
   const fetchEmployeeData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-      
-      const response = await fetch(
-        `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
-        { signal: controller.signal }
-      );
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch employee data: ${response.status} ${response.statusText}`);
+
+      if (!loggedInUser?.email) {
+        throw new Error('No logged-in user email found');
       }
-      
-      const data: ApiResponse = await response.json();
-      
-      // Validate data structure
-      if (!data.employee || !Array.isArray(data.dailyWorkLog)) {
-        throw new Error('Invalid data structure received from API');
+
+      console.log('Fetching employee data for email:', loggedInUser.email);
+
+      // First, get the employee data directly from Supabase using the logged-in user's email
+      const { data: employeeRecord, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('email_address', loggedInUser.email)
+        .eq('is_active', true)
+        .single();
+
+      if (empError || !employeeRecord) {
+        console.error('Error fetching employee from Supabase:', empError);
+        throw new Error(`Employee profile not found for email: ${loggedInUser.email}`);
       }
+
+      console.log('Found employee record:', employeeRecord);
+
+      // Map the employee data from Supabase to our interface
+      const mappedEmployeeData: EmployeeData = {
+        id: employeeRecord.id,
+        name: employeeRecord.name,
+        designation: employeeRecord.designation,
+        workMode: employeeRecord.work_mode,
+        status: employeeRecord.status,
+        totalDays: 0, // Will be calculated below
+        workingDays: 0, // Will be calculated below
+        permissions: 0, // Will be calculated below
+        leaves: 0, // Will be calculated below
+        missedDays: 0, // Will be calculated below
+        phoneNumber: employeeRecord.phone_number,
+        emailAddress: employeeRecord.email_address,
+        address: employeeRecord.address,
+        dateOfJoining: employeeRecord.date_of_joining,
+        experience: employeeRecord.experience,
+      };
+
+      // Now fetch the daily work log using the employee ID we found
+      const actualEmployeeId = employeeRecord.employee_id || employeeRecord.id;
       
-      setEmployeeData(data.employee);
+      console.log('Using employee ID for work log:', actualEmployeeId);
+
+      // Try to fetch from existing API if available, otherwise fallback to direct query
+      let dailyWorkLogData = [];
+      
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        
+        const response = await fetch(
+          `/api/employees/${actualEmployeeId}?month=${selectedMonth}&year=${selectedYear}`,
+          { signal: controller.signal }
+        );
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const apiData: ApiResponse = await response.json();
+          dailyWorkLogData = apiData.dailyWorkLog || [];
+        } else {
+          console.warn('API call failed, using empty work log');
+        }
+      } catch (apiError) {
+        console.warn('API not available, using empty work log:', apiError);
+      }
       
       // Generate date range with safety checks
       const dateRange = generateDateRange(selectedMonth, selectedYear);
@@ -377,8 +504,8 @@ export default function EmployeeProfile() {
       }
       
       // Limit the number of work logs to prevent memory issues
-      const maxLogs = Math.min(data.dailyWorkLog.length, 100); // Limit to 100 entries
-      const limitedWorkLogs = data.dailyWorkLog.slice(0, maxLogs);
+      const maxLogs = Math.min(dailyWorkLogData.length, 100);
+      const limitedWorkLogs = dailyWorkLogData.slice(0, maxLogs);
       
       // Create a map of existing work logs by date
       const workLogMap = new Map<string, DailyWorkLog>();
@@ -462,12 +589,15 @@ export default function EmployeeProfile() {
 
       // Update employee data with correct counts
       const correctedEmployeeData = {
-        ...data.employee,
+        ...mappedEmployeeData,
+        totalDays: dateRange.length,
         workingDays: actualWorkingDays,
         leaves: actualLeaveCount,
         permissions: actualPermissionCount,
         missedDays: actualAbsentCount
       };
+
+      console.log('Final employee data:', correctedEmployeeData);
 
       setEmployeeData(correctedEmployeeData);
       setDailyWorkLog(completeWorkLog);
@@ -487,12 +617,6 @@ export default function EmployeeProfile() {
     }
   };
 
-  useEffect(() => {
-    if (employeeId && selectedMonth && selectedYear) {
-      fetchEmployeeData();
-    }
-  }, [employeeId, selectedMonth, selectedYear]);
-
   const handleNavigate = () => {
     router.push('/employee/dashboard');
   };
@@ -504,15 +628,16 @@ export default function EmployeeProfile() {
     try {
       const doc = new jsPDF();
 
-      // Title
+      // Title with logged-in user info
       doc.setFontSize(16);
       doc.text(`My Work Log Report`, 14, 15);
       doc.setFontSize(12);
       doc.text(`Name: ${employeeData.name}`, 14, 25);
-      doc.text(`Designation: ${employeeData.designation}`, 14, 32);
-      doc.text(`Experience: ${calculatedExperience}`, 14, 39);
-      doc.text(`Month: ${getMonthName(selectedMonth)} ${selectedYear}`, 14, 46);
-      doc.text(`Total Hours (Including OT): ${totalCalculatedHours.toFixed(1)}`, 14, 53);
+      doc.text(`Email: ${loggedInUser?.email || 'N/A'}`, 14, 32);
+      doc.text(`Designation: ${employeeData.designation}`, 14, 39);
+      doc.text(`Experience: ${calculatedExperience}`, 14, 46);
+      doc.text(`Month: ${getMonthName(selectedMonth)} ${selectedYear}`, 14, 53);
+      doc.text(`Total Hours (Including OT): ${totalCalculatedHours.toFixed(1)}`, 14, 60);
 
       // Process table data in chunks to prevent memory issues
       const chunkSize = 20; // Process 20 rows at a time
@@ -545,7 +670,7 @@ export default function EmployeeProfile() {
       ];
 
       autoTable(doc, {
-        startY: 59,
+        startY: 66,
         head: [tableColumn],
         body: chunks,
         styles: { fontSize: 8 }, // Smaller font to fit more content
@@ -578,6 +703,7 @@ export default function EmployeeProfile() {
 
       const csvContent = [
         ['Employee:', employeeData.name],
+        ['Email:', loggedInUser?.email || 'N/A'],
         ['Experience:', calculatedExperience],
         ['Month:', `${getMonthName(selectedMonth)} ${selectedYear}`],
         ['Total Hours (Including OT):', totalCalculatedHours.toFixed(1)],
@@ -642,11 +768,23 @@ export default function EmployeeProfile() {
       <div className="flex h-screen bg-gray-50">
         <Sidebar userType="employee" />
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-red-600 mb-4">{error || 'Profile not found'}</p>
-            <Button onClick={() => window.location.reload()}>
-              Try Again
-            </Button>
+          <div className="text-center max-w-md">
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-medium">{error || 'Profile not found'}</p>
+              {error?.includes('email:') && (
+                <p className="text-sm text-red-500 mt-2">
+                  Please ensure your email address matches the one in the employee database.
+                </p>
+              )}
+            </div>
+            <div className="space-x-2">
+              <Button onClick={() => window.location.reload()}>
+                Try Again
+              </Button>
+              <Button onClick={handleNavigate} variant="outline">
+                Go to Dashboard
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -660,7 +798,15 @@ export default function EmployeeProfile() {
         <div className="flex-1 flex flex-col">
           <div className="bg-white border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-xl font-semibold text-gray-900">My Profile & Attendance</h1>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">My Profile & Attendance</h1>
+                {loggedInUser && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Logged in as: {loggedInUser.fullName || loggedInUser.email} ({loggedInUser.userType})
+                    {loggedInUser.department && ` - ${loggedInUser.department}`}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center space-x-4">
                 <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                   <SelectTrigger className="w-[120px]">
@@ -708,6 +854,9 @@ export default function EmployeeProfile() {
                       <div>
                         <h1 className="text-2xl font-bold">{employeeData.name}</h1>
                         <p className="text-lg opacity-90">{employeeData.designation}</p>
+                        {loggedInUser?.email && (
+                          <p className="text-sm opacity-75 mt-1">{loggedInUser.email}</p>
+                        )}
                         <div className="flex items-center space-x-4 mt-2">
                           <Badge className="bg-white bg-opacity-20 text-white border-white border-opacity-30">
                             {employeeData.workMode} Mode
@@ -724,6 +873,11 @@ export default function EmployeeProfile() {
                     <div className="text-right">
                       <div className="text-sm opacity-80">Selected Month</div>
                       <div className="text-xl font-semibold">{getMonthName(selectedMonth)} {selectedYear}</div>
+                      {loggedInUser && (
+                        <div className="text-sm opacity-70 mt-2">
+                          User Type: {loggedInUser.userType}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -740,11 +894,13 @@ export default function EmployeeProfile() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {employeeData.emailAddress && (
+                      {(employeeData.emailAddress || loggedInUser?.email) && (
                         <div className="flex items-center space-x-2">
                           <Mail className="w-4 h-4 text-gray-500" />
                           <span className="text-sm text-gray-600">Email:</span>
-                          <span className="text-sm font-medium">{employeeData.emailAddress}</span>
+                          <span className="text-sm font-medium">
+                            {employeeData.emailAddress || loggedInUser?.email}
+                          </span>
                         </div>
                       )}
                       {employeeData.phoneNumber && (
@@ -822,8 +978,6 @@ export default function EmployeeProfile() {
                 </Card>
               </div>
 
-              {/* Performance Metrics Card */}
-             
 
               {/* Daily Work Log */}
               <Card>
