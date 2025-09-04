@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { CheckCircle, Clock, TrendingUp, Award, User, FileText, Bell, MessageSquare, Loader2, Calendar, Timer, Building } from 'lucide-react'
+import { CheckCircle, Clock, TrendingUp, Award, User, FileText, Bell, MessageSquare, Loader2, Calendar, Timer, Building,X } from 'lucide-react'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -328,41 +328,58 @@ const handleOTApproval = async (id: string) => {
 
 
 
-  const handleOTReject = async (otId: string) => {
-    if (processingId) return;
+ const handleOTReject = async (otId: string) => {
+  if (processingId) return;
 
-    setProcessingId(otId);
-    try {
-      const response = await fetch(`/api/manager/ot-final-approval`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: otId,
-          action: 'reject',
-          approved_by: managerId,
-          manager_remarks: comments[otId] || 'Rejected by manager',
-        }),
-      });
+  setProcessingId(otId);
+  
+  // Get the actual UUID from managerData
+  const actualManagerUUID = managerData?.id || managerData?.user_id;
 
-      if (response.ok) {
-        await fetchOTRequests();
-        setComments(prev => ({
-          ...prev,
-          [otId]: ''
-        }));
-        console.log("OT request rejected successfully");
-      } else {
-        const errorData = await response.text();
-        console.error("Failed to reject OT request:", errorData);
-      }
-    } catch (error) {
-      console.error("Error rejecting OT request:", error);
-    } finally {
-      setProcessingId(null);
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!actualManagerUUID || !uuidRegex.test(actualManagerUUID)) {
+    console.error("Manager UUID is invalid:", actualManagerUUID);
+    alert("Invalid Manager UUID format. Please contact support.");
+    setProcessingId(null);
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/manager/final-approvals/Overtime', {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: otId,
+        action: 'reject',
+        approved_by: actualManagerUUID, // ✅ Using UUID instead of managerId
+        manager_remarks: comments[otId] || 'Rejected by manager',
+      }),
+    });
+
+    if (response.ok) {
+      await fetchOTRequests();
+      setComments(prev => ({
+        ...prev,
+        [otId]: ''
+      }));
+      console.log("OT request rejected successfully");
+    } else {
+      const errorData = await response.json();
+      console.error("Failed to reject OT request:", errorData);
+      alert(`Failed to reject OT: ${errorData.error || 'Unknown error'}`);
     }
-  };
+  } catch (error) {
+    console.error("Error rejecting OT request:", error);
+    alert("Something went wrong while rejecting OT.");
+  } finally {
+    setProcessingId(null);
+  }
+};
+
 
   const handleCommentChange = (id: string, value: string) => {
     setComments(prev => ({
@@ -786,43 +803,69 @@ const handleOTApproval = async (id: string) => {
                                 </div>
                               )}
                               
-                              {otRequest.status === "Final Approved"&& (
-                                <div className="space-y-4">
-                                  <div>
-                                    <Label htmlFor={`ot-manager-comments-${otRequest.id}`} className="text-sm font-medium">
-                                      Manager Comments (optional):
-                                    </Label>
-                                    <Textarea
-                                      id={`ot-manager-comments-${otRequest.id}`}
-                                      placeholder="Add any comments or feedback..."
-                                      value={comments[otRequest.id] || ''}
-                                      onChange={(e) => handleCommentChange(otRequest.id, e.target.value)}
-                                      className="mt-2"
-                                    />
-                                  </div>
-                                  
-                                  <div className="flex space-x-2">
-    <Button 
-  onClick={() => handleOTApproval(otRequest.id)}
-  disabled={processingId !== null || !managerData?.id}
-  className="bg-green-500 hover:bg-green-600"
->
-  <CheckCircle className="w-4 h-4 mr-2" />
-  {processingId === otRequest.id ? "Approving..." : "Approve OT Request"}
-</Button>
+                             {/* Update the condition for showing action buttons */}
+{(otRequest.status === "final-approval" || otRequest.status === "Final Approved") && (
+  <div className="space-y-4">
+    <div>
+      <Label htmlFor={`ot-manager-comments-${otRequest.id}`} className="text-sm font-medium">
+        Manager Comments (optional):
+      </Label>
+      <Textarea
+        id={`ot-manager-comments-${otRequest.id}`}
+        placeholder="Add any comments or feedback..."
+        value={comments[otRequest.id] || ''}
+        onChange={(e) => handleCommentChange(otRequest.id, e.target.value)}
+        className="mt-2"
+      />
+    </div>
+    
+    <div className="flex space-x-2">
+      <Button 
+        onClick={() => handleOTApproval(otRequest.id)}
+        disabled={processingId !== null || !managerData?.id}
+        className="bg-green-500 hover:bg-green-600"
+      >
+        <CheckCircle className="w-4 h-4 mr-2" />
+        {processingId === otRequest.id ? "Approving..." : "Approve OT Request"}
+      </Button>
 
+      <Button 
+        onClick={() => handleOTReject(otRequest.id)}
+        disabled={processingId !== null}
+        variant="destructive"
+      >
+        <Clock className="w-4 h-4 mr-2" />
+        {processingId === otRequest.id ? "Rejecting..." : "Reject"}
+      </Button>
+    </div>
+  </div>
+)}
 
-                                    <Button 
-                                      onClick={() => handleOTReject(otRequest.id)}
-                                      disabled={processingId !== null}
-                                      variant="destructive"
-                                    >
-                                      <Clock className="w-4 h-4 mr-2" />
-                                      {processingId === otRequest.id ? "Rejecting..." : "Reject"}
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
+{/* Show rejection message for rejected requests */}
+{otRequest.status === "rejected" && (
+  <div className="bg-red-50 border border-red-200 rounded-md p-3">
+    <div className="flex items-center space-x-2">
+      <X className="h-4 w-4 text-red-500" />
+      <span className="text-sm font-medium text-red-700">Request Rejected</span>
+    </div>
+    <p className="text-sm text-red-600 mt-1">
+      This overtime request has been rejected by the manager.
+    </p>
+  </div>
+)}
+
+{/* Show approval message for approved requests */}
+{otRequest.status === "approved" && (
+  <div className="bg-green-50 border border-green-200 rounded-md p-3">
+    <div className="flex items-center space-x-2">
+      <CheckCircle className="h-4 w-4 text-green-500" />
+      <span className="text-sm font-medium text-green-700">Request Approved</span>
+    </div>
+    <p className="text-sm text-green-600 mt-1">
+      This overtime request has been approved and processed.
+    </p>
+  </div>
+)}
 
                               {otRequest.manager_remarks && (
                                 <div>
