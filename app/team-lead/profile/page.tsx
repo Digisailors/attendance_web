@@ -942,7 +942,6 @@ export default function EmployeeProfile() {
                       </TableBody>
                     </Table>
                   </div>
-                  
                   {/* Total Hours Summary */}
                   <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
                     <div className="flex justify-between items-center">
