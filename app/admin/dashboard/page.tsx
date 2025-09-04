@@ -1044,10 +1044,10 @@ export default function AttendanceOverview() {
           <div className="bg-white border-b border-gray-200 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <Link href="/admin" className="flex items-center text-gray-600 hover:text-gray-900">
+{/*                 <Link href="/admin" className="flex items-center text-gray-600 hover:text-gray-900">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Login
-                </Link>
+                </Link> */}
                 <div className="flex items-center space-x-2">
                   <h1 className="text-2xl font-bold text-gray-900">Admin Portal</h1>
                 </div>
