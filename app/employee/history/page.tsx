@@ -104,16 +104,21 @@ export default function EmployeeHistoryPage() {
   }, [])
 
   useEffect(() => {
-    if (employeeData?.id) {
+    if (employeeData?.employee_id) {
       fetchLeaveRequests()
       fetchPermissionRequests()
     }
-  }, [employeeData?.id, statusFilter]) // Refetch when employeeId or statusFilter changes
-
-  const fetchLeaveRequests = async () => {
+  }, [employeeData?.employee_id, statusFilter]) // Refetch when employeeId or statusFilter changes
+const fetchLeaveRequests = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/leave-request?employeeId=${employeeData.id}&status=${statusFilter}`)
+      const now = new Date()
+      const month = now.getMonth() + 1
+      const year = now.getFullYear()
+
+      const response = await fetch(
+        `/api/leave-request?employeeId=${employeeData.employee_id}&status=${statusFilter}&month=${month}&year=${year}`
+      )
       if (response.ok) {
         const data = await response.json()
         setLeaveRequests(data.data || [])
@@ -125,10 +130,11 @@ export default function EmployeeHistoryPage() {
     }
   }
 
+
   const fetchPermissionRequests = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/permission-request?employeeId=${employeeData.id}&status=${statusFilter}`)
+      const response = await fetch(`/api/permission-request?employeeId=${employeeData.employee_id}&status=${statusFilter}`)
       if (response.ok) {
         const data = await response.json()
         setPermissionRequests(data.data || [])
@@ -227,23 +233,6 @@ export default function EmployeeHistoryPage() {
   }
 
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
-
-  // if (loading) {
-  //   return (
-  //     <div className="flex min-h-screen overflow-auto bg-gray-50">
-  //       <Sidebar userType="employee" />
-  //       <div className="flex-1 flex flex-col">
-  //         <Header title="Employee Portal" subtitle="Loading..." userType="employee" />
-  //         <div className="flex-1 flex items-center justify-center">
-  //           <div className="text-center">
-  //             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //             <p className="mt-4 text-gray-600">Loading your history...</p>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   return (
     <ProtectedRoute allowedRoles={['employee','intern']}>
@@ -539,11 +528,11 @@ export default function EmployeeHistoryPage() {
                                     <p className="text-sm text-gray-600">{formatDate(request.date)}</p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-medium text-gray-700">From Time</p>
+                                    <p className="text-sm font-medium text-gray-700">Start Time</p>
                                     <p className="text-sm text-gray-600">{formatTime(request.start_time)}</p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-medium text-gray-700">To Time</p>
+                                    <p className="text-sm font-medium text-gray-700">End Time</p>
                                     <p className="text-sm text-gray-600">{formatTime(request.end_time)}</p>
                                   </div>
                                 </div>
