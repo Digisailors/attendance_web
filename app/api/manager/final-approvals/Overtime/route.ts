@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       designation
     )
   `)
-  .in('status', ['Final Approved', 'approved']) // ✅ works for multiple statuses
+  .in('status', ['Final Approved', 'approved','rejected']) // ✅ works for multiple statuses
   .order('ot_date', { ascending: false });
 
     // Filter by employee if specified
