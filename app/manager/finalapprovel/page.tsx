@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { CheckCircle, Clock, TrendingUp, Award, User, FileText, Bell, MessageSquare, Loader2, Calendar, Timer, Building,X } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { CheckCircle, Clock, TrendingUp, Award, User, FileText, Bell, MessageSquare, Loader2, Calendar, Timer, Building, X, CheckSquare, Square } from 'lucide-react'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import ProtectedRoute from '@/components/ProtectedRoute'
@@ -67,6 +68,12 @@ export default function ManagerDashboard() {
   const [managerId, setManagerId] = useState<string>("");
   const [managerData, setManagerData] = useState<any>(null);
   const [comments, setComments] = useState<{[key: string]: string}>({});
+  
+  // Selection states
+  const [selectedApprovals, setSelectedApprovals] = useState<Set<string>>(new Set());
+  const [selectedOTRequests, setSelectedOTRequests] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  
   const [stats, setStats] = useState({
     pendingFinalApproval: 0,
     approvedToday: 0,
@@ -119,6 +126,12 @@ export default function ManagerDashboard() {
       }
     }
   }, [managerId, activeTab]);
+
+  // Clear selections when switching tabs
+  useEffect(() => {
+    setSelectedApprovals(new Set());
+    setSelectedOTRequests(new Set());
+  }, [activeTab]);
 
   const fetchFinalApprovals = async () => {
     try {
@@ -203,10 +216,126 @@ export default function ManagerDashboard() {
     }
   };
 
-  const handleFinalApproval = async (approvalId: string) => {
-    if (processingId) return;
+  // Selection handlers
+  const handleSelectAllApprovals = (checked: boolean) => {
+    if (checked) {
+      const pendingApprovals = finalApprovals.filter(
+        approval => approval.status === "Pending Final Approval"
+      );
+      setSelectedApprovals(new Set(pendingApprovals.map(approval => approval.id)));
+    } else {
+      setSelectedApprovals(new Set());
+    }
+  };
 
-    setProcessingId(approvalId);
+  const handleSelectAllOTRequests = (checked: boolean) => {
+    if (checked) {
+      const pendingOTRequests = otRequests.filter(
+        ot => ot.status === "final-approval" || ot.status === "Final Approved"
+      );
+      setSelectedOTRequests(new Set(pendingOTRequests.map(ot => ot.id)));
+    } else {
+      setSelectedOTRequests(new Set());
+    }
+  };
+
+  const handleSelectApproval = (approvalId: string, checked: boolean) => {
+    const newSelected = new Set(selectedApprovals);
+    if (checked) {
+      newSelected.add(approvalId);
+    } else {
+      newSelected.delete(approvalId);
+    }
+    setSelectedApprovals(newSelected);
+  };
+
+  const handleSelectOTRequest = (otId: string, checked: boolean) => {
+    const newSelected = new Set(selectedOTRequests);
+    if (checked) {
+      newSelected.add(otId);
+    } else {
+      newSelected.delete(otId);
+    }
+    setSelectedOTRequests(newSelected);
+  };
+
+  // Bulk approval handlers
+  const handleBulkApproval = async () => {
+    if (bulkProcessing) return;
+    
+    setBulkProcessing(true);
+    const selectedIds = activeTab === 'final-approval' ? selectedApprovals : selectedOTRequests;
+    
+    try {
+      for (const id of selectedIds) {
+        if (activeTab === 'final-approval') {
+          await handleFinalApproval(id, true); // true indicates bulk operation
+        } else {
+          await handleOTApproval(id, true); // true indicates bulk operation
+        }
+      }
+      
+      // Clear selections after bulk approval
+      if (activeTab === 'final-approval') {
+        setSelectedApprovals(new Set());
+      } else {
+        setSelectedOTRequests(new Set());
+      }
+      
+      // Refresh data
+      if (activeTab === 'final-approval') {
+        await fetchFinalApprovals();
+      } else {
+        await fetchOTRequests();
+      }
+      
+    } catch (error) {
+      console.error("Error in bulk approval:", error);
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkReject = async () => {
+    if (bulkProcessing) return;
+    
+    setBulkProcessing(true);
+    const selectedIds = activeTab === 'final-approval' ? selectedApprovals : selectedOTRequests;
+    
+    try {
+      for (const id of selectedIds) {
+        if (activeTab === 'final-approval') {
+          await handleReject(id, true); // true indicates bulk operation
+        } else {
+          await handleOTReject(id, true); // true indicates bulk operation
+        }
+      }
+      
+      // Clear selections after bulk rejection
+      if (activeTab === 'final-approval') {
+        setSelectedApprovals(new Set());
+      } else {
+        setSelectedOTRequests(new Set());
+      }
+      
+      // Refresh data
+      if (activeTab === 'final-approval') {
+        await fetchFinalApprovals();
+      } else {
+        await fetchOTRequests();
+      }
+      
+    } catch (error) {
+      console.error("Error in bulk rejection:", error);
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleFinalApproval = async (approvalId: string, isBulk = false) => {
+    if (!isBulk && processingId) return;
+
+    if (!isBulk) setProcessingId(approvalId);
     try {
       const url = `/api/manager/final-approvals/${approvalId}/approve`;
       const response = await fetch(url, {
@@ -222,11 +351,13 @@ export default function ManagerDashboard() {
       });
 
       if (response.ok) {
-        await fetchFinalApprovals();
-        setComments(prev => ({
-          ...prev,
-          [approvalId]: ''
-        }));
+        if (!isBulk) {
+          await fetchFinalApprovals();
+          setComments(prev => ({
+            ...prev,
+            [approvalId]: ''
+          }));
+        }
         console.log("Final approval granted successfully");
       } else {
         const errorData = await response.text();
@@ -235,14 +366,14 @@ export default function ManagerDashboard() {
     } catch (error) {
       console.error("Error granting final approval:", error);
     } finally {
-      setProcessingId(null);
+      if (!isBulk) setProcessingId(null);
     }
   };
 
-  const handleReject = async (approvalId: string) => {
-    if (processingId) return;
+  const handleReject = async (approvalId: string, isBulk = false) => {
+    if (!isBulk && processingId) return;
 
-    setProcessingId(approvalId);
+    if (!isBulk) setProcessingId(approvalId);
     try {
       const url = `/api/manager/final-approvals/${approvalId}/reject`;
       const response = await fetch(url, {
@@ -258,11 +389,13 @@ export default function ManagerDashboard() {
       });
 
       if (response.ok) {
-        await fetchFinalApprovals();
-        setComments(prev => ({
-          ...prev,
-          [approvalId]: ''
-        }));
+        if (!isBulk) {
+          await fetchFinalApprovals();
+          setComments(prev => ({
+            ...prev,
+            [approvalId]: ''
+          }));
+        }
         console.log("Final rejection processed successfully");
       } else {
         const errorData = await response.text();
@@ -271,14 +404,13 @@ export default function ManagerDashboard() {
     } catch (error) {
       console.error("Error rejecting:", error);
     } finally {
-      setProcessingId(null);
+      if (!isBulk) setProcessingId(null);
     }
   }
 
-
-const handleOTApproval = async (id: string) => {
-  if (processingId) return;
-  setProcessingId(id);
+const handleOTApproval = async (id: string, isBulk = false) => {
+  if (!isBulk && processingId) return;
+  if (!isBulk) setProcessingId(id);
 
   // Get the actual UUID from managerData instead of managerId
   const actualManagerUUID = managerData?.id || managerData?.user_id;
@@ -287,8 +419,8 @@ const handleOTApproval = async (id: string) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   if (!actualManagerUUID || !uuidRegex.test(actualManagerUUID)) {
-    alert("Invalid Manager UUID format");
-    setProcessingId(null);
+    if (!isBulk) alert("Invalid Manager UUID format");
+    if (!isBulk) setProcessingId(null);
     return;
   }
 
@@ -306,32 +438,30 @@ const handleOTApproval = async (id: string) => {
 
     if (response.ok) {
       console.log("OT approved successfully");
-      await fetchOTRequests(); // Refresh the data
-      setComments(prev => ({
-        ...prev,
-        [id]: ''
-      }));
+      if (!isBulk) {
+        await fetchOTRequests(); // Refresh the data
+        setComments(prev => ({
+          ...prev,
+          [id]: ''
+        }));
+      }
     } else {
       const data = await response.json();
       console.error(data);
-      alert("Failed to approve OT");
+      if (!isBulk) alert("Failed to approve OT");
     }
   } catch (error) {
     console.error("Error:", error);
-    alert("Something went wrong while approving OT.");
+    if (!isBulk) alert("Something went wrong while approving OT.");
   } finally {
-    setProcessingId(null);
+    if (!isBulk) setProcessingId(null);
   }
 };
 
+ const handleOTReject = async (otId: string, isBulk = false) => {
+  if (!isBulk && processingId) return;
 
-
-
-
- const handleOTReject = async (otId: string) => {
-  if (processingId) return;
-
-  setProcessingId(otId);
+  if (!isBulk) setProcessingId(otId);
   
   // Get the actual UUID from managerData
   const actualManagerUUID = managerData?.id || managerData?.user_id;
@@ -341,8 +471,10 @@ const handleOTApproval = async (id: string) => {
 
   if (!actualManagerUUID || !uuidRegex.test(actualManagerUUID)) {
     console.error("Manager UUID is invalid:", actualManagerUUID);
-    alert("Invalid Manager UUID format. Please contact support.");
-    setProcessingId(null);
+    if (!isBulk) {
+      alert("Invalid Manager UUID format. Please contact support.");
+      setProcessingId(null);
+    }
     return;
   }
 
@@ -361,25 +493,26 @@ const handleOTApproval = async (id: string) => {
     });
 
     if (response.ok) {
-      await fetchOTRequests();
-      setComments(prev => ({
-        ...prev,
-        [otId]: ''
-      }));
+      if (!isBulk) {
+        await fetchOTRequests();
+        setComments(prev => ({
+          ...prev,
+          [otId]: ''
+        }));
+      }
       console.log("OT request rejected successfully");
     } else {
       const errorData = await response.json();
       console.error("Failed to reject OT request:", errorData);
-      alert(`Failed to reject OT: ${errorData.error || 'Unknown error'}`);
+      if (!isBulk) alert(`Failed to reject OT: ${errorData.error || 'Unknown error'}`);
     }
   } catch (error) {
     console.error("Error rejecting OT request:", error);
-    alert("Something went wrong while rejecting OT.");
+    if (!isBulk) alert("Something went wrong while rejecting OT.");
   } finally {
-    setProcessingId(null);
+    if (!isBulk) setProcessingId(null);
   }
 };
-
 
   const handleCommentChange = (id: string, value: string) => {
     setComments(prev => ({
@@ -450,6 +583,16 @@ const handleOTApproval = async (id: string) => {
   }
 
   const currentStats = activeTab === 'final-approval' ? stats : otStats;
+  
+  // Get current selection counts and pending items
+  const pendingApprovals = finalApprovals.filter(approval => approval.status === "Pending Final Approval");
+  const pendingOTRequests = otRequests.filter(ot => ot.status === "final-approval" || ot.status === "Final Approved");
+  
+  const currentSelectedCount = activeTab === 'final-approval' ? selectedApprovals.size : selectedOTRequests.size;
+  const currentPendingCount = activeTab === 'final-approval' ? pendingApprovals.length : pendingOTRequests.length;
+  
+  const isAllSelected = currentSelectedCount === currentPendingCount && currentPendingCount > 0;
+  const isSomeSelected = currentSelectedCount > 0 && currentSelectedCount < currentPendingCount;
 
   return (
      <ProtectedRoute allowedRoles={['manager']}>
@@ -561,10 +704,54 @@ const handleOTApproval = async (id: string) => {
               /* Final Approvals */
               <Card>
                 <CardHeader>
-                  <CardTitle>Final Approvals</CardTitle>
-                  <CardDescription>
-                    Review work that has been approved by Team Lead and provide final approval
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Final Approvals</CardTitle>
+                      <CardDescription>
+                        Review work that has been approved by Team Lead and provide final approval
+                      </CardDescription>
+                    </div>
+                    
+                    {/* Selection Controls for Final Approvals */}
+                    {pendingApprovals.length > 0 && (
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="select-all-approvals"
+                            checked={isAllSelected}
+                            onCheckedChange={handleSelectAllApprovals}
+                            className={isSomeSelected ? "data-[state=checked]:bg-blue-600" : ""}
+                          />
+                          <Label htmlFor="select-all-approvals" className="text-sm font-medium cursor-pointer">
+                            {isAllSelected ? 'Deselect All' : 'Select All'} ({currentSelectedCount}/{currentPendingCount})
+                          </Label>
+                        </div>
+                        
+                        {selectedApprovals.size > 0 && (
+                          <div className="flex space-x-2">
+                            <Button 
+                              onClick={handleBulkApproval}
+                              disabled={bulkProcessing}
+                              className="bg-green-500 hover:bg-green-600"
+                              size="sm"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              {bulkProcessing ? "Processing..." : `Approve ${selectedApprovals.size}`}
+                            </Button>
+                            <Button 
+                              onClick={handleBulkReject}
+                              disabled={bulkProcessing}
+                              variant="destructive"
+                              size="sm"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              {bulkProcessing ? "Processing..." : `Reject ${selectedApprovals.size}`}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {loading ? (
@@ -588,11 +775,19 @@ const handleOTApproval = async (id: string) => {
                         <Card key={approval.id} className="border-l-4 border-l-purple-500">
                           <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <CardTitle className="text-lg">{approval.work_type}</CardTitle>
-                                <Badge className={getStatusColor(approval.status)}>
-                                  {approval.status}
-                                </Badge>
+                              <div className="flex items-center space-x-3">
+                                {approval.status === "Pending Final Approval" && (
+                                  <Checkbox
+                                    checked={selectedApprovals.has(approval.id)}
+                                    onCheckedChange={(checked) => handleSelectApproval(approval.id, !!checked)}
+                                  />
+                                )}
+                                <div className="flex items-center space-x-2">
+                                  <CardTitle className="text-lg">{approval.work_type}</CardTitle>
+                                  <Badge className={getStatusColor(approval.status)}>
+                                    {approval.status}
+                                  </Badge>
+                                </div>
                               </div>
                               <Badge className={getPriorityColor(approval.priority)}>
                                 {approval.priority}
@@ -709,13 +904,57 @@ const handleOTApproval = async (id: string) => {
               /* OT Final Approvals */
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Timer className="h-5 w-5 text-orange-600" />
-                    <span>OT Final Approvals</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Review overtime requests that have been approved by supervisors and provide final approval
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center space-x-2">
+                        <Timer className="h-5 w-5 text-orange-600" />
+                        <span>OT Final Approvals</span>
+                      </CardTitle>
+                      <CardDescription>
+                        Review overtime requests that have been approved by supervisors and provide final approval
+                      </CardDescription>
+                    </div>
+                    
+                    {/* Selection Controls for OT Requests */}
+                    {pendingOTRequests.length > 0 && (
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="select-all-ot"
+                            checked={isAllSelected}
+                            onCheckedChange={handleSelectAllOTRequests}
+                            className={isSomeSelected ? "data-[state=checked]:bg-orange-600" : ""}
+                          />
+                          <Label htmlFor="select-all-ot" className="text-sm font-medium cursor-pointer">
+                            {isAllSelected ? 'Deselect All' : 'Select All'} ({currentSelectedCount}/{currentPendingCount})
+                          </Label>
+                        </div>
+                        
+                        {selectedOTRequests.size > 0 && (
+                          <div className="flex space-x-2">
+                            <Button 
+                              onClick={handleBulkApproval}
+                              disabled={bulkProcessing}
+                              className="bg-green-500 hover:bg-green-600"
+                              size="sm"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              {bulkProcessing ? "Processing..." : `Approve ${selectedOTRequests.size}`}
+                            </Button>
+                            <Button 
+                              onClick={handleBulkReject}
+                              disabled={bulkProcessing}
+                              variant="destructive"
+                              size="sm"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              {bulkProcessing ? "Processing..." : `Reject ${selectedOTRequests.size}`}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {loading ? (
@@ -739,14 +978,22 @@ const handleOTApproval = async (id: string) => {
                         <Card key={otRequest.id} className="border-l-4 border-l-orange-500">
                           <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <CardTitle className="text-lg flex items-center space-x-2">
-                                  <Timer className="h-5 w-5 text-orange-600" />
-                                  <span>Overtime Request</span>
-                                </CardTitle>
-                                <Badge className={getStatusColor(otRequest.status)}>
-                                  {otRequest.status === 'final-approval' ? 'Pending Final Approval' : otRequest.status}
-                                </Badge>
+                              <div className="flex items-center space-x-3">
+                                {(otRequest.status === "final-approval" || otRequest.status === "Final Approved") && (
+                                  <Checkbox
+                                    checked={selectedOTRequests.has(otRequest.id)}
+                                    onCheckedChange={(checked) => handleSelectOTRequest(otRequest.id, !!checked)}
+                                  />
+                                )}
+                                <div className="flex items-center space-x-2">
+                                  <CardTitle className="text-lg flex items-center space-x-2">
+                                    <Timer className="h-5 w-5 text-orange-600" />
+                                    <span>Overtime Request</span>
+                                  </CardTitle>
+                                  <Badge className={getStatusColor(otRequest.status)}>
+                                    {otRequest.status === 'final-approval' ? 'Pending Final Approval' : otRequest.status}
+                                  </Badge>
+                                </div>
                               </div>
                               <Badge className="bg-orange-100 text-orange-800">
                                 {otRequest.total_hours}h
