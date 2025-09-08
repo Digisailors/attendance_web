@@ -291,41 +291,43 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* User Type Selection - Only show for Sign Up */}
+            {isSignup && (
               <div className="space-y-2">
-              <Label htmlFor="userType">User Type*</Label>
-              <Select value={userType} onValueChange={setUserType} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      Admin/Accounts Department
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="employee">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      Employee
-                    </div>
-                  </SelectItem>
-               
-                  <SelectItem value="team-lead">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      Team Lead
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="manager">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                      Manager
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                <Label htmlFor="userType">User Type*</Label>
+                <Select value={userType} onValueChange={setUserType} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        Admin/Accounts Department
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="employee">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Employee
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="team-lead">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Team Lead
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="manager">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                        Manager
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <Label>Email</Label>
