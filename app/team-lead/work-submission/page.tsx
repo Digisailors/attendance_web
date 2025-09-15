@@ -637,34 +637,45 @@ export default function TeamLeaderDashboard() {
   }
 };
 
-  const handleOTReject = async (id: string) => {
-    if (processingId) return;
-    setProcessingId(id);
-    try {
-      const response = await fetch('/api/employees/Overtime', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id,
-          status: 'rejected',
-          approved_by: teamLeadData?.name || 'Team Leader'
-        }),
-      });
+ const handleOTReject = async (id: string) => {
+   if (processingId) return;
+   setProcessingId(id);
 
-      if (response.ok) {
-        setOTSubmissions(prev => 
-          prev.map(item => 
-            item.id === id ? { ...item, status: 'rejected' as const } : item
-          )
-        );
-        await fetchOTSubmissions();
-      }
-    } catch (error) {
-      console.error('Error rejecting OT submission:', error);
-    } finally {
-      setProcessingId(null);
-    }
-  };
+   try {
+     const response = await fetch("/api/employees/Overtime", {
+       method: "PUT",
+       headers: {
+         "Content-Type": "application/json",
+       },
+       body: JSON.stringify({
+         id,
+         status: "rejected",
+         approved_by: teamLeadData?.id || "system",
+       }),
+     });
+
+     if (!response.ok) {
+       const errorData = await response.json();
+       console.error("API Error:", errorData);
+       throw new Error(errorData.details || "Failed to reject");
+     }
+
+     const result = await response.json();
+     console.log("Success:", result);
+
+     setOTSubmissions((prev) =>
+       prev.map((item) =>
+         item.id === id ? { ...item, status: "rejected" as const } : item
+       )
+     );
+     await fetchOTSubmissions();
+   } catch (error) {
+     console.error("Error rejecting OT submission:", error);
+     alert("Failed to reject overtime request. Please try again.");
+   } finally {
+     setProcessingId(null);
+   }
+ };
 
   const handleBatchApprove = async () => {
     const selectedArray = Array.from(selectedItems);
