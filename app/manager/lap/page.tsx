@@ -642,19 +642,22 @@ export default function ManagerLeavePermissionRequests() {
     try {
       console.log("❌ Rejecting leave with managerId:", managerId);
      
-      const response = await fetch(`/api/manager/leave-requests`, {
+      const response = await fetch(
+        "/api/manager/final-approvals/leave-requests",
+        {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requestId: requestId,
-          action: "reject",
-          managerId: managerId,
-          comments: comments[requestId] || "Rejected by manager",
-          userType: "manager",
-        }),
-      });
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestId: requestId,
+            action: "reject",
+            managerId: managerId,
+            comments: comments[requestId] || "Rejected by manager",
+            userType: "manager",
+          }),
+        }
+      );
       if (response.ok) {
         await fetchLeaveRequests();
         setComments((prev) => ({
