@@ -193,125 +193,131 @@ export default function PermissionRequestPage() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={['employee', 'intern']}>
-    <div className="flex h-screen bg-gray-50">
-         <Sidebar userType="employee" />
+    <ProtectedRoute allowedRoles={["employee", "intern"]}>
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar userType="employee" />
         <div className="flex-1 flex flex-col">
-          <Header title="Employee Portal" subtitle={`Welcome back, ${displayName}`} userType="employee" />
-        
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-[900px] mx-auto p-6">
-            <h1 className="text-2xl font-bold mb-1">Permission Request</h1>
-            <p className="mb-6 text-sm text-gray-500">Request short-term permission for urgent matters</p>
+          <Header
+            title="Employee Portal"
+            subtitle={`Welcome back, ${displayName}`}
+            userType="employee"
+          />
 
-            {/* Permission Type */}
-            <div className="border p-4 rounded mb-6">
-              <h2 className="font-medium mb-4 flex items-center gap-2">
-                <Clock4 className="w-5 h-5 text-gray-700" />
-                Permission Type
-              </h2>
-              <RadioGroup
-                value={permissionType}
-                onValueChange={setPermissionType}
-                className="grid md:grid-cols-2 gap-3"
-              >
-                {[
-                  ["Medical Appointment", "1-4 hours"],
-                  ["Personal Emergency", "Flexible"],
-                  ["Family Emergency", "As needed"],
-                  ["Official Business", "Variable"],
-                  ["Educational Purpose", "1-8 hours"],
-                  ["Other", "Specify duration"]
-                ].map(([type, note]) => (
-                  <div key={type} className="border p-3 rounded">
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value={type} id={type} />
-                      <label htmlFor={type} className="font-medium cursor-pointer">
-                        {type}
-                      </label>
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">{note}</div>
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="w-full max-w-[900px] mx-auto p-6">
+              <h1 className="text-2xl font-bold mb-1">Permission Request</h1>
+              <p className="mb-6 text-sm text-gray-500">
+                Request short-term permission for urgent matters
+              </p>
+
+              {/* Permission Type */}
+              <div className="border p-4 rounded mb-6">
+                <h2 className="font-medium mb-4 flex items-center gap-2">
+                  <Clock4 className="w-5 h-5 text-gray-700" />
+                  Permission Type
+                </h2>
+                <RadioGroup
+                  value={permissionType}
+                  onValueChange={setPermissionType}
+                  className="grid md:grid-cols-2 gap-3"
+                >
+                  {[["Short Permission", "1 hour / 2 times per month"]].map(
+                    ([type, note]) => (
+                      <div key={type} className="border p-3 rounded">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value={type} id={type} />
+                          <label
+                            htmlFor={type}
+                            className="font-medium cursor-pointer"
+                          >
+                            {type}
+                          </label>
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">{note}</div>
+                      </div>
+                    )
+                  )}
+                </RadioGroup>
+              </div>
+
+              {/* Date & Time */}
+              <div className="border p-4 rounded mb-6">
+                <h2 className="font-medium mb-4">Date and Time</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Date Picker */}
+                  <div>
+                    <label className="block text-sm mb-1">Date</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          className={cn(
+                            "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
+                            !date && "text-gray-500"
+                          )}
+                        >
+                          {date ? format(date, "MM/dd/yyyy") : "Select date"}
+                          <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={date}
+                          onSelect={setDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                ))}
-              </RadioGroup>
-            </div>
 
-            {/* Date & Time */}
-            <div className="border p-4 rounded mb-6">
-              <h2 className="font-medium mb-4">Date and Time</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Date Picker */}
-                <div>
-                  <label className="block text-sm mb-1">Date</label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        className={cn(
-                          "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
-                          !date && "text-gray-500"
-                        )}
-                      >
-                        {date ? format(date, "MM/dd/yyyy") : "Select date"}
-                        <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={setDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                  {/* Start Time */}
+                  <div>
+                    <label className="block text-sm mb-1">Start Time</label>
+                    <Input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                    />
+                  </div>
 
-                {/* Start Time */}
-                <div>
-                  <label className="block text-sm mb-1">Start Time</label>
-                  <Input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                  />
-                </div>
-
-                {/* End Time */}
-                <div>
-                  <label className="block text-sm mb-1">End Time</label>
-                  <Input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
+                  {/* End Time */}
+                  <div>
+                    <label className="block text-sm mb-1">End Time</label>
+                    <Input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Reason */}
-            <div className="border p-4 rounded mb-6">
-              <h2 className="font-medium mb-2">Details</h2>
-              <label className="block text-sm mb-1">Reason for Permission</label>
-              <Textarea
-                placeholder="Please explain why you need this permission..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
+              {/* Reason */}
+              <div className="border p-4 rounded mb-6">
+                <h2 className="font-medium mb-2">Details</h2>
+                <label className="block text-sm mb-1">
+                  Reason for Permission
+                </label>
+                <Textarea
+                  placeholder="Please explain why you need this permission..."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </div>
 
-            <div className="flex gap-4 pb-6">
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit Request"}
-              </Button>
-              <Button variant="outline" onClick={() => window.history.back()}>
-                Cancel
-              </Button>
+              <div className="flex gap-4 pb-6">
+                <Button onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? "Submitting..." : "Submit Request"}
+                </Button>
+                <Button variant="outline" onClick={() => window.history.back()}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
     </ProtectedRoute>
   );
 }
