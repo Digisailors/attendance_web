@@ -13,7 +13,12 @@ const getYearMonthRanges = (start: Date, end: Date) => {
   return ranges;
 };
 
-const leaveDaysInMonth = (year: number, month: number, start: Date, end: Date) => {
+const leaveDaysInMonth = (
+  year: number,
+  month: number,
+  start: Date,
+  end: Date
+) => {
   const monthStart = new Date(year, month - 1, 1);
   const monthEnd = new Date(year, month, 0);
   const sliceStart = start > monthStart ? start : monthStart;
@@ -25,61 +30,105 @@ const leaveDaysInMonth = (year: number, month: number, start: Date, end: Date) =
 // GET Leave Requests for a Manager
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerSupabaseClient()
-    const url = new URL(request.url)
-    const managerId = url.searchParams.get("managerId")
+    const supabase = createServerSupabaseClient();
+    const url = new URL(request.url);
+    const managerId = url.searchParams.get("managerId");
 
     if (!managerId) {
-      return NextResponse.json({ error: "Missing managerId" }, { status: 400 })
+      return NextResponse.json({ error: "Missing managerId" }, { status: 400 });
     }
 
-    // 🔍 Update this column name based on your DB schema
+    console.log("🔄 Fetching leave requests for manager:", managerId);
+
+    // Get manager details first
     const { data: manager, error: managerError } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('id', managerId) // <-- Change 'id' if your actual column is 'emp_code' or similar
-      .single()
+      .from("employees")
+      .select("*")
+      .eq("employee_id", managerId) // Using employee_id instead of id
+      .single();
 
     if (managerError) {
-      console.error("Manager Fetch Error:", managerError)
+      console.error("Manager Fetch Error:", managerError);
+      return NextResponse.json({ error: "Manager not found" }, { status: 404 });
     }
 
-    if (!manager) {
-      return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
-    }
+    console.log("📋 Manager found:", manager.name);
 
-    // Get leave requests for this manager's team
+    // Get leave requests with employee and team lead information
     const { data: leaveRequests, error: leaveError } = await supabase
-      .from('leave_requests')
-      .select(`
+      .from("leave_requests")
+      .select(
+        `
         *,
-        employee:employees (
+        employee:employees!leave_requests_employee_id_fkey (
           id,
+          employee_id,
           name,
           department,
           designation,
-          manager_id
+          manager_id,
+          team_lead_id,
+          phoneNumber,
+          emailAddress,
+          address
+        ),
+        team_lead:employees!leave_requests_team_lead_id_fkey (
+          id,
+          employee_id,
+          name,
+          department,
+          designation
         )
-      `)
-      .eq('employees.manager_id', managerId)
+      `
+      )
+      .eq("manager_id", manager.id) // Use the manager's UUID
+      .order("created_at", { ascending: false });
 
     if (leaveError) {
-      console.error("Leave Fetch Error:", leaveError)
-      return NextResponse.json({ error: 'Failed to fetch leave requests' }, { status: 500 })
+      console.error("Leave Fetch Error:", leaveError);
+      return NextResponse.json(
+        {
+          error: "Failed to fetch leave requests",
+          details: leaveError.message,
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ leaveRequests })
+    console.log(
+      `📊 Found ${leaveRequests?.length || 0} leave requests for manager`
+    );
 
+    // Transform the data to include team lead information
+    const transformedRequests =
+      leaveRequests?.map((request) => ({
+        ...request,
+        employee_name: request.employee?.name || "Unknown Employee",
+        team_lead_name: request.team_lead?.name || "No Team Lead Assigned",
+        team_lead_employee_id: request.team_lead?.employee_id || null,
+        employee: {
+          ...request.employee,
+          team_lead: request.team_lead?.name || "No Team Lead Assigned",
+        },
+      })) || [];
+
+    return NextResponse.json({
+      data: transformedRequests,
+      manager: {
+        id: manager.id,
+        employee_id: manager.employee_id,
+        name: manager.name,
+        department: manager.department,
+      },
+    });
   } catch (error) {
-    console.error("Unexpected Error:", error)
-    return NextResponse.json({ error: 'Unexpected server error' }, { status: 500 })
+    console.error("Unexpected Error:", error);
+    return NextResponse.json(
+      { error: "Unexpected server error", details: error.message },
+      { status: 500 }
+    );
   }
 }
-
-
-
-
-
 
 export async function PATCH(request: NextRequest) {
   const supabase = createServerSupabaseClient();
@@ -89,17 +138,23 @@ export async function PATCH(request: NextRequest) {
     const { requestId, action, comments, userType, managerId } = body;
 
     if (!requestId || !action || !userType || !managerId) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
     if (!["approve", "reject"].includes(action)) {
-      return NextResponse.json({ error: 'Invalid action. Use "approve" or "reject"' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid action. Use "approve" or "reject"' },
+        { status: 400 }
+      );
     }
 
     // Get manager's UUID from employee_id
     const { data: managerData, error: managerError } = await supabase
       .from("employees")
-      .select("id")
+      .select("id, name")
       .eq("employee_id", managerId)
       .single();
 
@@ -109,21 +164,47 @@ export async function PATCH(request: NextRequest) {
 
     const managerUUID = managerData.id;
 
+    // Get the leave request with team lead information
     const { data: leaveRequest, error: fetchError } = await supabase
       .from("leave_requests")
-      .select("*")
+      .select(
+        `
+        *,
+        employee:employees!leave_requests_employee_id_fkey (
+          id,
+          employee_id,
+          name
+        ),
+        team_lead:employees!leave_requests_team_lead_id_fkey (
+          id,
+          employee_id,
+          name
+        )
+      `
+      )
       .eq("id", requestId)
       .single();
 
     if (fetchError || !leaveRequest) {
-      return NextResponse.json({ error: "Leave request not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Leave request not found" },
+        { status: 404 }
+      );
     }
-if (!["Pending", "Pending Manager Approval"].includes(leaveRequest.status)) {
-  return NextResponse.json({
-    error: `Request is not pending manager approval (current status: ${leaveRequest.status})`
-  }, { status: 400 });
-}
 
+    // Check if request is in correct status for manager approval
+    if (
+      !["Pending", "Pending Manager Approval", "Team Lead Approved"].includes(
+        leaveRequest.status
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: `Request is not pending manager approval (current status: ${leaveRequest.status})`,
+        },
+        { status: 400 }
+      );
+    }
 
     const updateData: Record<string, any> = {
       manager_comments: comments || null,
@@ -133,53 +214,111 @@ if (!["Pending", "Pending Manager Approval"].includes(leaveRequest.status)) {
 
     let notificationTitle = "";
     let notificationMessage = "";
+    let statusHistory = leaveRequest.status_history || [];
     const recipientId = leaveRequest.employee_id;
 
     if (action === "approve") {
       updateData.status = "Approved";
-      updateData.approved_at = new Date().toISOString();
+      updateData.manager_approved_at = new Date().toISOString();
       notificationTitle = "Leave Request Approved";
-      notificationMessage = `Your leave request for ${leaveRequest.leave_type} has been approved by manager.`;
+      notificationMessage = `Your leave request for ${leaveRequest.leave_type} has been approved by manager ${managerData.name}.`;
+
+      // Add to status history
+      statusHistory.push({
+        status: "Approved",
+        updated_by: managerUUID,
+        updated_by_name: managerData.name,
+        updated_by_role: "Manager",
+        updated_at: new Date().toISOString(),
+        comments: comments || null,
+      });
     } else {
       updateData.status = "Rejected";
-      updateData.rejected_at = new Date().toISOString();
+      updateData.manager_rejected_at = new Date().toISOString();
       notificationTitle = "Leave Request Rejected";
-      notificationMessage = `Your leave request for ${leaveRequest.leave_type} has been rejected by manager.`;
+      notificationMessage = `Your leave request for ${leaveRequest.leave_type} has been rejected by manager ${managerData.name}.`;
+
+      // Add to status history
+      statusHistory.push({
+        status: "Rejected",
+        updated_by: managerUUID,
+        updated_by_name: managerData.name,
+        updated_by_role: "Manager",
+        updated_at: new Date().toISOString(),
+        comments: comments || null,
+      });
     }
+
+    updateData.status_history = statusHistory;
 
     const { data: updatedRequest, error: updateError } = await supabase
       .from("leave_requests")
       .update(updateData)
       .eq("id", requestId)
-      .select()
+      .select(
+        `
+        *,
+        employee:employees!leave_requests_employee_id_fkey (
+          id,
+          employee_id,
+          name
+        ),
+        team_lead:employees!leave_requests_team_lead_id_fkey (
+          id,
+          employee_id,
+          name
+        )
+      `
+      )
       .single();
 
     if (updateError) {
-      return NextResponse.json({ error: "Failed to update leave request", details: updateError.message }, { status: 500 });
+      console.error("Update Error:", updateError);
+      return NextResponse.json(
+        {
+          error: "Failed to update leave request",
+          details: updateError.message,
+        },
+        { status: 500 }
+      );
     }
 
-    // Send notification
-    const { error: notificationError } = await supabase.from("notifications").insert({
-      recipient_type: "employee",
-      recipient_id: recipientId,
-      title: notificationTitle,
-      message: notificationMessage + (comments ? `. Comments: ${comments}` : ""),
-      type: "leave_request_update",
-      reference_id: requestId,
-      created_by: managerUUID,
-    });
+    // Send notification to employee
+    const { error: notificationError } = await supabase
+      .from("notifications")
+      .insert({
+        recipient_type: "employee",
+        recipient_id: recipientId,
+        title: notificationTitle,
+        message:
+          notificationMessage + (comments ? `. Comments: ${comments}` : ""),
+        type: "leave_request_update",
+        reference_id: requestId,
+        created_by: managerUUID,
+      });
 
     if (notificationError) {
       console.error("Notification creation failed:", notificationError.message);
     }
 
+    console.log(`✅ Leave request ${action}ed by manager: ${managerData.name}`);
+
     return NextResponse.json({
       message: `Leave request ${action}ed successfully`,
       data: updatedRequest,
+      team_lead_info: {
+        name: leaveRequest.team_lead?.name || "No Team Lead",
+        employee_id: leaveRequest.team_lead?.employee_id || null,
+      },
     });
-
   } catch (error) {
     console.error("Unexpected error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        details: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
