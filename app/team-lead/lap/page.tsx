@@ -1237,8 +1237,9 @@ export default function TeamLeadLeavePermissionRequests() {
                                       </div>
 
                                       {/* Actions for Pending Requests */}
-                                      {request.status ===
-                                        "Pending Team Lead" && (
+                                      {(request.status ===
+                                        "Pending Team Lead" ||
+                                        request.status === "Pending") && (
                                         <div className="space-y-4 border-t pt-4">
                                           <div>
                                             <Label
@@ -1672,7 +1673,9 @@ export default function TeamLeadLeavePermissionRequests() {
                                       </div>
 
                                       {/* Actions for Pending Requests */}
-                                      {request.status === "Pending" && (
+                                      {(request.status === "Pending" ||
+                                        request.status ===
+                                          "Pending Team Lead") && (
                                         <div className="space-y-4 border-t pt-4">
                                           <div>
                                             <Label
