@@ -428,7 +428,7 @@ export default function TeamLeadLeavePermissionRequests() {
 
         const total = processedRequests.length;
         const pending = processedRequests.filter(
-          (r: LeaveRequest) => r.status === "Pending"
+          (r: LeaveRequest) => r.status === "Pending Team Lead"
         ).length;
         const approved = processedRequests.filter(
           (r: LeaveRequest) => r.status === "Approved"
@@ -1237,7 +1237,8 @@ export default function TeamLeadLeavePermissionRequests() {
                                       </div>
 
                                       {/* Actions for Pending Requests */}
-                                      {request.status === "Pending" && (
+                                      {request.status ===
+                                        "Pending Team Lead" && (
                                         <div className="space-y-4 border-t pt-4">
                                           <div>
                                             <Label
@@ -1555,10 +1556,10 @@ export default function TeamLeadLeavePermissionRequests() {
                                             {request.employee_name}
                                           </CardTitle>
                                           <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                            <span>
+                                            {/* <span>
                                               {request.employee?.designation ||
                                                 "N/A"}
-                                            </span>
+                                            </span> */}
                                             <span className="flex items-center space-x-1">
                                               <Calendar className="h-3 w-3" />
                                               <span>
