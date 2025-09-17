@@ -213,12 +213,7 @@ export default function TeamLeadPermissionPage() {
               </h2>
               <RadioGroup value={permissionType} onValueChange={setPermissionType} className="grid md:grid-cols-2 gap-3">
                 {[
-                  ["Medical Appointment", "1-4 hours"],
-                  ["Personal Emergency", "Flexible"],
-                  ["Family Emergency", "As needed"],
-                  ["Official Business", "Variable"],
-                  ["Educational Purpose", "1-8 hours"],
-                  ["Other", "Specify duration"],
+                 ["Short Permission", "1 hour / 2 times per month"]
                 ].map(([type, note]) => (
                   <div key={type} className="border p-3 rounded">
                     <div className="flex items-center space-x-2">
