@@ -503,7 +503,7 @@ const fetchLeaveRequests = async () => {
                                   <div>
                                     <CardTitle className="text-lg">{request.employee_name}</CardTitle>
                                     <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                      <span>{request.employee?.designation || "N/A"}</span>
+                                      {/* <span>{request.employee?.designation || "N/A"}</span> */}
                                       <span className="flex items-center space-x-1">
                                         <Calendar className="h-3 w-3" />
                                         <span>Applied: {formatDate(request.created_at)}</span>

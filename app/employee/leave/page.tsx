@@ -91,7 +91,7 @@ export default function LeaveApplicationPage() {
         start_date: format(startDate, "yyyy-MM-dd"), // Local date
         end_date: format(endDate, "yyyy-MM-dd"),
         reason: reason,
-        status: "Pending",
+        status: "Pending Team Lead",
       };
 
       const { data: leaveRequest, error: insertError } = await supabase
@@ -235,7 +235,7 @@ export default function LeaveApplicationPage() {
                   className="grid md:grid-cols-2 gap-3"
                 >
                   {[
-                    ["Casual Leave", "12 days/year"],
+                    ["Sick Leave", "12 days/year"],
                     ["Maternity Leave", "24 weeks"],
                     ["Marriage Leave", "5 days"],
                     ["Compensation Leave", "2 days"],
@@ -282,6 +282,9 @@ export default function LeaveApplicationPage() {
                           selected={startDate}
                           onSelect={setStartDate}
                           initialFocus
+                          disabled={(date) =>
+                            date < new Date(new Date().setHours(0, 0, 0, 0))
+                          }
                         />
                       </PopoverContent>
                     </Popover>
@@ -308,6 +311,9 @@ export default function LeaveApplicationPage() {
                           selected={endDate}
                           onSelect={setEndDate}
                           initialFocus
+                          disabled={(date) =>
+                            date < new Date(new Date().setHours(0, 0, 0, 0))
+                          }
                         />
                       </PopoverContent>
                     </Popover>

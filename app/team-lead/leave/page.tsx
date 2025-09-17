@@ -1,8 +1,12 @@
 "use client";
-import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from "react";
 import { CalendarDays, CalendarIcon } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,15 +112,22 @@ export default function LeaveApplicationTeamLead() {
         return;
       }
 
-      if (teamMember?.team_lead_id && teamMember.team_lead_id !== "DEFAULT_LEAD") {
-        const { error: notificationError } = await supabase.from("notifications").insert({
-          recipient_type: "team-lead",
-          recipient_id: teamMember.team_lead_id,
-          title: "New Leave Request",
-          message: `${employee.name || user.email.split("@")[0]} has submitted a leave request for ${leaveType}`,
-          type: "leave_request",
-          reference_id: leaveRequest.id,
-        });
+      if (
+        teamMember?.team_lead_id &&
+        teamMember.team_lead_id !== "DEFAULT_LEAD"
+      ) {
+        const { error: notificationError } = await supabase
+          .from("notifications")
+          .insert({
+            recipient_type: "team-lead",
+            recipient_id: teamMember.team_lead_id,
+            title: "New Leave Request",
+            message: `${
+              employee.name || user.email.split("@")[0]
+            } has submitted a leave request for ${leaveType}`,
+            type: "leave_request",
+            reference_id: leaveRequest.id,
+          });
 
         if (notificationError) {
           console.error("Notification error:", notificationError);
@@ -174,7 +185,8 @@ export default function LeaveApplicationTeamLead() {
     fetchUserData();
   }, []);
 
-  const displayName = leadData?.name || user?.email?.split("@")[0] || "Team Lead";
+  const displayName =
+    leadData?.name || user?.email?.split("@")[0] || "Team Lead";
 
   // if (loading) {
   //   return (
@@ -191,138 +203,145 @@ export default function LeaveApplicationTeamLead() {
   // }
 
   return (
-    <ProtectedRoute allowedRoles={['team-lead']}>
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar userType="team-lead" />
-      <div className="flex-1 flex flex-col overflow-auto">
-        <Header
-          title="Team Lead Portal"
-          subtitle={`Welcome, ${displayName}`}
-          userType="team-lead"
-        />
-        <div className="w-full max-w-[900px] mx-auto p-6">
-          <h1 className="text-2xl font-bold mb-1">Leave Request</h1>
-          <p className="mb-6 text-sm text-gray-500">
-            Submit your leave request for approval
-          </p>
+    <ProtectedRoute allowedRoles={["team-lead"]}>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar userType="team-lead" />
+        <div className="flex-1 flex flex-col overflow-auto">
+          <Header
+            title="Team Lead Portal"
+            subtitle={`Welcome, ${displayName}`}
+            userType="team-lead"
+          />
+          <div className="w-full max-w-[900px] mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-1">Leave Request</h1>
+            <p className="mb-6 text-sm text-gray-500">
+              Submit your leave request for approval
+            </p>
 
-          {/* Leave Type */}
-          <div className="border p-4 rounded mb-6">
-            <h2 className="font-medium mb-4 flex items-center gap-2">
-              <CalendarDays className="w-5 h-5 text-gray-700" />
-              Leave Type
-            </h2>
+            {/* Leave Type */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-4 flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-gray-700" />
+                Leave Type
+              </h2>
 
-            <RadioGroup
-              value={leaveType}
-              onValueChange={setLeaveType}
-              className="grid md:grid-cols-2 gap-3"
-            >
-              {[
-                ["Annual Leave", "25 days remaining"],
-                ["Sick Leave", "10 days remaining"],
-                ["Personal Leave", "5 days remaining"],
-                ["Maternity Leave", "Available"],
-                ["Emergency Leave", "As needed"],
-                ["Other", "Specify duration"],
-              ].map(([type, note]) => (
-                <div key={type} className="border p-3 rounded">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value={type} id={type} />
-                    <label htmlFor={type} className="font-medium cursor-pointer">
-                      {type}
-                    </label>
+              <RadioGroup
+                value={leaveType}
+                onValueChange={setLeaveType}
+                className="grid md:grid-cols-2 gap-3"
+              >
+                {[
+                  ["Sick Leave", "12 days/year"],
+                  ["Maternity Leave", "24 weeks"],
+                  ["Marriage Leave", "5 days"],
+                  ["Compensation Leave", "2 days"],
+                ].map(([type, note]) => (
+                  <div key={type} className="border p-3 rounded">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value={type} id={type} />
+                      <label
+                        htmlFor={type}
+                        className="font-medium cursor-pointer"
+                      >
+                        {type}
+                      </label>
+                    </div>
+                    <div className="text-sm text-gray-500 mt-1">{note}</div>
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">{note}</div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            {/* Date Range */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-4">Date Range</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Start Date */}
+                <div>
+                  <label className="block text-sm mb-1">Start Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className={cn(
+                          "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
+                          !startDate && "text-gray-500"
+                        )}
+                      >
+                        {startDate
+                          ? format(startDate, "MM/dd/yyyy")
+                          : "Select date"}
+                        <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={startDate}
+                        onSelect={setStartDate}
+                        initialFocus
+                        disabled={(date) =>
+                          date < new Date(new Date().setHours(0, 0, 0, 0))
+                        }
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
-              ))}
-            </RadioGroup>
-          </div>
 
-          {/* Date Range */}
-          <div className="border p-4 rounded mb-6">
-            <h2 className="font-medium mb-4">Date Range</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Start Date */}
-              <div>
-                <label className="block text-sm mb-1">Start Date</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className={cn(
-                        "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
-                        !startDate && "text-gray-500"
-                      )}
-                    >
-                      {startDate
-                        ? format(startDate, "MM/dd/yyyy")
-                        : "Select date"}
-                      <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={startDate}
-                      onSelect={setStartDate}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* End Date */}
-              <div>
-                <label className="block text-sm mb-1">End Date</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className={cn(
-                        "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
-                        !endDate && "text-gray-500"
-                      )}
-                    >
-                      {endDate
-                        ? format(endDate, "MM/dd/yyyy")
-                        : "Select date"}
-                      <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={endDate}
-                      onSelect={setEndDate}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                {/* End Date */}
+                <div>
+                  <label className="block text-sm mb-1">End Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className={cn(
+                          "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
+                          !endDate && "text-gray-500"
+                        )}
+                      >
+                        {endDate
+                          ? format(endDate, "MM/dd/yyyy")
+                          : "Select date"}
+                        <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={endDate}
+                        onSelect={setEndDate}
+                        initialFocus
+                        disabled={(date) =>
+                          date < new Date(new Date().setHours(0, 0, 0, 0))
+                        }
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Reason */}
-          <div className="border p-4 rounded mb-6">
-            <h2 className="font-medium mb-2">Details</h2>
-            <label className="block text-sm mb-1">Reason for leave</label>
-            <Textarea
-              placeholder="Please explain why you need this leave..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
+            {/* Reason */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-2">Details</h2>
+              <label className="block text-sm mb-1">Reason for leave</label>
+              <Textarea
+                placeholder="Please explain why you need this leave..."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
 
-          <div className="flex gap-4">
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Submit Request"}
-            </Button>
-            <Button variant="outline" onClick={() => window.history.back()}>
-              Cancel
-            </Button>
+            <div className="flex gap-4">
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting ? "Submitting..." : "Submit Request"}
+              </Button>
+              <Button variant="outline" onClick={() => window.history.back()}>
+                Cancel
+              </Button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </ProtectedRoute>
   );
 }
