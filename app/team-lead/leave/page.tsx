@@ -219,12 +219,10 @@ export default function LeaveApplicationTeamLead() {
               className="grid md:grid-cols-2 gap-3"
             >
               {[
-                ["Annual Leave", "25 days remaining"],
-                ["Sick Leave", "10 days remaining"],
-                ["Personal Leave", "5 days remaining"],
-                ["Maternity Leave", "Available"],
-                ["Emergency Leave", "As needed"],
-                ["Other", "Specify duration"],
+                  ["Sick Leave", "12 days/year"],
+                    ["Maternity Leave", "24 weeks"],
+                    ["Marriage Leave", "5 days"],
+                    ["Compensation Leave", "2 days"],
               ].map(([type, note]) => (
                 <div key={type} className="border p-3 rounded">
                   <div className="flex items-center space-x-2">
