@@ -235,7 +235,7 @@ export default function LeaveApplicationPage() {
                   className="grid md:grid-cols-2 gap-3"
                 >
                   {[
-                    ["Casual Leave", "12 days/year"],
+                    ["Sick Leave", "12 days/year"],
                     ["Maternity Leave", "24 weeks"],
                     ["Marriage Leave", "5 days"],
                     ["Compensation Leave", "2 days"],
