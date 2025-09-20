@@ -131,6 +131,10 @@ export default function TeamLeadLeavePermissionRequests() {
   const [teamLeadId, setTeamLeadId] = useState<string>("");
   const [teamLeadData, setTeamLeadData] = useState<any>(null);
   const [comments, setComments] = useState<{ [key: string]: string }>({});
+  // Store recently processed comments for instant feedback
+  const [recentlyProcessed, setRecentlyProcessed] = useState<{
+    [key: string]: string;
+  }>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("leave");
@@ -522,6 +526,10 @@ export default function TeamLeadLeavePermissionRequests() {
         }),
       });
       if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [requestId]: comments[requestId] || "",
+        }));
         await fetchLeaveRequests();
         setComments((prev) => ({
           ...prev,
@@ -572,6 +580,10 @@ export default function TeamLeadLeavePermissionRequests() {
         }),
       });
       if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [requestId]: comments[requestId] || "",
+        }));
         await fetchLeaveRequests();
         setComments((prev) => ({
           ...prev,
@@ -622,6 +634,10 @@ export default function TeamLeadLeavePermissionRequests() {
         }),
       });
       if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [requestId]: comments[requestId] || "",
+        }));
         await fetchPermissionRequests();
         setComments((prev) => ({
           ...prev,
@@ -672,6 +688,10 @@ export default function TeamLeadLeavePermissionRequests() {
         }),
       });
       if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [requestId]: comments[requestId] || "",
+        }));
         await fetchPermissionRequests();
         setComments((prev) => ({
           ...prev,
@@ -1065,19 +1085,6 @@ export default function TeamLeadLeavePermissionRequests() {
                               <SelectItem value="Rejected">Rejected</SelectItem>
                             </SelectContent>
                           </Select>
-                          {/* <div className="flex items-center space-x-2">
-                            <Switch
-                              id="show-leave-stats"
-                              checked={showDurationStats}
-                              onCheckedChange={setShowDurationStats}
-                            />
-                            <Label
-                              htmlFor="show-leave-stats"
-                              className="text-sm"
-                            >
-                              Show Analytics
-                            </Label>
-                          </div> */}
                         </div>
                       </CardContent>
                     </Card>
@@ -1125,10 +1132,6 @@ export default function TeamLeadLeavePermissionRequests() {
                                             {request.employee_name || "N/A"}
                                           </CardTitle>
                                           <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                            {/* <span>
-                                              {request.employee?.designation ||
-                                                "N/A"}
-                                            </span> */}
                                             <span className="flex items-center space-x-1">
                                               <Calendar className="h-3 w-3" />
                                               <span>
@@ -1237,8 +1240,9 @@ export default function TeamLeadLeavePermissionRequests() {
                                       </div>
 
                                       {/* Actions for Pending Requests */}
-                                      {request.status ===
-                                        "Pending Team Lead" && (
+                                      {(request.status ===
+                                        "Pending Team Lead" ||
+                                        request.status === "Pending") && (
                                         <div className="space-y-4 border-t pt-4">
                                           <div>
                                             <Label
@@ -1294,30 +1298,45 @@ export default function TeamLeadLeavePermissionRequests() {
                                         </div>
                                       )}
 
-                                      {/* Status Messages */}
-                                      {request.status === "Approved" && (
-                                        <div className="bg-green-50 p-3 rounded-md">
+                                      {/* Status Messages for Approved Requests */}
+                                      {request.status ===
+                                        "Pending Manager Approval" && (
+                                        <div className="bg-green-50 p-3 rounded-md border-t pt-4">
                                           <p className="text-sm text-green-700 font-medium">
                                             ✓ Approved by Team Lead
                                           </p>
-                                          {request.team_lead_comments && (
-                                            <p className="text-sm text-green-600 mt-1">
-                                              Comments:{" "}
-                                              {request.team_lead_comments}
-                                            </p>
-                                          )}
+                                          {request.team_lead_comments ||
+                                          recentlyProcessed[request.id] ? (
+                                            <div className="mt-2 p-2 bg-green-100 rounded border-l-4 border-green-400">
+                                              <p className="text-xs text-green-600 font-medium">
+                                                Team Lead Comments:
+                                              </p>
+                                              <p className="text-sm text-green-700 mt-1">
+                                                {request.team_lead_comments ||
+                                                  recentlyProcessed[request.id]}
+                                              </p>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       )}
+
+                                      {/* Status Messages for Rejected Requests */}
                                       {request.status === "Rejected" && (
-                                        <div className="bg-red-50 p-3 rounded-md">
+                                        <div className="bg-red-50 p-3 rounded-md border-t pt-4">
                                           <p className="text-sm text-red-700 font-medium">
-                                            ✗ Rejected by you
+                                            ✗ Rejected by Team Lead
                                           </p>
-                                          {request.team_lead_comments && (
-                                            <p className="text-sm text-red-600 mt-1">
-                                              Comments:{" "}
-                                              {request.team_lead_comments}
-                                            </p>
+                                          {(request.team_lead_comments ||
+                                            recentlyProcessed[request.id]) && (
+                                            <div className="mt-2 p-2 bg-red-100 rounded border-l-4 border-red-400">
+                                              <p className="text-xs text-red-600 font-medium">
+                                                Team Lead Comments:
+                                              </p>
+                                              <p className="text-sm text-red-700 mt-1">
+                                                {request.team_lead_comments ||
+                                                  recentlyProcessed[request.id]}
+                                              </p>
+                                            </div>
                                           )}
                                         </div>
                                       )}
@@ -1493,19 +1512,6 @@ export default function TeamLeadLeavePermissionRequests() {
                               <SelectItem value="Rejected">Rejected</SelectItem>
                             </SelectContent>
                           </Select>
-                          {/* <div className="flex items-center space-x-2">
-                            <Switch
-                              id="show-permission-stats"
-                              checked={showDurationStats}
-                              onCheckedChange={setShowDurationStats}
-                            />
-                            <Label
-                              htmlFor="show-permission-stats"
-                              className="text-sm"
-                            >
-                              Show Analytics
-                            </Label>
-                          </div> */}
                         </div>
                       </CardContent>
                     </Card>
@@ -1556,10 +1562,6 @@ export default function TeamLeadLeavePermissionRequests() {
                                             {request.employee_name}
                                           </CardTitle>
                                           <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                            {/* <span>
-                                              {request.employee?.designation ||
-                                                "N/A"}
-                                            </span> */}
                                             <span className="flex items-center space-x-1">
                                               <Calendar className="h-3 w-3" />
                                               <span>
@@ -1733,30 +1735,45 @@ export default function TeamLeadLeavePermissionRequests() {
                                         </div>
                                       )}
 
-                                      {/* Status Messages */}
-                                      {request.status === "Approved" && (
-                                        <div className="bg-green-50 p-3 rounded-md">
+                                      {/* Status Messages for Approved Requests */}
+                                      {request.status ===
+                                        "Pending Manager Approval" && (
+                                        <div className="bg-green-50 p-3 rounded-md border-t pt-4">
                                           <p className="text-sm text-green-700 font-medium">
-                                            ✓ Approved by you
+                                            ✓ Approved by Team Lead
                                           </p>
-                                          {request.team_lead_comments && (
-                                            <p className="text-sm text-green-600 mt-1">
-                                              Your comments:{" "}
-                                              {request.team_lead_comments}
-                                            </p>
-                                          )}
+                                          {request.team_lead_comments ||
+                                          recentlyProcessed[request.id] ? (
+                                            <div className="mt-2 p-2 bg-green-100 rounded border-l-4 border-green-400">
+                                              <p className="text-xs text-green-600 font-medium">
+                                                Team Lead Comments:
+                                              </p>
+                                              <p className="text-sm text-green-700 mt-1">
+                                                {request.team_lead_comments ||
+                                                  recentlyProcessed[request.id]}
+                                              </p>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       )}
+
+                                      {/* Status Messages for Rejected Requests */}
                                       {request.status === "Rejected" && (
-                                        <div className="bg-red-50 p-3 rounded-md">
+                                        <div className="bg-red-50 p-3 rounded-md border-t pt-4">
                                           <p className="text-sm text-red-700 font-medium">
-                                            ✗ Rejected by you
+                                            ✗ Rejected by Team Lead
                                           </p>
-                                          {request.team_lead_comments && (
-                                            <p className="text-sm text-red-600 mt-1">
-                                              Comments:{" "}
-                                              {request.team_lead_comments}
-                                            </p>
+                                          {(request.team_lead_comments ||
+                                            recentlyProcessed[request.id]) && (
+                                            <div className="mt-2 p-2 bg-red-100 rounded border-l-4 border-red-400">
+                                              <p className="text-xs text-red-600 font-medium">
+                                                Team Lead Comments:
+                                              </p>
+                                              <p className="text-sm text-red-700 mt-1">
+                                                {request.team_lead_comments ||
+                                                  recentlyProcessed[request.id]}
+                                              </p>
+                                            </div>
                                           )}
                                         </div>
                                       )}
