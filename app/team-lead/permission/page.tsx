@@ -1,17 +1,11 @@
 "use client";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from "react";
 import { Calendar as CalendarIcon, Clock4 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Popover,
   PopoverContent,
@@ -172,6 +166,219 @@ export default function TeamLeadPermissionPage() {
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const userData = localStorage.getItem("user");
+        if (userData) {
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+
+          const { data: leadInfo, error } = await supabase
+            .from("employees")
+            .select("*")
+            .eq("email_address", parsedUser.email)
+            .single();
+
+          if (!error && leadInfo) {
+            setLeadData(leadInfo);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const displayName =
+    leadData?.name || user?.email?.split("@")[0] || "Team Lead";
+
+  // if (loading) {
+  //   return (
+  //     <div className="flex h-screen bg-gray-50">
+  //       <div className="fixed left-0 top-0 h-full z-10">
+  //         <Sidebar userType="team-lead" />
+  //       </div>
+  //       <div className="flex-1 ml-64 flex flex-col">
+  //         <Header title="Team Lead Portal" subtitle="Loading..." userType="team-lead" />
+  //         <div className="flex-1 flex items-center justify-center">
+  //           <div className="text-lg">Loading...</div>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
+
+  return (
+    <ProtectedRoute allowedRoles={["team-lead"]}>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar userType="team-lead" />
+        <div className="flex-1 flex flex-col overflow-auto">
+          <Header
+            title="Team Lead Portal"
+            subtitle={`Welcome, ${displayName}`}
+            userType="team-lead"
+          />
+
+          <div className="w-full max-w-[900px] mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-1">Permission Request</h1>
+            <p className="mb-6 text-sm text-gray-500">
+              Request short-term permission
+            </p>
+
+            {/* Permission Type */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-4 flex items-center gap-2">
+                <Clock4 className="w-5 h-5 text-gray-700" />
+                Permission Type
+              </h2>
+              <RadioGroup
+                value={permissionType}
+                onValueChange={setPermissionType}
+                className="grid md:grid-cols-2 gap-3"
+              >
+                {[["Short Permission", "1 hour / 2 times per month"]].map(
+                  ([type, note]) => (
+                    <div key={type} className="border p-3 rounded">
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value={type} id={type} />
+                        <label
+                          htmlFor={type}
+                          className="font-medium cursor-pointer"
+                        >
+                          {type}
+                        </label>
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">{note}</div>
+                    </div>
+                  )
+                )}
+              </RadioGroup>
+            </div>
+
+            {/* Date & Time */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-4">Date and Time</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm mb-1">Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className={cn(
+                          "w-full text-left border rounded px-3 py-2 text-sm flex items-center justify-between",
+                          !date && "text-gray-500"
+                        )}
+                      >
+                        {date ? format(date, "MM/dd/yyyy") : "Select date"}
+                        <CalendarIcon className="ml-2 h-4 w-4 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={setDate}
+                        initialFocus
+                        disabled={(date) => date < new Date()}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div>
+                  <label className="block text-sm mb-1">Start Time</label>
+                  <Input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm mb-1">End Time</label>
+                  <Input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Reason */}
+            <div className="border p-4 rounded mb-6">
+              <h2 className="font-medium mb-2">Details</h2>
+              <label className="block text-sm mb-1">
+                Reason for Permission
+              </label>
+              <Textarea
+                placeholder="Please explain why you need this permission..."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-4">
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting ? "Submitting..." : "Submit Request"}
+              </Button>
+              <Button variant="outline" onClick={() => window.history.back()}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ProtectedRoute>
+  );
+}
+
+
+"use client";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import React, { useState, useEffect } from "react";
+import { Calendar as CalendarIcon, Clock4 } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Header } from "@/components/layout/header";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Input } from "@/components/ui/input";
+import { supabase } from "@/lib/supabase";
+
+interface User {
+  id: string;
+  email: string;
+  userType: string;
+  name?: string;
+}
+
+export default function TeamLeadPermissionPage() {
+  const [permissionType, setPermissionType] = useState("");
+  const [date, setDate] = useState<Date | undefined>();
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [reason, setReason] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [leadData, setLeadData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
     if (!permissionType || !date || !startTime || !endTime || !reason) {
       alert("Please fill in all required fields");
       return;
@@ -332,8 +539,6 @@ export default function TeamLeadPermissionPage() {
 
   const displayName =
     leadData?.name || user?.email?.split("@")[0] || "Team Lead";
-  const displayName =
-    leadData?.name || user?.email?.split("@")[0] || "Team Lead";
 
   // if (loading) {
   //   return (
@@ -361,21 +566,9 @@ export default function TeamLeadPermissionPage() {
             subtitle={`Welcome, ${displayName}`}
             userType="team-lead"
           />
-    <ProtectedRoute allowedRoles={["team-lead"]}>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar userType="team-lead" />
-        <div className="flex-1 flex flex-col overflow-auto">
-          <Header
-            title="Team Lead Portal"
-            subtitle={`Welcome, ${displayName}`}
-            userType="team-lead"
-          />
 
           <div className="w-full max-w-[900px] mx-auto p-6">
             <h1 className="text-2xl font-bold mb-1">Permission Request</h1>
-            <p className="mb-6 text-sm text-gray-500">
-              Request short-term permission
-            </p>
             <p className="mb-6 text-sm text-gray-500">
               Request short-term permission
             </p>
@@ -386,27 +579,6 @@ export default function TeamLeadPermissionPage() {
                 <Clock4 className="w-5 h-5 text-gray-700" />
                 Permission Type
               </h2>
-              <RadioGroup
-                value={permissionType}
-                onValueChange={setPermissionType}
-                className="grid md:grid-cols-2 gap-3"
-              >
-                {[["Short Permission", "1 hour / 2 times per month"]].map(
-                  ([type, note]) => (
-                    <div key={type} className="border p-3 rounded">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value={type} id={type} />
-                        <label
-                          htmlFor={type}
-                          className="font-medium cursor-pointer"
-                        >
-                          {type}
-                        </label>
-                      </div>
-                      <div className="text-sm text-gray-500 mt-1">{note}</div>
-                    </div>
-                  )
-                )}
               <RadioGroup
                 value={permissionType}
                 onValueChange={setPermissionType}
@@ -457,24 +629,12 @@ export default function TeamLeadPermissionPage() {
                         initialFocus
                         disabled={(date) => date < new Date()}
                       />
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={setDate}
-                        initialFocus
-                        disabled={(date) => date < new Date()}
-                      />
                     </PopoverContent>
                   </Popover>
                 </div>
 
                 <div>
                   <label className="block text-sm mb-1">Start Time</label>
-                  <Input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                  />
                   <Input
                     type="time"
                     value={startTime}
@@ -489,11 +649,6 @@ export default function TeamLeadPermissionPage() {
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
                   />
-                  <Input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
                 </div>
               </div>
             </div>
@@ -501,9 +656,6 @@ export default function TeamLeadPermissionPage() {
             {/* Reason */}
             <div className="border p-4 rounded mb-6">
               <h2 className="font-medium mb-2">Details</h2>
-              <label className="block text-sm mb-1">
-                Reason for Permission
-              </label>
               <label className="block text-sm mb-1">
                 Reason for Permission
               </label>
@@ -525,7 +677,6 @@ export default function TeamLeadPermissionPage() {
           </div>
         </div>
       </div>
-    </ProtectedRoute>
     </ProtectedRoute>
   );
 }
