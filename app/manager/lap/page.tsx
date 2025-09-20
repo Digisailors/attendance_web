@@ -224,11 +224,13 @@ export default function ManagerLeavePermissionRequests() {
     }));
 
     try {
+
+
       // Try multiple API endpoints to fetch team lead details
       const endpoints = [
         `/api/employees/profile?employee_id=${teamLeadId}`,
         `/api/employees/profile?id=${teamLeadId}`,
-        `/api/team-lead/profile?id=${teamLeadId}`,
+        // `/api/team-lead/profile?id=${teamLeadId}`,
       ];
 
       let teamLeadData = null;
@@ -317,7 +319,7 @@ export default function ManagerLeavePermissionRequests() {
         const endpoints = [
           `/api/employees/profile?employee_id=${teamLeadId}`,
           `/api/employees/profile?id=${teamLeadId}`,
-          `/api/team-lead/profile?id=${teamLeadId}`,
+          // `/api/team-lead/profile?id=${teamLeadId}`,
         ];
 
         let teamLeadData = null;
@@ -427,7 +429,8 @@ export default function ManagerLeavePermissionRequests() {
           ) {
             return request.employee.team_lead;
           }
-          return request.team_lead_id; // Return ID as fallback
+          // Always return the team lead ID if name is not available
+          return request.team_lead_id;
         }
         return cached.name;
       } else {
@@ -445,7 +448,8 @@ export default function ManagerLeavePermissionRequests() {
       return request.employee.team_lead;
     }
 
-    return "No Team Lead Assigned";
+    // If no team_lead_id and no employee.team_lead, return empty string or a placeholder
+    return "";
   };
 
   // Function to calculate total days between two dates

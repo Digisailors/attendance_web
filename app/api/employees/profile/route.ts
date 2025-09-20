@@ -1,6 +1,6 @@
 // app/api/employees/profile/route.ts
-import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { type NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,28 +11,42 @@ const supabase = createClient(
       persistSession: false,
     },
   }
-)
+);
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const email = searchParams.get('email')
+    const searchParams = request.nextUrl.searchParams;
+    const email = searchParams.get("email");
+    const employee_id = searchParams.get("employee_id");
+    const id = searchParams.get("id");
 
-    if (!email) {
-      return NextResponse.json({ error: "Email parameter is required" }, { status: 400 })
+    if (!email && !employee_id && !id) {
+      return NextResponse.json(
+        {
+          error:
+            "At least one of email, employee_id, or id parameter is required",
+        },
+        { status: 400 }
+      );
     }
 
-    // Get employee by email
-    const { data: employee, error: employeeError } = await supabase
-      .from("employees")
-      .select("*")
-      .eq("email_address", email)
-      .eq("is_active", true)
-      .single()
+    let query = supabase.from("employees").select("*").eq("is_active", true);
+    if (email) {
+      query = query.eq("email_address", email);
+    } else if (employee_id) {
+      query = query.eq("employee_id", employee_id);
+    } else if (id) {
+      query = query.eq("id", id);
+    }
+
+    const { data: employee, error: employeeError } = await query.single();
 
     if (employeeError || !employee) {
-      console.error("Employee not found:", employeeError)
-      return NextResponse.json({ error: "Employee not found" }, { status: 404 })
+      console.error("Employee not found:", employeeError);
+      return NextResponse.json(
+        { error: "Employee not found" },
+        { status: 404 }
+      );
     }
 
     // Return employee data
@@ -47,13 +61,13 @@ export async function GET(request: NextRequest) {
       phone_number: employee.phone_number,
       address: employee.address,
       date_of_joining: employee.date_of_joining,
-      experience: employee.experience
-    })
+      experience: employee.experience,
+    });
   } catch (error) {
-    console.error("API error:", error)
+    console.error("API error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
-    )
+    );
   }
 }

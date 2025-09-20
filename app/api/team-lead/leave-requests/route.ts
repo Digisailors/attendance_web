@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Get team lead for this employee
     const { data: teamMember, error: teamError } = await supabase
       .from("team_members")
-      .select("team_lead_id")
+      .select("team_lead_ids")
       .eq("employee_id", employeeId)
       .eq("is_active", true)
       .single();
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         employee_id: employeeId,
         employee_name: employee.name,
         employee_email: employee.email_address,
-        team_lead_id: teamMember.team_lead_id,
+        team_lead_id: teamMember.team_lead_ids,
         manager_id: employee?.manager_id,
         leave_type: leaveType,
         start_date: startDate,
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       .from("notifications")
       .insert({
         recipient_type: "team-lead",
-        recipient_id: teamMember.team_lead_id,
+        recipient_id: teamMember.team_lead_ids,
         title: "New Leave Request",
         message: `${employee.name} has submitted a leave request for ${leaveType}`,
         type: "leave_request",
@@ -169,7 +169,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Additional check: Verify the request is actually assigned to this team lead
-    if (leaveRequest.team_lead_id !== teamLeadId) {
+    if (leaveRequest.team_lead_ids !== teamLeadId) {
       return NextResponse.json(
         {
           error:

@@ -19,26 +19,38 @@ export async function GET(req: NextRequest) {
     // 🆕 NEW: Get ALL records from leave_requests table (for debugging)
     if (getAllRecords) {
       console.log("🔍 Fetching ALL records from leave_requests table...");
-      
-      const { data: allRecords, count: totalCount, error: allError } = await supabase
+
+      const {
+        data: allRecords,
+        count: totalCount,
+        error: allError,
+      } = await supabase
         .from("leave_requests")
         .select("*", { count: "exact" })
         .order("created_at", { ascending: false });
 
       if (allError) {
         console.error("❌ Error fetching all records:", allError);
-        return NextResponse.json({ 
-          error: "Failed to fetch all records", 
-          details: allError.message 
-        }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: "Failed to fetch all records",
+            details: allError.message,
+          },
+          { status: 500 }
+        );
       }
 
-      console.log(`✅ Found ${totalCount} total records in leave_requests table`);
-      return NextResponse.json({ 
-        data: allRecords || [],
-        count: totalCount || 0,
-        message: `Found ${totalCount} total records in leave_requests table`
-      }, { status: 200 });
+      console.log(
+        `✅ Found ${totalCount} total records in leave_requests table`
+      );
+      return NextResponse.json(
+        {
+          data: allRecords || [],
+          count: totalCount || 0,
+          message: `Found ${totalCount} total records in leave_requests table`,
+        },
+        { status: 200 }
+      );
     }
 
     // Handle team lead requests (fetch all requests for team members)
@@ -55,7 +67,10 @@ export async function GET(req: NextRequest) {
       if (debugError) {
         console.error("❌ Debug query failed:", debugError);
       } else {
-        console.log("🔍 Sample leave_requests data:", JSON.stringify(debugAll, null, 2));
+        console.log(
+          "🔍 Sample leave_requests data:",
+          JSON.stringify(debugAll, null, 2)
+        );
       }
 
       // Convert team lead code to UUID
@@ -67,7 +82,10 @@ export async function GET(req: NextRequest) {
 
       if (teamLeadError || !teamLeadData) {
         console.error("Team lead not found:", teamLeadError);
-        return NextResponse.json({ error: "Invalid team lead ID" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Invalid team lead ID" },
+          { status: 404 }
+        );
       }
 
       const teamLeadUUID = teamLeadData.id;
@@ -75,9 +93,14 @@ export async function GET(req: NextRequest) {
 
       // 🆕 Simplified approach - Just get all leave requests for now
       console.log("🔍 Trying simplified approach: Get all leave requests");
-      const { data: allLeaveRequests, count: allCount, error: simpleError } = await supabase
+      const {
+        data: allLeaveRequests,
+        count: allCount,
+        error: simpleError,
+      } = await supabase
         .from("leave_requests")
-        .select(`
+        .select(
+          `
           *,
           employees!left(
             name,
@@ -87,44 +110,64 @@ export async function GET(req: NextRequest) {
             emailAddress,
             address
           )
-        `, { count: "exact" })
+        `,
+          { count: "exact" }
+        )
         .order("created_at", { ascending: false });
 
       if (simpleError) {
         console.error("❌ Simple query failed:", simpleError);
-        
+
         // Try even simpler - just get leave_requests without join
-        const { data: verySimple, count: verySimpleCount, error: verySimpleError } = await supabase
+        const {
+          data: verySimple,
+          count: verySimpleCount,
+          error: verySimpleError,
+        } = await supabase
           .from("leave_requests")
           .select("*", { count: "exact" })
           .order("created_at", { ascending: false });
 
         if (verySimpleError) {
           console.error("❌ Very simple query also failed:", verySimpleError);
-          return NextResponse.json({ 
-            error: "All queries failed", 
-            details: verySimpleError.message 
-          }, { status: 500 });
+          return NextResponse.json(
+            {
+              error: "All queries failed",
+              details: verySimpleError.message,
+            },
+            { status: 500 }
+          );
         }
 
-        console.log(`✅ Very simple query worked! Found ${verySimpleCount} records`);
-        return NextResponse.json({ 
-          data: verySimple || [],
-          count: verySimpleCount || 0,
-          note: "Retrieved without employee details due to join issues"
-        }, { status: 200 });
+        console.log(
+          `✅ Very simple query worked! Found ${verySimpleCount} records`
+        );
+        return NextResponse.json(
+          {
+            data: verySimple || [],
+            count: verySimpleCount || 0,
+            note: "Retrieved without employee details due to join issues",
+          },
+          { status: 200 }
+        );
       }
 
       console.log(`✅ Simple query worked! Found ${allCount} records`);
-      return NextResponse.json({ 
-        data: allLeaveRequests || [],
-        count: allCount || 0 
-      }, { status: 200 });
+      return NextResponse.json(
+        {
+          data: allLeaveRequests || [],
+          count: allCount || 0,
+        },
+        { status: 200 }
+      );
     }
 
     // Handle individual employee requests
     if (!rawEmployeeId || !month || !year) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required parameters" },
+        { status: 400 }
+      );
     }
 
     // Convert employee code -> UUID
@@ -136,10 +179,14 @@ export async function GET(req: NextRequest) {
 
     if (employeeError || !employeeData) {
       console.error("Employee not found:", employeeError);
-      
+
       // 🆕 If employee UUID lookup fails, try with the raw employee ID directly
       console.log("🔍 Trying with raw employee ID:", rawEmployeeId);
-      const { data: directQuery, count: directCount, error: directError } = await supabase
+      const {
+        data: directQuery,
+        count: directCount,
+        error: directError,
+      } = await supabase
         .from("leave_requests")
         .select("*", { count: "exact" })
         .eq("employee_id", rawEmployeeId) // Try with raw ID
@@ -147,20 +194,30 @@ export async function GET(req: NextRequest) {
 
       if (!directError && directQuery) {
         console.log(`✅ Direct query worked! Found ${directCount} records`);
-        return NextResponse.json({ 
-          data: directQuery,
-          count: directCount,
-          note: "Used raw employee_id instead of UUID"
-        }, { status: 200 });
+        return NextResponse.json(
+          {
+            data: directQuery,
+            count: directCount,
+            note: "Used raw employee_id instead of UUID",
+          },
+          { status: 200 }
+        );
       }
 
-      return NextResponse.json({ error: "Invalid employee ID or not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invalid employee ID or not found" },
+        { status: 404 }
+      );
     }
 
     const uuid = employeeData.id;
 
     // Try to get employee's leave requests
-    const { data: employeeLeaves, count: empCount, error: empError } = await supabase
+    const {
+      data: employeeLeaves,
+      count: empCount,
+      error: empError,
+    } = await supabase
       .from("leave_requests")
       .select("*", { count: "exact" })
       .eq("employee_id", uuid)
@@ -168,24 +225,34 @@ export async function GET(req: NextRequest) {
 
     if (empError) {
       console.error("❌ Employee leaves query failed:", empError);
-      return NextResponse.json({ 
-        error: "Failed to fetch employee leaves", 
-        details: empError.message 
-      }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: "Failed to fetch employee leaves",
+          details: empError.message,
+        },
+        { status: 500 }
+      );
     }
 
-    console.log(`✅ Found ${empCount} leave requests for employee ${rawEmployeeId}`);
-    return NextResponse.json({ 
-      data: employeeLeaves || [],
-      count: empCount || 0 
-    }, { status: 200 });
-
+    console.log(
+      `✅ Found ${empCount} leave requests for employee ${rawEmployeeId}`
+    );
+    return NextResponse.json(
+      {
+        data: employeeLeaves || [],
+        count: empCount || 0,
+      },
+      { status: 200 }
+    );
   } catch (err) {
     console.error("Server error:", err);
-    return NextResponse.json({ 
-      error: "Server error", 
-      details: err instanceof Error ? err.message : "Unknown error" 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Server error",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -202,8 +269,8 @@ export async function POST(request: NextRequest) {
     leave_type,
     reason,
     month,
-    year,
-    team_lead_id
+    year, // legacy, optional
+    team_lead_ids, // new: array of team lead ids
   } = body;
 
   const id = uuidv4();
@@ -211,29 +278,44 @@ export async function POST(request: NextRequest) {
   const parsedFromDate = parseISO(from_date);
   const parsedToDate = parseISO(to_date);
 
-  const { data, error } = await supabase.from("leave_requests").insert([
-    {
-      id,
-      employee_id,
-      employee_name,
-      from_date: parsedFromDate,
-      to_date: parsedToDate,
-      leave_type,
-      reason,
-      created_at,
-      status: "Pending",
-      month,
-      year,
-      team_lead_id
-    }
-  ]);
+  // Build insert object
+  const insertObj: any = {
+    id,
+    employee_id,
+    employee_name,
+    from_date: parsedFromDate,
+    to_date: parsedToDate,
+    leave_type,
+    reason,
+    created_at,
+    status: "Pending",
+    month,
+    year,
+  };
+
+  if (typeof team_lead_ids !== "undefined")
+    insertObj.team_lead_ids = team_lead_ids;
+
+  const { data, error } = await supabase
+    .from("leave_requests")
+    .insert([insertObj]);
 
   if (error) {
-    console.error("Error inserting leave request:", error.message, error.details);
-    return NextResponse.json({ error: "Failed to apply for leave" }, { status: 500 });
+    console.error(
+      "Error inserting leave request:",
+      error.message,
+      error.details
+    );
+    return NextResponse.json(
+      { error: "Failed to apply for leave" },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ message: "Leave applied successfully" }, { status: 200 });
+  return NextResponse.json(
+    { message: "Leave applied successfully" },
+    { status: 200 }
+  );
 }
 
 // PATCH Handler (unchanged)
@@ -249,8 +331,14 @@ export async function PATCH(request: NextRequest) {
 
   if (error) {
     console.error("Error updating leave status:", error.message, error.details);
-    return NextResponse.json({ error: "Failed to update leave status" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update leave status" },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ message: "Leave status updated successfully" }, { status: 200 });
+  return NextResponse.json(
+    { message: "Leave status updated successfully" },
+    { status: 200 }
+  );
 }

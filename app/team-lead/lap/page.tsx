@@ -96,7 +96,7 @@ interface PermissionRequest {
 interface TeamMember {
   id: string;
   employee_id: string;
-  team_lead_id: string;
+  team_lead_ids: string;
   added_date: string;
   is_active: boolean;
   employee: {
