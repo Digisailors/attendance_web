@@ -1,12 +1,16 @@
-"use client"
-import ProtectedRoute from '@/components/ProtectedRoute'
+"use client";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from "react";
 import { Calendar as CalendarIcon, Clock4, CalendarDays } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -56,9 +60,9 @@ export default function PermissionRequestPage() {
 
     try {
       const { data: employee, error: employeeError } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('email_address', user.email)
+        .from("employees")
+        .select("*")
+        .eq("email_address", user.email)
         .single();
 
       if (employeeError || !employee) {
@@ -72,29 +76,29 @@ export default function PermissionRequestPage() {
       }
 
       const { data: teamMember, error: teamError } = await supabase
-        .from('team_members')
-        .select('team_lead_id')
-        .eq('employee_id', employee.id)
-        .eq('is_active', true)
+        .from("team_members")
+        .select("team_lead_id")
+        .eq("employee_id", employee.id)
+        .eq("is_active", true)
         .single();
 
-      const teamLeadId = teamMember?.team_lead_id || 'DEFAULT_LEAD';
+      const teamLeadId = teamMember?.team_lead_id || "DEFAULT_LEAD";
 
       const permissionRequestData = {
         employee_id: employee.id,
-        employee_name: employee.name || user.email.split('@')[0],
+        employee_name: employee.name || user.email.split("@")[0],
         employee_email: employee.email_address,
         team_lead_id: teamLeadId,
         permission_type: permissionType,
-        date: date.toISOString().split('T')[0],
+        date: format(date, "yyyy-MM-dd"),
         start_time: startTime,
         end_time: endTime,
         reason: reason,
-        status: 'Pending'
+        status: "Pending",
       };
 
       const { data: permissionRequest, error: insertError } = await supabase
-        .from('permission_requests')
+        .from("permission_requests")
         .insert(permissionRequestData)
         .select()
         .single();
@@ -109,20 +113,25 @@ export default function PermissionRequestPage() {
         return;
       }
 
-      if (teamMember?.team_lead_id && teamMember.team_lead_id !== 'DEFAULT_LEAD') {
+      if (
+        teamMember?.team_lead_id &&
+        teamMember.team_lead_id !== "DEFAULT_LEAD"
+      ) {
         const { error: notificationError } = await supabase
-          .from('notifications')
+          .from("notifications")
           .insert({
-            recipient_type: 'team-lead',
+            recipient_type: "team-lead",
             recipient_id: teamMember.team_lead_id,
-            title: 'New Permission Request',
-            message: `${employee.name || user.email.split('@')[0]} has submitted a permission request for ${permissionType}`,
-            type: 'permission_request',
-            reference_id: permissionRequest.id
+            title: "New Permission Request",
+            message: `${
+              employee.name || user.email.split("@")[0]
+            } has submitted a permission request for ${permissionType}`,
+            type: "permission_request",
+            reference_id: permissionRequest.id,
           });
 
         if (notificationError) {
-          console.error('Notification error:', notificationError);
+          console.error("Notification error:", notificationError);
         }
       }
 
@@ -136,7 +145,6 @@ export default function PermissionRequestPage() {
       setStartTime("");
       setEndTime("");
       setReason("");
-
     } catch (error: any) {
       toast({
         title: "Unexpected Error",
@@ -151,15 +159,15 @@ export default function PermissionRequestPage() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const userData = localStorage.getItem('user');
+        const userData = localStorage.getItem("user");
         if (userData) {
           const parsedUser = JSON.parse(userData);
           setUser(parsedUser);
 
           const { data: employeeInfo, error } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('email_address', parsedUser.email)
+            .from("employees")
+            .select("*")
+            .eq("email_address", parsedUser.email)
             .single();
 
           if (!error && employeeInfo) {
@@ -167,7 +175,7 @@ export default function PermissionRequestPage() {
           }
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        console.error("Error fetching user data:", error);
       } finally {
         setLoading(false);
       }
@@ -176,14 +184,19 @@ export default function PermissionRequestPage() {
     fetchUserData();
   }, []);
 
-  const displayName = employeeData?.name || user?.email?.split('@')[0] || "Employee";
+  const displayName =
+    employeeData?.name || user?.email?.split("@")[0] || "Employee";
 
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
         <Sidebar userType="employee" />
         <div className="flex-1 flex flex-col ml-64">
-          <Header title="Employee Portal" subtitle="Loading..." userType="employee" />
+          <Header
+            title="Employee Portal"
+            subtitle="Loading..."
+            userType="employee"
+          />
           <div className="flex-1 flex items-center justify-center">
             <div className="text-lg">Loading...</div>
           </div>
@@ -266,6 +279,9 @@ export default function PermissionRequestPage() {
                           selected={date}
                           onSelect={setDate}
                           initialFocus
+                          disabled={(date) =>
+                            date < new Date(new Date().setHours(0, 0, 0, 0))
+                          }
                         />
                       </PopoverContent>
                     </Popover>
