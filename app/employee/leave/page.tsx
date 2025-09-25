@@ -236,6 +236,7 @@ export default function LeaveApplicationPage() {
                 >
                   {[
                     ["Sick Leave", "12 days/year"],
+                    ["Casual Leave", "12 days/year"],
                     ["Maternity Leave", "24 weeks"],
                     ["Marriage Leave", "5 days"],
                     ["Compensation Leave", "2 days"],
