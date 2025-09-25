@@ -112,6 +112,27 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // Helper to fetch IST time from API
+  const fetchISTDateObj = async () => {
+    try {
+      const res = await fetch(
+        "https://timeapi.io/api/time/current/zone?timeZone=Asia/Kolkata"
+      );
+      if (!res.ok) throw new Error("Failed to fetch IST time");
+      const data = await res.json();
+      // Compose ISO string from API response
+      // API returns: year, month, day, hour, minute, seconds
+      const iso = `${data.year}-${String(data.month).padStart(2, "0")}-${String(
+        data.day
+      ).padStart(2, "0")}T${String(data.hour).padStart(2, "0")}:${String(
+        data.minute
+      ).padStart(2, "0")}:${String(data.seconds).padStart(2, "0")}.000+05:30`;
+      return new Date(iso);
+    } catch (err) {
+      return null;
+    }
+  };
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -199,29 +220,19 @@ export default function EmployeeDashboard() {
           };
           saveStateToStorage(employeeId, syncedState);
         } else {
-          // No check-in today in DB, but check if we have saved state from localStorage
-          if (savedState) {
-            setIsCheckedIn(savedState.isCheckedIn);
-            setCheckInTime(
-              savedState.checkInTime ? new Date(savedState.checkInTime) : null
-            );
-            setIsCheckedOut(savedState.isCheckedOut);
-            setCheckOutTime(
-              savedState.checkOutTime ? new Date(savedState.checkOutTime) : null
-            );
-            setWorkType(savedState.workType);
-            setWorkDescription(savedState.workDescription); // Preserve work description from localStorage
-            setIsWorkSubmitted(savedState.isWorkSubmitted);
-          } else {
-            // Reset states only if no saved state
-            setIsCheckedIn(false);
-            setCheckInTime(null);
-            setIsCheckedOut(false);
-            setCheckOutTime(null);
-            setWorkType("");
-            setWorkDescription("");
-            setIsWorkSubmitted(false);
+          // If no worklog in DB, clear localStorage and reset UI state
+          try {
+            localStorage.removeItem(getStorageKey(employeeId));
+          } catch (e) {
+            // ignore
           }
+          setIsCheckedIn(false);
+          setCheckInTime(null);
+          setIsCheckedOut(false);
+          setCheckOutTime(null);
+          setWorkType("");
+          setWorkDescription("");
+          setIsWorkSubmitted(false);
         }
       }
     };
@@ -275,9 +286,13 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    // Capture the EXACT real-time moment when check-in button is clicked
-    const checkInMoment = new Date();
-    console.log("Real-time check-in timestamp:", checkInMoment.toISOString());
+    // Try to get IST time from API
+    const checkInMoment = await fetchISTDateObj();
+    if (!checkInMoment) {
+      alert("Failed to fetch IST time. Please try again later.");
+      return;
+    }
+    console.log("IST check-in timestamp:", checkInMoment.toISOString());
 
     setIsCheckedIn(true);
     setCheckInTime(checkInMoment);
@@ -291,7 +306,7 @@ export default function EmployeeDashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          checkInTime: checkInMoment.toISOString(), // Send precise ISO timestamp
+          checkInTime: checkInMoment.toISOString(),
         }),
       });
 
@@ -299,11 +314,10 @@ export default function EmployeeDashboard() {
 
       if (!response.ok) {
         console.error("Check-in failed:", data?.error || data);
-        // Revert state changes if API call failed
         setIsCheckedIn(false);
         setCheckInTime(null);
       } else {
-        console.log("Check-in successful with real-time:", data);
+        console.log("Check-in successful with IST time:", data);
       }
     } catch (error) {
       console.error("Check-in error:", error);
@@ -328,15 +342,19 @@ export default function EmployeeDashboard() {
   };
 
   const handleCheckOut = async () => {
-    // Capture the EXACT real-time moment when check-out button is clicked
-    const checkOutMoment = new Date();
-    console.log("Real-time check-out timestamp:", checkOutMoment.toISOString());
+    // Try to get IST time from API
+    const checkOutMoment = await fetchISTDateObj();
+    if (!checkOutMoment) {
+      alert("Failed to fetch IST time. Please try again later.");
+      return;
+    }
+    console.log("IST check-out timestamp:", checkOutMoment.toISOString());
 
     setCheckOutTime(checkOutMoment);
     setIsSubmittingWorkLog(true);
 
     try {
-      console.log("Starting checkout process with real-time...");
+      console.log("Starting checkout process with IST time...");
 
       // Save work log to database with precise timestamps
       const workLogResponse = await fetch(
@@ -347,8 +365,8 @@ export default function EmployeeDashboard() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            checkInTime: checkInTime?.toISOString(), // Preserve original check-in time
-            checkOutTime: checkOutMoment.toISOString(), // Use precise check-out time
+            checkInTime: checkInTime?.toISOString(),
+            checkOutTime: checkOutMoment.toISOString(),
             workType: workType,
             workDescription: workDescription,
           }),
@@ -361,20 +379,20 @@ export default function EmployeeDashboard() {
         throw new Error("Failed to save work log");
       }
 
-      console.log("Work log saved successfully with real-time timestamps");
+      console.log("Work log saved successfully with IST timestamps");
 
       const submissionPayload = {
         employeeId: employeeId,
         employeeName:
-          employeeData?.name || user?.email?.split("@")[0] || "Employee",
+          employeeData?.name || user?.email?.split("@")?.[0] || "Employee",
         workType: workType,
         workDescription: workDescription,
         department: "General",
         priority: "Medium",
-        submittedDate: checkOutMoment.toISOString(), // Use precise submission time
+        submittedDate: checkOutMoment.toISOString(),
       };
 
-      console.log("Sending work submission with real-time:", submissionPayload);
+      console.log("Sending work submission with IST time:", submissionPayload);
 
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
         method: "POST",
@@ -390,13 +408,13 @@ export default function EmployeeDashboard() {
       } else {
         const submissionResult = await submissionResponse.json();
         console.log(
-          "Work submission saved successfully with real-time:",
+          "Work submission saved successfully with IST time:",
           submissionResult
         );
       }
 
       console.log(
-        "Work log and submission process completed with real-time timestamps"
+        "Work log and submission process completed with IST timestamps"
       );
       setIsCheckedOut(true);
     } catch (error) {
@@ -411,7 +429,6 @@ export default function EmployeeDashboard() {
       setIsSubmittingWorkLog(false);
     }
   };
-
 
   const handleStartNewDay = () => {
     // Clear today's state from localStorage
@@ -444,22 +461,22 @@ export default function EmployeeDashboard() {
     });
   };
 
-const formatDateTime = (date: Date) => {
-  return {
-    time: date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    }),
-    date: date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }),
-    timestamp: date.toISOString(),
+  const formatDateTime = (date: Date) => {
+    return {
+      time: date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }),
+      date: date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+      timestamp: date.toISOString(),
+    };
   };
-};
 
   const calculateOvertime = () => {
     if (checkInTime && checkOutTime) {
