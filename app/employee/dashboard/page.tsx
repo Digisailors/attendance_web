@@ -32,7 +32,7 @@ interface DailyState {
   date: string;
 }
 
-// Fetch IST time from timeapi.io
+// Fetch IST time from timeapi.io (for check-in/check-out only)
 const fetchISTTime = async () => {
   try {
     const res = await fetch(
@@ -40,8 +40,6 @@ const fetchISTTime = async () => {
     );
     if (!res.ok) throw new Error("Failed to fetch IST time");
     const data = await res.json();
-    // Compose a Date object from API response
-    // API returns: year, month, day, hour, minute, seconds
     return new Date(
       data.year,
       data.month - 1,
@@ -54,6 +52,14 @@ const fetchISTTime = async () => {
     console.error("IST time API error:", error);
     return null;
   }
+};
+
+// Get current IST time using last fetched IST and local clock
+const getCurrentIST = (baseIST: Date | null, baseLocal: number) => {
+  if (!baseIST) return null;
+  const now = Date.now();
+  const diff = now - baseLocal;
+  return new Date(baseIST.getTime() + diff);
 };
 
 // Format IST time consistently
@@ -91,7 +97,10 @@ const MemoizedHeader = memo(({ displayName }: { displayName: string }) => (
 ));
 
 export default function EmployeeDashboard() {
+  // For live IST clock
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const [baseIST, setBaseIST] = useState<Date | null>(null);
+  const [baseLocal, setBaseLocal] = useState<number>(Date.now());
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [isCheckedOut, setIsCheckedOut] = useState(false);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
@@ -379,21 +388,28 @@ export default function EmployeeDashboard() {
     getTodayDate,
   ]);
 
-  // Clock update (IST time from API)
+  // Live IST clock: increment locally, fetch from API only once on mount
   useEffect(() => {
     let timer: NodeJS.Timeout;
     let cancelled = false;
-    const updateTime = async () => {
-      const istTime = await fetchISTTime();
-      if (!cancelled) setCurrentTime(istTime);
+    const fetchAndStartClock = async () => {
+      const ist = await fetchISTTime();
+      if (!cancelled && ist) {
+        setBaseIST(ist);
+        setBaseLocal(Date.now());
+        setCurrentTime(ist);
+      }
     };
-    updateTime();
-    timer = setInterval(updateTime, 10000); // update every 10s
+    fetchAndStartClock();
+    timer = setInterval(() => {
+      setCurrentTime((prev) => getCurrentIST(baseIST, baseLocal));
+    }, 1000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseIST, baseLocal]);
 
   // Notification timers
   useEffect(() => {
@@ -419,8 +435,7 @@ export default function EmployeeDashboard() {
       console.log("Already checked in — skipping API call");
       return;
     }
-
-    // Use IST time from API
+    // Fetch IST time only at check-in
     const checkInMoment = await fetchISTTime();
     if (!checkInMoment) {
       alert("Unable to fetch IST time for check-in. Please try again later.");
@@ -430,7 +445,10 @@ export default function EmployeeDashboard() {
     setCheckInTime(checkInMoment);
     setShowCheckInNotification(true);
     setIsCheckedOut(false);
-
+    // Update live clock base
+    setBaseIST(checkInMoment);
+    setBaseLocal(Date.now());
+    setCurrentTime(checkInMoment);
     try {
       const response = await fetch(`/api/employees/${employeeId}/worklog`, {
         method: "POST",
@@ -438,12 +456,10 @@ export default function EmployeeDashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          checkInTime: toISTString(checkInMoment), // Send IST time to server
+          checkInTime: toISTString(checkInMoment),
         }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         console.error("Check-in failed:", data?.error || data);
         setIsCheckedIn(false);
@@ -466,17 +482,20 @@ export default function EmployeeDashboard() {
   };
 
   const handleCheckOut = async () => {
-    const checkOutMoment = await fetchISTTime(); // Use IST time from API
+    // Fetch IST time only at check-out
+    const checkOutMoment = await fetchISTTime();
     if (!checkOutMoment) {
       alert("Unable to fetch IST time for check-out. Please try again later.");
       return;
     }
     setCheckOutTime(checkOutMoment);
     setIsSubmittingWorkLog(true);
-
+    // Update live clock base
+    setBaseIST(checkOutMoment);
+    setBaseLocal(Date.now());
+    setCurrentTime(checkOutMoment);
     try {
       console.log("Starting checkout process...");
-
       const workLogResponse = await fetch(
         `/api/employees/${employeeId}/worklog`,
         {
@@ -485,22 +504,19 @@ export default function EmployeeDashboard() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            checkInTime: toISTString(checkInTime), // Convert to IST string
-            checkOutTime: toISTString(checkOutMoment), // Convert to IST string
+            checkInTime: toISTString(checkInTime),
+            checkOutTime: toISTString(checkOutMoment),
             workType: workType,
             workDescription: workDescription,
           }),
         }
       );
-
       if (!workLogResponse.ok) {
         const errorText = await workLogResponse.text();
         console.error("Work Log API Error Response:", errorText);
         throw new Error("Failed to save work log");
       }
-
       console.log("Work log saved successfully");
-
       const submissionPayload = {
         employeeId: employeeId,
         employeeName: displayName,
@@ -508,9 +524,8 @@ export default function EmployeeDashboard() {
         workDescription: workDescription,
         department: "General",
         priority: "Medium",
-        submittedDate: toISTString(checkOutMoment), // Use IST time
+        submittedDate: toISTString(checkOutMoment),
       };
-
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
         method: "POST",
         headers: {
@@ -518,7 +533,6 @@ export default function EmployeeDashboard() {
         },
         body: JSON.stringify(submissionPayload),
       });
-
       if (!submissionResponse.ok) {
         const errorText = await submissionResponse.text();
         console.error("Work submission API Error:", errorText);
@@ -526,7 +540,6 @@ export default function EmployeeDashboard() {
         const submissionResult = await submissionResponse.json();
         console.log("Work submission saved successfully:", submissionResult);
       }
-
       console.log("Work log and submission process completed");
       setIsCheckedOut(true);
     } catch (error) {
@@ -819,14 +832,14 @@ export default function EmployeeDashboard() {
                         </div>
                       </div>
 
-                      <div className="border-t pt-6">
+                      {/* <div className="border-t pt-6">
                         <button
                           onClick={handleStartNewDay}
                           className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
                         >
                           Start New Day
                         </button>
-                      </div>
+                      </div> */}
                     </div>
                   ) : (
                     <>
