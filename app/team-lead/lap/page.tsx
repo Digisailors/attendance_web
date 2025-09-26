@@ -1,4 +1,5 @@
 "use client";
+import { toast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import type React from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -58,6 +59,8 @@ interface LeaveRequest {
   created_at?: string;
   team_lead_comments?: string;
   manager_comments?: string;
+  leave_group_id?: string; // <-- Added for group approval
+  team_lead_ids?: string[]; // <-- Added to fix TS error for team lead eligibility
   employee: {
     name: string;
     employee_id: string;
@@ -414,13 +417,27 @@ export default function TeamLeadLeavePermissionRequests() {
         const data = await response.json();
         const requestsData = data.data || [];
 
-        // Filter: Only show requests from actual team members
-        const teamMemberIds = getTeamMemberIds();
-        const filteredRequests = requestsData.filter((request: LeaveRequest) =>
-          teamMemberIds.includes(request.employee_id)
+        // Filter: Only show requests where this team lead is eligible AND request is still pending
+        const eligibleRequests = requestsData.filter(
+          (request: LeaveRequest) => {
+            // Check if this team lead is in the team_lead_ids array
+            const isEligible =
+              request.team_lead_ids &&
+              request.team_lead_ids.includes(teamLeadId);
+
+            // Check if request is still pending (not processed by any team lead)
+            const isPending = ["Pending Team Lead", "Pending"].includes(
+              request.status
+            );
+
+            // Show if either: eligible and pending, OR this team lead already processed it
+            return (
+              (isEligible && isPending) || request.team_lead_id === teamLeadId
+            );
+          }
         );
 
-        const processedRequests = filteredRequests.map(
+        const processedRequests = eligibleRequests.map(
           (request: LeaveRequest) => ({
             ...request,
             applied_date: getAppliedDate(request),
@@ -431,11 +448,12 @@ export default function TeamLeadLeavePermissionRequests() {
         setLeaveRequests(processedRequests);
 
         const total = processedRequests.length;
-        const pending = processedRequests.filter(
-          (r: LeaveRequest) => r.status === "Pending Team Lead"
+        const pending = processedRequests.filter((r: LeaveRequest) =>
+          ["Pending Team Lead", "Pending"].includes(r.status)
         ).length;
         const approved = processedRequests.filter(
-          (r: LeaveRequest) => r.status === "Approved"
+          (r: LeaveRequest) =>
+            r.status === "Approved" || r.status === "Pending Manager Approval"
         ).length;
         const rejected = processedRequests.filter(
           (r: LeaveRequest) => r.status === "Rejected"
@@ -444,7 +462,7 @@ export default function TeamLeadLeavePermissionRequests() {
         setLeaveStats({ total, pending, approved, rejected });
 
         console.log(
-          `Filtered leave requests: ${processedRequests.length} from team members out of ${requestsData.length} total`
+          `Eligible leave requests: ${processedRequests.length} for team lead ${teamLeadId}`
         );
       } else {
         console.error("Server responded with:", await response.json());
@@ -503,114 +521,137 @@ export default function TeamLeadLeavePermissionRequests() {
     }
   };
 
-  const handleApproveLeave = async (
-    requestId: string,
-    event?: React.MouseEvent
-  ) => {
-    event?.stopPropagation();
-    event?.preventDefault();
-    if (processingId) return;
-    setProcessingId(requestId);
-    try {
-      const response = await fetch(`/api/team-lead/leave-requests`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requestId: requestId,
-          action: "approve",
-          userType: "team-lead",
-          teamLeadId: teamLeadId,
-          comments: comments[requestId] || "",
-        }),
-      });
-      if (response.ok) {
-        setRecentlyProcessed((prev) => ({
-          ...prev,
-          [requestId]: comments[requestId] || "",
-        }));
-        await fetchLeaveRequests();
-        setComments((prev) => ({
-          ...prev,
-          [requestId]: "",
-        }));
-        console.log("Leave request approved successfully");
-      } else {
-        console.error("Failed to approve leave request");
-        const errorData = await response.json();
-        alert(
-          `Failed to approve leave request: ${
-            errorData.error || "Unknown error"
-          }`
-        );
-      }
-    } catch (error) {
-      console.error("Error approving leave request:", error);
-      alert(
-        `An error occurred: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    } finally {
-      setProcessingId(null);
-    }
-  };
+ const handleApproveLeave = async (
+   request: LeaveRequest,
+   event?: React.MouseEvent
+ ) => {
+   event?.stopPropagation();
+   event?.preventDefault();
+   if (processingId) return;
+   setProcessingId(request.id);
 
-  const handleRejectLeave = async (
-    requestId: string,
-    event?: React.MouseEvent
-  ) => {
-    event?.stopPropagation();
-    event?.preventDefault();
-    if (processingId) return;
-    setProcessingId(requestId);
-    try {
-      const response = await fetch(`/api/team-lead/leave-requests`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requestId: requestId,
-          action: "reject",
-          userType: "team-lead",
-          teamLeadId: teamLeadId,
-          comments: comments[requestId] || "",
-        }),
-      });
-      if (response.ok) {
-        setRecentlyProcessed((prev) => ({
-          ...prev,
-          [requestId]: comments[requestId] || "",
-        }));
-        await fetchLeaveRequests();
-        setComments((prev) => ({
-          ...prev,
-          [requestId]: "",
-        }));
-        console.log("Leave request rejected successfully");
-      } else {
-        console.error("Failed to reject leave request");
-        const errorData = await response.json();
-        alert(
-          `Failed to reject leave request: ${
-            errorData.error || "Unknown error"
-          }`
-        );
-      }
-    } catch (error) {
-      console.error("Error rejecting leave request:", error);
-      alert(
-        `An error occurred: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    } finally {
-      setProcessingId(null);
-    }
-  };
+   try {
+     const response = await fetch(`/api/team-lead/leave-requests`, {
+       method: "PATCH",
+       headers: {
+         "Content-Type": "application/json",
+       },
+       body: JSON.stringify({
+         requestId: request.id,
+         action: "approve",
+         userType: "team-lead",
+         teamLeadId: teamLeadId,
+         comments: comments[request.id] || "",
+       }),
+     });
 
+     if (response.ok) {
+       setRecentlyProcessed((prev) => ({
+         ...prev,
+         [request.id]: comments[request.id] || "",
+       }));
+       await fetchLeaveRequests();
+       setComments((prev) => ({
+         ...prev,
+         [request.id]: "",
+       }));
+       console.log("Leave request approved successfully");
+
+       toast({
+         title: "Success",
+         description: "Leave request approved successfully",
+         variant: "default",
+       });
+     } else {
+       const errorData = await response.json();
+       console.error("Failed to approve leave request", errorData);
+       toast({
+         title: "Error",
+         description: `Failed to approve leave request: ${
+           errorData.error || "Unknown error"
+         }`,
+         variant: "destructive",
+       });
+     }
+   } catch (error) {
+     console.error("Error approving leave request:", error);
+     toast({
+       title: "Error",
+       description: `An error occurred: ${
+         error instanceof Error ? error.message : String(error)
+       }`,
+       variant: "destructive",
+     });
+   } finally {
+     setProcessingId(null);
+   }
+ };
+
+ const handleRejectLeave = async (
+   request: LeaveRequest,
+   event?: React.MouseEvent
+ ) => {
+   event?.stopPropagation();
+   event?.preventDefault();
+   if (processingId) return;
+   setProcessingId(request.id);
+
+   try {
+     const response = await fetch(`/api/team-lead/leave-requests`, {
+       method: "PATCH",
+       headers: {
+         "Content-Type": "application/json",
+       },
+       body: JSON.stringify({
+         requestId: request.id,
+         action: "reject",
+         userType: "team-lead",
+         teamLeadId: teamLeadId,
+         comments: comments[request.id] || "",
+       }),
+     });
+
+     if (response.ok) {
+       setRecentlyProcessed((prev) => ({
+         ...prev,
+         [request.id]: comments[request.id] || "",
+       }));
+       await fetchLeaveRequests();
+       setComments((prev) => ({
+         ...prev,
+         [request.id]: "",
+       }));
+       console.log("Leave request rejected successfully");
+
+       toast({
+         title: "Success",
+         description: "Leave request rejected",
+         variant: "default",
+       });
+     } else {
+       const errorData = await response.json();
+       console.error("Failed to reject leave request", errorData);
+       toast({
+         title: "Error",
+         description: `Failed to reject leave request: ${
+           errorData.error || "Unknown error"
+         }`,
+         variant: "destructive",
+       });
+     }
+   } catch (error) {
+     console.error("Error rejecting leave request:", error);
+     toast({
+       title: "Error",
+       description: `An error occurred: ${
+         error instanceof Error ? error.message : String(error)
+       }`,
+       variant: "destructive",
+     });
+   } finally {
+     setProcessingId(null);
+   }
+ };
   const handleApprovePermission = async (
     requestId: string,
     event?: React.MouseEvent
@@ -896,8 +937,9 @@ export default function TeamLeadLeavePermissionRequests() {
                         No Team Members Added
                       </h3>
                       <p className="text-yellow-700 mb-4">
-                        You haven't added any team members yet. Add team members
-                        first to see their leave and permission requests.
+                        You have not added any team members yet. Add team
+                        members first to see their leave and permission
+                        requests.
                       </p>
                       <Button
                         onClick={() =>
@@ -1267,11 +1309,8 @@ export default function TeamLeadLeavePermissionRequests() {
                                           <div className="flex space-x-2">
                                             <Button
                                               onClick={(e) =>
-                                                handleApproveLeave(
-                                                  request.id,
-                                                  e
-                                                )
-                                              }
+                                                handleApproveLeave(request, e)
+                                              } // Pass 'request', not 'request.id'
                                               disabled={processingId !== null}
                                               className="bg-green-500 hover:bg-green-600"
                                               type="button"
@@ -1283,8 +1322,8 @@ export default function TeamLeadLeavePermissionRequests() {
                                             </Button>
                                             <Button
                                               onClick={(e) =>
-                                                handleRejectLeave(request.id, e)
-                                              }
+                                                handleRejectLeave(request, e)
+                                              } // Pass 'request', not 'request.id'
                                               disabled={processingId !== null}
                                               variant="destructive"
                                               type="button"

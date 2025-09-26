@@ -1,8 +1,12 @@
-"use client"
-import ProtectedRoute from '@/components/ProtectedRoute'
+"use client";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from "react";
 import { CalendarDays, CalendarIcon } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +17,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/hooks/use-toast";
+
 interface User {
   id: string;
   email: string;
@@ -40,7 +45,7 @@ export default function LeaveApplicationPage() {
       return;
     }
 
-    if (!user?.email) {
+    if (!user) {
       toast({
         title: "Error",
         description: "User information not found. Please log in again.",
@@ -53,55 +58,74 @@ export default function LeaveApplicationPage() {
 
     try {
       const { data: employee, error: employeeError } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('email_address', user.email)
+        .from("employees")
+        .select("*")
+        .eq("email_address", user.email)
         .single();
 
       if (employeeError || !employee) {
-        console.error('Employee error:', employeeError);
+        console.error("Employee error:", employeeError);
         toast({
           title: "Error",
-          description: `Employee record not found: ${employeeError?.message || 'Unknown error'}`,
+          description: `Employee record not found: ${
+            employeeError?.message || "Unknown error"
+          }`,
           variant: "destructive",
         });
         setIsSubmitting(false);
         return;
       }
 
-      const { data: teamMember, error: teamError } = await supabase
-        .from('team_members')
-        .select('team_lead_id')
-        .eq('employee_id', employee.id)
-        .eq('is_active', true)
-        .single();
+      // Fetch all active team leads for this employee
+      const { data: teamMembers, error: teamError } = await supabase
+        .from("team_members")
+        .select("team_lead_id")
+        .eq("employee_id", employee.id)
+        .eq("is_active", true);
 
-      if (teamError || !teamMember) {
-        console.warn('Team lead not found, using default');
+      let teamLeadIds = [];
+      if (!teamError && teamMembers && teamMembers.length > 0) {
+        teamLeadIds = teamMembers.map((tm) => tm.team_lead_id);
       }
 
-      const teamLeadId = teamMember?.team_lead_id || 'DEFAULT_LEAD';
+      if (teamLeadIds.length === 0) {
+        toast({
+          title: "Error",
+          description: "No active team leads found. Please contact HR.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
-      const leaveRequestData = {
-        employee_id: employee.id,
-        employee_name: employee.name || user.email.split("@")[0],
-        employee_email: employee.email_address,
-        team_lead_id: teamLeadId,
-        leave_type: leaveType,
-        start_date: format(startDate, "yyyy-MM-dd"), // Local date
-        end_date: format(endDate, "yyyy-MM-dd"),
-        reason: reason,
-        status: "Pending Team Lead",
-      };
+      // Generate a unique group id for this leave request
+      const leaveGroupId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).substring(2);
 
-      const { data: leaveRequest, error: insertError } = await supabase
-        .from('leave_requests')
-        .insert(leaveRequestData)
+      // Create a SINGLE leave request record with team_lead_ids array
+      const { data: leaveRequestData, error: insertError } = await supabase
+        .from("leave_requests")
+        .insert({
+          employee_id: employee.id,
+          employee_name: employee.name || user.email.split("@")[0],
+          employee_email: employee.email_address,
+          team_lead_id: null, // Will be set when someone approves
+          team_lead_ids: teamLeadIds, // Store all eligible team leads
+          manager_id: employee.manager_id,
+          leave_type: leaveType,
+          start_date: startDate ? format(startDate, "yyyy-MM-dd") : null,
+          end_date: endDate ? format(endDate, "yyyy-MM-dd") : null,
+          reason: reason,
+          status: "Pending Team Lead",
+          leave_group_id: leaveGroupId,
+        })
         .select()
         .single();
 
       if (insertError) {
-        console.error('Error inserting leave request:', insertError);
+        console.error("Error inserting leave request:", insertError);
         toast({
           title: "Error",
           description: `Failed to submit leave request: ${insertError.message}`,
@@ -111,21 +135,24 @@ export default function LeaveApplicationPage() {
         return;
       }
 
-      if (teamMember?.team_lead_id && teamMember.team_lead_id !== 'DEFAULT_LEAD') {
-        const { error: notificationError } = await supabase
-          .from('notifications')
-          .insert({
-            recipient_type: 'team-lead',
-            recipient_id: teamMember.team_lead_id,
-            title: 'New Leave Request',
-            message: `${employee.name || user.email.split('@')[0]} has submitted a leave request for ${leaveType}`,
-            type: 'leave_request',
-            reference_id: leaveRequest.id
-          });
+      // Send notification to ALL eligible team leads
+      const notifications = teamLeadIds.map((teamLeadId) => ({
+        recipient_type: "team-lead",
+        recipient_id: teamLeadId,
+        title: "New Leave Request",
+        message: `${
+          employee.name || user.email.split("@")[0]
+        } has submitted a leave request for ${leaveType}`,
+        type: "leave_request",
+        reference_id: leaveGroupId,
+      }));
 
-        if (notificationError) {
-          console.error('Error creating notification:', notificationError);
-        }
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .insert(notifications);
+
+      if (notificationError) {
+        console.error("Error creating notification:", notificationError);
       }
 
       toast({
@@ -138,9 +165,8 @@ export default function LeaveApplicationPage() {
       setStartDate(undefined);
       setEndDate(undefined);
       setReason("");
-
     } catch (error) {
-      console.error('Error submitting leave request:', error);
+      console.error("Error submitting leave request:", error);
       toast({
         title: "Error",
         description: `An error occurred: ${JSON.stringify(error)}`,
@@ -154,15 +180,15 @@ export default function LeaveApplicationPage() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const userData = localStorage.getItem('user');
+        const userData = localStorage.getItem("user");
         if (userData) {
           const parsedUser = JSON.parse(userData);
           setUser(parsedUser);
 
           const { data: employeeInfo, error } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('email_address', parsedUser.email)
+            .from("employees")
+            .select("*")
+            .eq("email_address", parsedUser.email)
             .single();
 
           if (!error && employeeInfo) {
@@ -170,7 +196,7 @@ export default function LeaveApplicationPage() {
           }
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        console.error("Error fetching user data:", error);
       } finally {
         setLoading(false);
       }
@@ -179,29 +205,8 @@ export default function LeaveApplicationPage() {
     fetchUserData();
   }, []);
 
-  const displayName = employeeData?.name || user?.email?.split('@')[0] || "Employee";
-
-  // if (loading) {
-  //   return (
-  //     <div className="flex min-h-screen bg-gray-50">
-  //       {/* Fixed Sidebar */}
-  //       <div className="fixed left-0 top-0 h-full z-10">
-  //         <Sidebar userType="employee" />
-  //       </div>
-  //       {/* Main content with left margin to account for fixed sidebar */}
-  //       <div className="flex-1 ml-64"> {/* Adjust ml-64 based on your sidebar width */}
-  //         <Header
-  //           title="Employee Portal"
-  //           subtitle="Loading..."
-  //           userType="employee"
-  //         />
-  //         <div className="flex-1 flex items-center justify-center">
-  //           <div className="text-lg">Loading...</div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // }
+  const displayName =
+    employeeData?.name || user?.email?.split("@")[0] || "Employee";
 
   return (
     <ProtectedRoute allowedRoles={["employee", "intern"]}>
