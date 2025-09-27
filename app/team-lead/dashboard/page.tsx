@@ -9,6 +9,7 @@ import {
   Calendar,
   CheckCircle,
   Timer,
+  Loader2,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -100,6 +101,47 @@ const toISTString = (date) => {
   return istTime.toISOString();
 };
 
+// Loading Button Component
+interface LoadingButtonProps {
+  loading: boolean;
+  onClick: () => void;
+  disabled: boolean;
+  className: string;
+  children: React.ReactNode;
+  icon?: React.ComponentType<{ className?: string }>;
+  loadingText: string;
+}
+
+const LoadingButton: React.FC<LoadingButtonProps> = ({
+  loading,
+  onClick,
+  disabled,
+  className,
+  children,
+  icon: Icon,
+  loadingText,
+}) => (
+  <button
+    onClick={onClick}
+    disabled={disabled || loading}
+    className={`${className} ${
+      loading || disabled ? "cursor-not-allowed opacity-75" : ""
+    } flex items-center space-x-2 transition-all duration-200`}
+  >
+    {loading ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span>{loadingText}</span>
+      </>
+    ) : (
+      <>
+        {Icon && <Icon className="w-4 h-4" />}
+        <span>{children}</span>
+      </>
+    )}
+  </button>
+);
+
 // Memoized components to prevent unnecessary re-renders
 const MemoizedSidebar = memo(() => <Sidebar userType="team-lead" />);
 
@@ -130,6 +172,11 @@ export default function TeamLeadDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [employeeData, setEmployeeData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // New loading states for better UX
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isSubmittingWork, setIsSubmittingWork] = useState(false);
 
   // Memoized values to prevent recalculation
   const displayName = useMemo(() => {
@@ -447,29 +494,32 @@ export default function TeamLeadDashboard() {
   }, [showWorkSubmissionNotification]);
 
   const handleCheckIn = async () => {
-    if (isCheckedIn) {
-      console.log("Already checked in — skipping API call");
+    if (isCheckedIn || isCheckingIn) {
+      console.log("Already checked in or in progress — skipping API call");
       return;
     }
 
-    // Fetch IST time only at check-in
-    const checkInMoment = await fetchISTTime();
-    if (!checkInMoment) {
-      alert("Unable to fetch IST time for check-in. Please try again later.");
-      return;
-    }
-
-    setIsCheckedIn(true);
-    setCheckInTime(checkInMoment);
-    setShowCheckInNotification(true);
-    setIsCheckedOut(false);
-
-    // Update live clock base
-    setBaseIST(checkInMoment);
-    setBaseLocal(Date.now());
-    setCurrentTime(checkInMoment);
+    setIsCheckingIn(true);
 
     try {
+      // Fetch IST time only at check-in
+      const checkInMoment = await fetchISTTime();
+      if (!checkInMoment) {
+        alert("Unable to fetch IST time for check-in. Please try again later.");
+        return;
+      }
+
+      // Optimistically update UI
+      setIsCheckedIn(true);
+      setCheckInTime(checkInMoment);
+      setShowCheckInNotification(true);
+      setIsCheckedOut(false);
+
+      // Update live clock base
+      setBaseIST(checkInMoment);
+      setBaseLocal(Date.now());
+      setCurrentTime(checkInMoment);
+
       const response = await fetch(`/api/employees/${employeeId}/worklog`, {
         method: "POST",
         headers: {
@@ -547,30 +597,47 @@ export default function TeamLeadDashboard() {
       } else {
         alert("Check-in failed. Please try again.");
       }
+    } finally {
+      setIsCheckingIn(false);
     }
   };
 
   const handleSubmitWork = () => {
-    if (workType && workDescription) {
-      setIsWorkSubmitted(true);
-      setShowWorkSubmissionNotification(true);
+    if (workType && workDescription && !isSubmittingWork) {
+      setIsSubmittingWork(true);
+
+      // Simulate brief processing time for better UX
+      setTimeout(() => {
+        setIsWorkSubmitted(true);
+        setShowWorkSubmissionNotification(true);
+        setIsSubmittingWork(false);
+      }, 500);
     }
   };
 
   const handleCheckOut = async () => {
-    // Fetch IST time only at check-out
-    const checkOutMoment = await fetchISTTime();
-    if (!checkOutMoment) {
-      alert("Unable to fetch IST time for check-out. Please try again later.");
-      return;
-    }
-    setCheckOutTime(checkOutMoment);
-    setIsSubmittingWorkLog(true);
-    // Update live clock base
-    setBaseIST(checkOutMoment);
-    setBaseLocal(Date.now());
-    setCurrentTime(checkOutMoment);
+    if (isCheckingOut) return;
+
+    setIsCheckingOut(true);
+
     try {
+      // Fetch IST time only at check-out
+      const checkOutMoment = await fetchISTTime();
+      if (!checkOutMoment) {
+        alert(
+          "Unable to fetch IST time for check-out. Please try again later."
+        );
+        return;
+      }
+
+      setCheckOutTime(checkOutMoment);
+      setIsSubmittingWorkLog(true);
+
+      // Update live clock base
+      setBaseIST(checkOutMoment);
+      setBaseLocal(Date.now());
+      setCurrentTime(checkOutMoment);
+
       console.log("Starting checkout process...");
       const workLogResponse = await fetch(
         `/api/employees/${employeeId}/worklog`,
@@ -587,12 +654,15 @@ export default function TeamLeadDashboard() {
           }),
         }
       );
+
       if (!workLogResponse.ok) {
         const errorText = await workLogResponse.text();
         console.error("Work Log API Error Response:", errorText);
         throw new Error("Failed to save work log");
       }
+
       console.log("Work log saved successfully");
+
       const submissionPayload = {
         employeeId: employeeId,
         employeeName: displayName,
@@ -602,6 +672,7 @@ export default function TeamLeadDashboard() {
         priority: "High",
         submittedDate: toISTString(checkOutMoment),
       };
+
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
         method: "POST",
         headers: {
@@ -609,6 +680,7 @@ export default function TeamLeadDashboard() {
         },
         body: JSON.stringify(submissionPayload),
       });
+
       if (!submissionResponse.ok) {
         const errorText = await submissionResponse.text();
         console.error("Work submission API Error:", errorText);
@@ -616,6 +688,7 @@ export default function TeamLeadDashboard() {
         const submissionResult = await submissionResponse.json();
         console.log("Work submission saved successfully:", submissionResult);
       }
+
       console.log("Work log and submission process completed");
       setIsCheckedOut(true);
     } catch (error) {
@@ -628,28 +701,8 @@ export default function TeamLeadDashboard() {
       setCheckOutTime(null);
     } finally {
       setIsSubmittingWorkLog(false);
+      setIsCheckingOut(false);
     }
-  };
-
-  const handleStartNewDay = () => {
-    if (employeeData?.employee_id || user?.email) {
-      const empId = employeeData?.employee_id || user?.email || "fallback";
-      try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          localStorage.removeItem(getStorageKey(empId));
-        }
-      } catch (error) {
-        console.error("Error clearing localStorage:", error);
-      }
-    }
-
-    setIsCheckedIn(false);
-    setIsCheckedOut(false);
-    setCheckInTime(null);
-    setCheckOutTime(null);
-    setWorkType("");
-    setWorkDescription("");
-    setIsWorkSubmitted(false);
   };
 
   const formatTime = (date: Date | null) => {
@@ -895,16 +948,6 @@ export default function TeamLeadDashboard() {
                           </div>
                         </div>
                       </div>
-
-                      {/* Start New Day Button */}
-                      {/* <div className="border-t pt-6">
-                        <button
-                          onClick={handleStartNewDay}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-                        >
-                          Start New Day
-                        </button>
-                      </div> */}
                     </div>
                   ) : (
                     <>
@@ -928,13 +971,16 @@ export default function TeamLeadDashboard() {
                           </div>
                         </div>
                         {!isCheckedIn ? (
-                          <button
+                          <LoadingButton
+                            loading={isCheckingIn}
                             onClick={handleCheckIn}
-                            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                            disabled={false}
+                            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                            icon={LogIn}
+                            loadingText="Checking in..."
                           >
-                            <LogIn className="w-4 h-4 text-white" />
-                            <span>Check-in</span>
-                          </button>
+                            Check-in
+                          </LoadingButton>
                         ) : (
                           <div className="flex items-center space-x-3">
                             <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
@@ -974,6 +1020,7 @@ export default function TeamLeadDashboard() {
                                 placeholder="Describe today's work..."
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 rows={3}
+                                disabled={isSubmittingWork}
                               />
                             </div>
                             <div>
@@ -984,6 +1031,7 @@ export default function TeamLeadDashboard() {
                                 value={workType}
                                 onChange={(e) => setWorkType(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={isSubmittingWork}
                               >
                                 <option value="">Select work type</option>
                                 <option value="Work from Office">
@@ -994,13 +1042,15 @@ export default function TeamLeadDashboard() {
                                 </option>
                               </select>
                             </div>
-                            <button
+                            <LoadingButton
+                              loading={isSubmittingWork}
                               onClick={handleSubmitWork}
                               disabled={!workType || !workDescription}
                               className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                              loadingText="Submitting..."
                             >
                               Submit Work
-                            </button>
+                            </LoadingButton>
                           </div>
                         </div>
                       )}
@@ -1063,18 +1113,20 @@ export default function TeamLeadDashboard() {
                                   </span>
                                 </div>
                               </div>
-                              <button
+                              <LoadingButton
+                                loading={isCheckingOut || isSubmittingWorkLog}
                                 onClick={handleCheckOut}
-                                disabled={isSubmittingWorkLog}
-                                className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
-                              >
-                                <LogOut className="w-4 h-4 text-white" />
-                                <span>
-                                  {isSubmittingWorkLog
+                                disabled={false}
+                                className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                                icon={LogOut}
+                                loadingText={
+                                  isSubmittingWorkLog
                                     ? "Saving..."
-                                    : "Check-out"}
-                                </span>
-                              </button>
+                                    : "Checking out..."
+                                }
+                              >
+                                Check-out
+                              </LoadingButton>
                             </div>
                           </div>
                         </div>

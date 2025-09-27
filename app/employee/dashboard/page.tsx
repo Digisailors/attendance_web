@@ -9,6 +9,7 @@ import {
   Calendar,
   CheckCircle,
   Timer,
+  Loader2,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -77,6 +78,21 @@ const formatISTTime = (date) => {
   });
 };
 
+// Format IST time with seconds
+const formatTimeWithSeconds = (date) => {
+  if (typeof date === "string") {
+    date = new Date(date);
+  }
+
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+};
+
 // Convert any date to IST string for storage
 const toISTString = (date) => {
   const istTime = new Date(
@@ -84,6 +100,47 @@ const toISTString = (date) => {
   );
   return istTime.toISOString();
 };
+
+// Loading Button Component
+interface LoadingButtonProps {
+  loading: boolean;
+  onClick: () => void;
+  disabled: boolean;
+  className: string;
+  children: React.ReactNode;
+  icon?: React.ComponentType<{ className?: string }>;
+  loadingText: string;
+}
+
+const LoadingButton: React.FC<LoadingButtonProps> = ({
+  loading,
+  onClick,
+  disabled,
+  className,
+  children,
+  icon: Icon,
+  loadingText,
+}) => (
+  <button
+    onClick={onClick}
+    disabled={disabled || loading}
+    className={`${className} ${
+      loading || disabled ? "cursor-not-allowed opacity-75" : ""
+    } flex items-center space-x-2 transition-all duration-200`}
+  >
+    {loading ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span>{loadingText}</span>
+      </>
+    ) : (
+      <>
+        {Icon && <Icon className="w-4 h-4" />}
+        <span>{children}</span>
+      </>
+    )}
+  </button>
+);
 
 // Memoized components to prevent unnecessary re-renders
 const MemoizedSidebar = memo(() => <Sidebar userType="employee" />);
@@ -115,6 +172,11 @@ export default function EmployeeDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [employeeData, setEmployeeData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // New loading states for better UX
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isSubmittingWork, setIsSubmittingWork] = useState(false);
 
   // Memoized values to prevent recalculation
   const displayName = useMemo(() => {
@@ -350,6 +412,7 @@ export default function EmployeeDashboard() {
     cleanupOldStates,
     loadStateFromStorage,
     saveStateToStorage,
+    fetchTodayCheckInStatus,
   ]);
 
   // Debounced state saving
@@ -431,25 +494,32 @@ export default function EmployeeDashboard() {
   }, [showWorkSubmissionNotification]);
 
   const handleCheckIn = async () => {
-    if (isCheckedIn) {
-      console.log("Already checked in — skipping API call");
+    if (isCheckedIn || isCheckingIn) {
+      console.log("Already checked in or in progress — skipping API call");
       return;
     }
-    // Fetch IST time only at check-in
-    const checkInMoment = await fetchISTTime();
-    if (!checkInMoment) {
-      alert("Unable to fetch IST time for check-in. Please try again later.");
-      return;
-    }
-    setIsCheckedIn(true);
-    setCheckInTime(checkInMoment);
-    setShowCheckInNotification(true);
-    setIsCheckedOut(false);
-    // Update live clock base
-    setBaseIST(checkInMoment);
-    setBaseLocal(Date.now());
-    setCurrentTime(checkInMoment);
+
+    setIsCheckingIn(true);
+
     try {
+      // Fetch IST time only at check-in
+      const checkInMoment = await fetchISTTime();
+      if (!checkInMoment) {
+        alert("Unable to fetch IST time for check-in. Please try again later.");
+        return;
+      }
+
+      // Optimistically update UI
+      setIsCheckedIn(true);
+      setCheckInTime(checkInMoment);
+      setShowCheckInNotification(true);
+      setIsCheckedOut(false);
+
+      // Update live clock base
+      setBaseIST(checkInMoment);
+      setBaseLocal(Date.now());
+      setCurrentTime(checkInMoment);
+
       const response = await fetch(`/api/employees/${employeeId}/worklog`, {
         method: "POST",
         headers: {
@@ -459,42 +529,113 @@ export default function EmployeeDashboard() {
           checkInTime: toISTString(checkInMoment),
         }),
       });
-      const data = await response.json();
+
       if (!response.ok) {
-        console.error("Check-in failed:", data?.error || data);
+        const responseText = await response.text();
+        console.error(`HTTP ${response.status}: ${response.statusText}`);
+        console.error("Response body:", responseText);
+
+        // Rollback state changes
         setIsCheckedIn(false);
         setCheckInTime(null);
-      } else {
-        console.log("Check-in successful:", data);
+        setShowCheckInNotification(false);
+
+        // Show user-friendly error message based on status
+        if (response.status === 404) {
+          alert("API endpoint not found. Please contact support.");
+        } else if (response.status === 401) {
+          alert("Unauthorized. Please log in again.");
+        } else if (response.status === 500) {
+          alert("Server error. Please try again later.");
+        } else {
+          alert(`Check-in failed (${response.status}). Please try again.`);
+        }
+        return;
       }
+
+      // Check content type before parsing JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const responseText = await response.text();
+        console.error("Non-JSON response received:", responseText);
+
+        // Rollback state changes
+        setIsCheckedIn(false);
+        setCheckInTime(null);
+        setShowCheckInNotification(false);
+
+        alert("Unexpected response format. Please contact support.");
+        return;
+      }
+
+      // Now it's safe to parse JSON
+      const data = await response.json();
+      console.log("Check-in successful:", data);
+
+      // Hide notification after 3 seconds
+      setTimeout(() => {
+        setShowCheckInNotification(false);
+      }, 3000);
     } catch (error) {
-      console.error("Check-in error:", error);
+      console.error("Check-in network error:", error);
+
+      // Rollback state changes
       setIsCheckedIn(false);
       setCheckInTime(null);
+      setShowCheckInNotification(false);
+
+      // Check if it's a network error or JSON parse error
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        alert("Network error. Please check your connection and try again.");
+      } else if (
+        error instanceof SyntaxError &&
+        error.message.includes("JSON")
+      ) {
+        alert("Server returned invalid data. Please contact support.");
+      } else {
+        alert("Check-in failed. Please try again.");
+      }
+    } finally {
+      setIsCheckingIn(false);
     }
   };
 
   const handleSubmitWork = () => {
-    if (workType && workDescription) {
-      setIsWorkSubmitted(true);
-      setShowWorkSubmissionNotification(true);
+    if (workType && workDescription && !isSubmittingWork) {
+      setIsSubmittingWork(true);
+
+      // Simulate brief processing time for better UX
+      setTimeout(() => {
+        setIsWorkSubmitted(true);
+        setShowWorkSubmissionNotification(true);
+        setIsSubmittingWork(false);
+      }, 500);
     }
   };
 
   const handleCheckOut = async () => {
-    // Fetch IST time only at check-out
-    const checkOutMoment = await fetchISTTime();
-    if (!checkOutMoment) {
-      alert("Unable to fetch IST time for check-out. Please try again later.");
-      return;
-    }
-    setCheckOutTime(checkOutMoment);
-    setIsSubmittingWorkLog(true);
-    // Update live clock base
-    setBaseIST(checkOutMoment);
-    setBaseLocal(Date.now());
-    setCurrentTime(checkOutMoment);
+    if (isCheckingOut) return;
+
+    setIsCheckingOut(true);
+
     try {
+      // Fetch IST time only at check-out
+      const checkOutMoment = await fetchISTTime();
+      if (!checkOutMoment) {
+        alert(
+          "Unable to fetch IST time for check-out. Please try again later."
+        );
+        return;
+      }
+
+      setCheckOutTime(checkOutMoment);
+      setIsSubmittingWorkLog(true);
+
+      // Update live clock base
+      setBaseIST(checkOutMoment);
+      setBaseLocal(Date.now());
+      setCurrentTime(checkOutMoment);
+
       console.log("Starting checkout process...");
       const workLogResponse = await fetch(
         `/api/employees/${employeeId}/worklog`,
@@ -511,12 +652,15 @@ export default function EmployeeDashboard() {
           }),
         }
       );
+
       if (!workLogResponse.ok) {
         const errorText = await workLogResponse.text();
         console.error("Work Log API Error Response:", errorText);
         throw new Error("Failed to save work log");
       }
+
       console.log("Work log saved successfully");
+
       const submissionPayload = {
         employeeId: employeeId,
         employeeName: displayName,
@@ -526,6 +670,7 @@ export default function EmployeeDashboard() {
         priority: "Medium",
         submittedDate: toISTString(checkOutMoment),
       };
+
       const submissionResponse = await fetch("/api/team-lead/work-submission", {
         method: "POST",
         headers: {
@@ -533,6 +678,7 @@ export default function EmployeeDashboard() {
         },
         body: JSON.stringify(submissionPayload),
       });
+
       if (!submissionResponse.ok) {
         const errorText = await submissionResponse.text();
         console.error("Work submission API Error:", errorText);
@@ -540,6 +686,7 @@ export default function EmployeeDashboard() {
         const submissionResult = await submissionResponse.json();
         console.log("Work submission saved successfully:", submissionResult);
       }
+
       console.log("Work log and submission process completed");
       setIsCheckedOut(true);
     } catch (error) {
@@ -552,48 +699,14 @@ export default function EmployeeDashboard() {
       setCheckOutTime(null);
     } finally {
       setIsSubmittingWorkLog(false);
+      setIsCheckingOut(false);
     }
-  };
-
-  const handleStartNewDay = () => {
-    if (employeeData?.employee_id || user?.email) {
-      const empId = employeeData?.employee_id || user?.email || "fallback";
-      try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          localStorage.removeItem(getStorageKey(empId));
-        }
-      } catch (error) {
-        console.error("Error clearing localStorage:", error);
-      }
-    }
-
-    setIsCheckedIn(false);
-    setIsCheckedOut(false);
-    setCheckInTime(null);
-    setCheckOutTime(null);
-    setWorkType("");
-    setWorkDescription("");
-    setIsWorkSubmitted(false);
   };
 
   const formatTime = (date: Date | null) => {
     if (!date) return "Not Available";
     return formatISTTime(date);
   };
-
-  // if (loading) {
-  //   return (
-  //     <div className="flex h-screen bg-gray-50">
-  //       <MemoizedSidebar />
-  //       <div className="flex-1 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //           <p className="mt-4 text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   return (
     <ProtectedRoute allowedRoles={["employee", "intern"]}>
@@ -826,20 +939,12 @@ export default function EmployeeDashboard() {
                           <div className="flex items-center space-x-2 text-red-600">
                             <CircleCheckBig className="w-4 h-4" />
                             <span className="text-sm font-medium">
-                              Checked out at {formatTime(checkOutTime!)}
+                              Checked out at{" "}
+                              {formatTimeWithSeconds(checkOutTime!)}
                             </span>
                           </div>
                         </div>
                       </div>
-
-                      {/* <div className="border-t pt-6">
-                        <button
-                          onClick={handleStartNewDay}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-                        >
-                          Start New Day
-                        </button>
-                      </div> */}
                     </div>
                   ) : (
                     <>
@@ -862,13 +967,16 @@ export default function EmployeeDashboard() {
                           </div>
                         </div>
                         {!isCheckedIn ? (
-                          <button
+                          <LoadingButton
+                            loading={isCheckingIn}
                             onClick={handleCheckIn}
-                            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
+                            disabled={false}
+                            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                            icon={LogIn}
+                            loadingText="Checking in..."
                           >
-                            <LogIn className="w-4 h-4 text-white" />
-                            <span>Check-in</span>
-                          </button>
+                            Check-in
+                          </LoadingButton>
                         ) : (
                           <div className="flex items-center space-x-3">
                             <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
@@ -906,6 +1014,7 @@ export default function EmployeeDashboard() {
                                 placeholder="Describe today's work..."
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 rows={3}
+                                disabled={isSubmittingWork}
                               />
                             </div>
                             <div>
@@ -916,6 +1025,7 @@ export default function EmployeeDashboard() {
                                 value={workType}
                                 onChange={(e) => setWorkType(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={isSubmittingWork}
                               >
                                 <option value="">Select work type</option>
                                 <option value="Work from Office">
@@ -926,13 +1036,15 @@ export default function EmployeeDashboard() {
                                 </option>
                               </select>
                             </div>
-                            <button
+                            <LoadingButton
+                              loading={isSubmittingWork}
                               onClick={handleSubmitWork}
                               disabled={!workType || !workDescription}
                               className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                              loadingText="Submitting..."
                             >
                               Submit Work
-                            </button>
+                            </LoadingButton>
                           </div>
                         </div>
                       )}
@@ -992,18 +1104,20 @@ export default function EmployeeDashboard() {
                                   </span>
                                 </div>
                               </div>
-                              <button
+                              <LoadingButton
+                                loading={isCheckingOut || isSubmittingWorkLog}
                                 onClick={handleCheckOut}
-                                disabled={isSubmittingWorkLog}
-                                className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
-                              >
-                                <LogOut className="w-4 h-4 text-white" />
-                                <span>
-                                  {isSubmittingWorkLog
+                                disabled={false}
+                                className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+                                icon={LogOut}
+                                loadingText={
+                                  isSubmittingWorkLog
                                     ? "Saving..."
-                                    : "Check-out"}
-                                </span>
-                              </button>
+                                    : "Checking out..."
+                                }
+                              >
+                                Check-out
+                              </LoadingButton>
                             </div>
                           </div>
                         </div>
