@@ -118,27 +118,15 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("leave_requests")
-      .select(
-        `
-        *,
-        employee:employees!leave_requests_employee_id_fkey(
-          name,
-          employee_id,
-          designation,
-          phoneNumber,
-          emailAddress,
-          address
-        )
-      `
-      )
+      .select("*")
       .order("created_at", { ascending: false });
 
-    // If teamLeadId is provided, filter for requests where this team lead is eligible
+    // Filter by teamLeadId if provided
     if (teamLeadId) {
       query = query.contains("team_lead_ids", [teamLeadId]);
     }
 
-    // Add date filtering if provided
+    // Filter by date if provided
     if (month && year) {
       const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
       const endDate = new Date(parseInt(year), parseInt(month), 0);
@@ -154,9 +142,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: leaveError.message }, { status: 500 });
     }
 
-    console.log(`Fetched ${leaveRequests?.length || 0} leave requests`);
+    // Manually fetch employee details for each leave request
+    const results = [];
+    for (const req of leaveRequests || []) {
+      const { data: employee, error: empError } = await supabase
+        .from("employees")
+        .select(
+          "name, id as employee_id, designation, phoneNumber, emailAddress, address"
+        )
+        .eq("id", req.employee_id)
+        .single();
+      results.push({
+        ...req,
+        employee: employee || null,
+      });
+    }
 
-    return NextResponse.json({ data: leaveRequests || [] }, { status: 200 });
+    console.log(`Fetched ${results.length} leave requests`);
+    return NextResponse.json({ data: results }, { status: 200 });
   } catch (err: any) {
     console.error("Unexpected server error:", err);
     return NextResponse.json(
@@ -165,6 +168,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
 
 export async function PATCH(request: NextRequest) {
   try {

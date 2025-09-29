@@ -293,6 +293,7 @@ export default function AttendanceOverview() {
   const router = useRouter();
 
   // Fetch overtime hours for selected month/year
+  // Fetch overtime hours for selected month/year
   const fetchOvertimeHours = async (
     employees: DashboardEmployee[],
     totalDaysToUse: number,
@@ -327,40 +328,33 @@ export default function AttendanceOverview() {
               const overtimeData = await response.json();
               console.log(
                 `Overtime response for ${employee.name}:`,
-                overtimeData
+                JSON.stringify(overtimeData, null, 2)
               );
 
+              // Your API returns { total_hours, records_count }
               let otHours = 0;
 
-              // Try multiple possible response structures
-              if (typeof overtimeData === "number") {
+              if (overtimeData.total_hours !== undefined) {
+                otHours = overtimeData.total_hours;
+              } else if (typeof overtimeData === "number") {
                 otHours = overtimeData;
               } else if (overtimeData.totalHours !== undefined) {
                 otHours = overtimeData.totalHours;
-              } else if (overtimeData.total_hours !== undefined) {
-                otHours = overtimeData.total_hours;
               } else if (overtimeData.hours !== undefined) {
                 otHours = overtimeData.hours;
               } else if (overtimeData.otHours !== undefined) {
                 otHours = overtimeData.otHours;
-              } else if (
-                overtimeData.data &&
-                overtimeData.data.total_hours !== undefined
-              ) {
-                otHours = overtimeData.data.total_hours;
-              } else if (
-                overtimeData.result &&
-                overtimeData.result.total_hours !== undefined
-              ) {
-                otHours = overtimeData.result.total_hours;
               }
 
-              // Ensure otHours is a valid number
+              // Convert to number and ensure it's valid
+              otHours = Number(otHours);
               otHours = isNaN(otHours) ? 0 : Math.max(0, otHours);
               const roundedOtHours = Math.round(otHours * 100) / 100;
 
               console.log(
-                `Setting OT hours for ${employee.name}: ${roundedOtHours}h`
+                `✓ OT for ${employee.name}: ${roundedOtHours}h (${
+                  overtimeData.records_count || 0
+                } records)`
               );
 
               return {
@@ -369,8 +363,10 @@ export default function AttendanceOverview() {
                 totalDays: totalDaysToUse,
               };
             } else {
+              const errorText = await response.text();
               console.warn(
-                `Failed to fetch overtime for ${employee.name}: ${response.status}`
+                `⚠ Failed to fetch overtime for ${employee.name}: ${response.status}`,
+                errorText
               );
               return {
                 ...employee,
@@ -379,7 +375,10 @@ export default function AttendanceOverview() {
               };
             }
           } catch (err) {
-            console.error(`Error fetching overtime for ${employee.name}:`, err);
+            console.error(
+              `❌ Error fetching overtime for ${employee.name}:`,
+              err
+            );
             return {
               ...employee,
               otHours: 0,
@@ -390,7 +389,7 @@ export default function AttendanceOverview() {
       );
 
       console.log(
-        "Updated employees with overtime hours:",
+        "✓ Final employees with overtime hours:",
         updatedEmployees.map((emp) => ({
           name: emp.name,
           id: emp.id,
@@ -399,7 +398,7 @@ export default function AttendanceOverview() {
       );
       return updatedEmployees;
     } catch (err) {
-      console.error("Error in fetchOvertimeHours:", err);
+      console.error("❌ Error in fetchOvertimeHours:", err);
       return employees.map((emp) => ({
         ...emp,
         otHours: 0,
@@ -598,82 +597,82 @@ export default function AttendanceOverview() {
       }));
     }
   };
-const handleSelectAllPages = async () => {
-  try {
-    setLoading(true);
+  const handleSelectAllPages = async () => {
+    try {
+      setLoading(true);
 
-    // Fetch ALL employees without pagination
-    const params = new URLSearchParams({
-      month: selectedMonth,
-      year: selectedYear,
-      page: "1",
-      limit: "1000", // Large limit to get all
-    });
+      // Fetch ALL employees without pagination
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        page: "1",
+        limit: "1000", // Large limit to get all
+      });
 
-    if (searchTerm.trim()) {
-      params.append("search", searchTerm.trim());
-    }
-    if (selectedMode && selectedMode !== "All Modes") {
-      params.append("workMode", selectedMode);
-    }
-    if (selectedStatus && selectedStatus !== "All Status") {
-      params.append("status", selectedStatus);
-    }
-
-    const response = await fetch(`/api/employees?${params.toString()}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-    });
-
-    if (response.ok) {
-      const data: ApiResponse = await response.json();
-
-      if (data.employees && Array.isArray(data.employees)) {
-        const newAllSelected = new Map<string, DashboardEmployee>();
-
-        // Process all employees and add to selection
-        const processedEmployees = await fetchAttendanceSummary(
-          data.employees,
-          currentMonthTotalDays
-        );
-        const employeesWithOT = await fetchOvertimeHours(
-          processedEmployees,
-          currentMonthTotalDays,
-          selectedMonth,
-          selectedYear
-        );
-        const employeesWithCounts = await fetchRequestCounts(
-          employeesWithOT,
-          currentMonthTotalDays,
-          selectedMonth,
-          selectedYear
-        );
-
-        employeesWithCounts.forEach((emp) => {
-          newAllSelected.set(emp.id, emp);
-        });
-
-        setAllSelectedEmployees(newAllSelected);
-
-        toast({
-          title: "All Pages Selected",
-          description: `Selected ${newAllSelected.size} employees across all pages`,
-          variant: "default",
-        });
+      if (searchTerm.trim()) {
+        params.append("search", searchTerm.trim());
       }
+      if (selectedMode && selectedMode !== "All Modes") {
+        params.append("workMode", selectedMode);
+      }
+      if (selectedStatus && selectedStatus !== "All Status") {
+        params.append("status", selectedStatus);
+      }
+
+      const response = await fetch(`/api/employees?${params.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (response.ok) {
+        const data: ApiResponse = await response.json();
+
+        if (data.employees && Array.isArray(data.employees)) {
+          const newAllSelected = new Map<string, DashboardEmployee>();
+
+          // Process all employees and add to selection
+          const processedEmployees = await fetchAttendanceSummary(
+            data.employees,
+            currentMonthTotalDays
+          );
+          const employeesWithOT = await fetchOvertimeHours(
+            processedEmployees,
+            currentMonthTotalDays,
+            selectedMonth,
+            selectedYear
+          );
+          const employeesWithCounts = await fetchRequestCounts(
+            employeesWithOT,
+            currentMonthTotalDays,
+            selectedMonth,
+            selectedYear
+          );
+
+          employeesWithCounts.forEach((emp) => {
+            newAllSelected.set(emp.id, emp);
+          });
+
+          setAllSelectedEmployees(newAllSelected);
+
+          toast({
+            title: "All Pages Selected",
+            description: `Selected ${newAllSelected.size} employees across all pages`,
+            variant: "default",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error selecting all pages:", error);
+      toast({
+        title: "Error",
+        description: "Failed to select all employees",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Error selecting all pages:", error);
-    toast({
-      title: "Error",
-      description: "Failed to select all employees",
-      variant: "destructive",
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
   // Fetch total days setting for the selected month/year
   const fetchMonthTotalDays = async (
     month: string = selectedMonth,
@@ -1072,34 +1071,34 @@ const handleSelectAllPages = async () => {
     );
   };
 
-const handleSelectEmployee = (employeeId: string, checked: boolean) => {
-  const employee = attendanceData.find((emp) => emp.id === employeeId);
-  if (!employee) return;
+  const handleSelectEmployee = (employeeId: string, checked: boolean) => {
+    const employee = attendanceData.find((emp) => emp.id === employeeId);
+    if (!employee) return;
 
-  const newAllSelected = new Map(allSelectedEmployees);
-  const newCurrentPageSelected = new Set(selectedEmployees);
+    const newAllSelected = new Map(allSelectedEmployees);
+    const newCurrentPageSelected = new Set(selectedEmployees);
 
-  if (checked) {
-    newAllSelected.set(employeeId, employee);
-    newCurrentPageSelected.add(employeeId);
-  } else {
-    newAllSelected.delete(employeeId);
-    newCurrentPageSelected.delete(employeeId);
-    setIsAllSelected(false);
-  }
+    if (checked) {
+      newAllSelected.set(employeeId, employee);
+      newCurrentPageSelected.add(employeeId);
+    } else {
+      newAllSelected.delete(employeeId);
+      newCurrentPageSelected.delete(employeeId);
+      setIsAllSelected(false);
+    }
 
-  setAllSelectedEmployees(newAllSelected);
-  setSelectedEmployees(newCurrentPageSelected);
-  setCurrentPageSelectedCount(newCurrentPageSelected.size);
+    setAllSelectedEmployees(newAllSelected);
+    setSelectedEmployees(newCurrentPageSelected);
+    setCurrentPageSelectedCount(newCurrentPageSelected.size);
 
-  // Update "select all" state for current page
-  if (newCurrentPageSelected.size === attendanceData.length) {
-    setIsAllSelected(true);
-  }
-};
-const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
-  return Array.from(allSelectedEmployees.values());
-};
+    // Update "select all" state for current page
+    if (newCurrentPageSelected.size === attendanceData.length) {
+      setIsAllSelected(true);
+    }
+  };
+  const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
+    return Array.from(allSelectedEmployees.values());
+  };
   // Get selected employee data
   const getSelectedEmployeesData = () => {
     return attendanceData.filter((emp) => selectedEmployees.has(emp.id));
@@ -1355,10 +1354,10 @@ const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
       return;
     }
     try {
-       const { jsPDF } = await import("jspdf");
-       const autoTable = (await import("jspdf-autotable")).default;
+      const { jsPDF } = await import("jspdf");
+      const autoTable = (await import("jspdf-autotable")).default;
 
-       const doc = new jsPDF();
+      const doc = new jsPDF();
 
       // Add title
       doc.setFontSize(16);
@@ -1391,36 +1390,36 @@ const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
       ]);
 
       // Add table
-     autoTable(doc, {
-       head: [
-         [
-           "ID",
-           "Name",
-           "Designation",
-           "Work Mode",
-           "Total Days",
-           "Working Days",
-           "OT Hours",
-           "Leaves",
-           "Permissions",
-         ],
-       ],
-       body: tableData,
-       startY: 45,
-       styles: { fontSize: 8 },
-       headStyles: { fillColor: [66, 139, 202] },
-       columnStyles: {
-         0: { cellWidth: 15 },
-         1: { cellWidth: 35 },
-         2: { cellWidth: 30 },
-         3: { cellWidth: 20 },
-         4: { cellWidth: 18 },
-         5: { cellWidth: 20 },
-         6: { cellWidth: 18 },
-         7: { cellWidth: 15 },
-         8: { cellWidth: 20 },
-       },
-     });
+      autoTable(doc, {
+        head: [
+          [
+            "ID",
+            "Name",
+            "Designation",
+            "Work Mode",
+            "Total Days",
+            "Working Days",
+            "OT Hours",
+            "Leaves",
+            "Permissions",
+          ],
+        ],
+        body: tableData,
+        startY: 45,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [66, 139, 202] },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 18 },
+          7: { cellWidth: 15 },
+          8: { cellWidth: 20 },
+        },
+      });
 
       // Save the PDF
       doc.save(
@@ -1441,7 +1440,6 @@ const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
       });
     }
   };
-
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
@@ -1480,33 +1478,34 @@ const getAllSelectedEmployeesData = (): DashboardEmployee[] => {
     fetchEmployees(1, true, "");
   };
 
- useEffect(() => {
-   if (attendanceData.length > 0) {
-     const currentPageIds = new Set(attendanceData.map((emp) => emp.id));
-     const currentPageSelected = new Set<string>();
-     let selectedOnThisPage = 0;
+  useEffect(() => {
+    if (attendanceData.length > 0) {
+      const currentPageIds = new Set(attendanceData.map((emp) => emp.id));
+      const currentPageSelected = new Set<string>();
+      let selectedOnThisPage = 0;
 
-     // Check which employees on current page are in global selection
-     attendanceData.forEach((emp) => {
-       if (allSelectedEmployees.has(emp.id)) {
-         currentPageSelected.add(emp.id);
-         selectedOnThisPage++;
-       }
-     });
+      // Check which employees on current page are in global selection
+      attendanceData.forEach((emp) => {
+        if (allSelectedEmployees.has(emp.id)) {
+          currentPageSelected.add(emp.id);
+          selectedOnThisPage++;
+        }
+      });
 
-     setSelectedEmployees(currentPageSelected);
-     setCurrentPageSelectedCount(selectedOnThisPage);
-     setIsAllSelected(
-       selectedOnThisPage === attendanceData.length && attendanceData.length > 0
-     );
-   }
- }, [attendanceData, allSelectedEmployees]);
-const clearAllSelections = () => {
-  setAllSelectedEmployees(new Map());
-  setSelectedEmployees(new Set());
-  setCurrentPageSelectedCount(0);
-  setIsAllSelected(false);
-};
+      setSelectedEmployees(currentPageSelected);
+      setCurrentPageSelectedCount(selectedOnThisPage);
+      setIsAllSelected(
+        selectedOnThisPage === attendanceData.length &&
+          attendanceData.length > 0
+      );
+    }
+  }, [attendanceData, allSelectedEmployees]);
+  const clearAllSelections = () => {
+    setAllSelectedEmployees(new Map());
+    setSelectedEmployees(new Set());
+    setCurrentPageSelectedCount(0);
+    setIsAllSelected(false);
+  };
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) {
