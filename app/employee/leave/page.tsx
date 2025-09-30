@@ -245,6 +245,7 @@ export default function LeaveApplicationPage() {
                     ["Maternity Leave", "24 weeks"],
                     ["Marriage Leave", "5 days"],
                     ["Compensation Leave", "2 days"],
+                    ["Half-day Leave", "As needed"],
                   ].map(([type, note]) => (
                     <div key={type} className="border p-3 rounded">
                       <div className="flex items-center space-x-2">
