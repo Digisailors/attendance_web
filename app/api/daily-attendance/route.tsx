@@ -46,16 +46,69 @@ export async function GET(req: Request) {
 
     if (logError) throw logError;
 
-    // 3️⃣ Merge
+    // 🆕 3️⃣ Fetch leave requests (Pending Team Lead status) for this date
+    // Check if selectedDate falls between start_date and end_date
+    const { data: leaveRequests, error: leaveError } = await supabase
+      .from("leave_requests")
+      .select("employee_id, leave_type, status, start_date, end_date")
+      .eq("status", "Pending Team Lead")
+      .lte("start_date", selectedDate) // start_date <= selectedDate
+      .gte("end_date", selectedDate); // end_date >= selectedDate
+
+    if (leaveError) {
+      console.error("Error fetching leave requests:", leaveError);
+    }
+
+    // Log for debugging
+    console.log(`Checking leaves for date: ${selectedDate}`);
+    console.log(
+      `Found ${leaveRequests?.length || 0} pending leaves:`,
+      leaveRequests
+    );
+
+    // Create a Set of employee IDs who are on leave
+    const employeesOnLeave = new Set(
+      leaveRequests?.map((leave) => leave.employee_id) || []
+    );
+
+    console.log(`Employees on leave:`, Array.from(employeesOnLeave));
+
+    // 4️⃣ Merge
     let merged = employees.map((emp) => {
       const log = logs.find((l) => l.employee_id === emp.id);
+
+      let attendanceStatus = "Absent"; // default
+
+      // 🆕 Check if employee is on approved leave first
+      if (employeesOnLeave.has(emp.id)) {
+        attendanceStatus = "Leave";
+      } else if (log) {
+        // Original logic for determining status from work log
+        const checkIn = log.check_in ? new Date(log.check_in) : null;
+        const checkOut = log.check_out ? new Date(log.check_out) : null;
+
+        if (!checkIn && !checkOut) {
+          attendanceStatus = "Absent"; // Changed: if no check-in/out, it's absent (not leave)
+        } else if (checkIn && !checkOut) {
+          attendanceStatus = "Missed"; // checked in but didn't check out
+        } else if (checkIn && checkOut) {
+          const nineAM = new Date(checkIn);
+          nineAM.setHours(9, 0, 0, 0); // 9:00 AM cutoff
+
+          if (checkIn > nineAM) {
+            attendanceStatus = "Late";
+          } else {
+            attendanceStatus = "Present";
+          }
+        }
+      }
 
       return {
         id: emp.employee_id,
         name: emp.name,
         designation: emp.designation,
         workMode: emp.work_mode,
-        attendanceStatus: log?.status || "Absent",
+        attendanceStatus,
         checkInTime: log?.check_in || null,
         checkOutTime: log?.check_out || null,
         totalHours: log?.hours || 0,
@@ -64,7 +117,7 @@ export async function GET(req: Request) {
       };
     });
 
-    // 4️⃣ Apply filters independently
+    // 5️⃣ Apply filters independently
     if (searchQuery) {
       merged = merged.filter(
         (emp) =>
@@ -84,10 +137,22 @@ export async function GET(req: Request) {
       );
     }
 
-    // 5️⃣ Summary
-    const presentCount = merged.filter((m) => m.attendanceStatus === "Present").length;
-    const absentCount = merged.filter((m) => m.attendanceStatus === "Absent").length;
-    const lateCount = merged.filter((m) => m.attendanceStatus === "Late").length;
+    // 6️⃣ Summary
+    const presentCount = merged.filter(
+      (m) => m.attendanceStatus === "Present"
+    ).length;
+    const lateCount = merged.filter(
+      (m) => m.attendanceStatus === "Late"
+    ).length;
+    const missedCount = merged.filter(
+      (m) => m.attendanceStatus === "Missed"
+    ).length;
+    const leaveCount = merged.filter(
+      (m) => m.attendanceStatus === "Leave"
+    ).length;
+    const absentCount = merged.filter(
+      (m) => m.attendanceStatus === "Absent"
+    ).length;
 
     return NextResponse.json({
       date: selectedDate,
@@ -95,8 +160,10 @@ export async function GET(req: Request) {
       summary: {
         totalEmployees: merged.length,
         presentCount,
-        absentCount,
         lateCount,
+        missedCount,
+        leaveCount,
+        absentCount,
         date: selectedDate,
       },
     });

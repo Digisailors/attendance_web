@@ -52,7 +52,8 @@ import {
   Users,
   UserCheck,
   UserX,
-  Download,
+  UserMinus,
+  CalendarClock,
   X,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -66,7 +67,7 @@ import { saveAs } from "file-saver";
 
 // Types
 type WorkMode = "Office" | "WFH" | "Hybrid";
-type AttendanceStatus = "Present" | "Absent" | "Late";
+type AttendanceStatus = "Present" | "Absent" | "Late" | "Leave" | "Missed";
 
 interface DailyAttendanceEmployee {
   id: string;
@@ -125,79 +126,10 @@ const transformBackendData = (
     return [];
   }
 
-  const todayStr = new Date().toISOString().split("T")[0];
-
   return backendResponse.employees.map((record: any) => {
-    let attendanceStatus: AttendanceStatus = "Absent";
-
-    const recordDate = new Date(selectedDate).toISOString().split("T")[0];
-
-    // First, determine basic attendance status
-    if (record.checkInTime && record.checkOutTime) {
-      // Both check-in and check-out exist
-      attendanceStatus = "Present";
-    } else if (record.checkInTime && !record.checkOutTime) {
-      // Only check-in exists
-      if (recordDate === todayStr) {
-        // For today, if there's check-in but no check-out, consider as Present
-        attendanceStatus = "Present";
-      } else {
-        // For past dates, if there's no check-out, consider as Absent
-        attendanceStatus = "Absent";
-      }
-    }
-    // If no check-in time, status remains "Absent"
-
-    // Now check for Late status - this overrides Present if check-in is after 9 AM
-    if (record.checkInTime) {
-      try {
-        let checkInDate;
-
-        // Handle different time formats
-        if (/^\d{2}:\d{2}(:\d{2})?$/.test(record.checkInTime)) {
-          // Plain time format (HH:mm or HH:mm:ss)
-          const today = new Date(selectedDate);
-          const [hours, minutes, seconds = 0] = record.checkInTime
-            .split(":")
-            .map(Number);
-          checkInDate = new Date(
-            today.getFullYear(),
-            today.getMonth(),
-            today.getDate(),
-            hours,
-            minutes,
-            seconds
-          );
-        } else {
-          // Full datetime format
-          checkInDate = new Date(record.checkInTime);
-        }
-
-        if (!isNaN(checkInDate.getTime())) {
-          // Create 9:00 AM for the same date
-          const nineAM = new Date(checkInDate);
-          nineAM.setHours(9, 0, 0, 0);
-
-          // If employee checked in after 9 AM, mark as Late
-          if (checkInDate > nineAM && attendanceStatus !== "Absent") {
-            attendanceStatus = "Late";
-            console.log(
-              `Employee ${record.name} marked as Late - Check-in: ${record.checkInTime}, Cutoff: 9:00 AM`
-            );
-          }
-        }
-      } catch (error) {
-        console.error(
-          `Error parsing check-in time for employee ${record.name}:`,
-          error
-        );
-      }
-    }
-
-    // Preserve backend "Late" status if explicitly set
-    if (record.attendanceStatus === "Late") {
-      attendanceStatus = "Late";
-    }
+    // Use backend attendanceStatus if provided, else fallback to "Absent"
+    const attendanceStatus: AttendanceStatus =
+      record.attendanceStatus || "Absent";
 
     return {
       id: record.id,
@@ -267,6 +199,8 @@ const getAttendanceStatusBadge = (status: AttendanceStatus): string => {
     Present: "bg-green-100 text-green-800",
     Absent: "bg-red-100 text-red-800",
     Late: "bg-yellow-100 text-yellow-800",
+    Leave: "bg-indigo-100 text-indigo-800", // new color for Leave
+    Missed: "bg-pink-100 text-pink-800", // new color for Missed
   };
   return colors[status] || "bg-gray-100 text-gray-800";
 };
@@ -553,7 +487,7 @@ export default function ReportsPage() {
 
   // Export functions
   const getFilteredDataForExport = (
-    exportType: "all" | "present" | "absent" | "selected"
+    exportType: "all" | "present" | "absent" | "selected" | "leave" | "missed"
   ): DailyAttendanceEmployee[] => {
     switch (exportType) {
       case "present":
@@ -565,6 +499,12 @@ export default function ReportsPage() {
       case "absent":
         return attendanceData.filter(
           (emp) => emp.attendanceStatus === "Absent"
+        );
+      case "leave":
+        return attendanceData.filter((emp) => emp.attendanceStatus === "Leave");
+      case "missed":
+        return attendanceData.filter(
+          (emp) => emp.attendanceStatus === "Missed"
         );
       case "selected":
         return attendanceData.filter((emp) => selectedEmployeeIds.has(emp.id));
@@ -908,6 +848,12 @@ export default function ReportsPage() {
             )}
             {employee.attendanceStatus === "Late" && (
               <Clock className="w-3 h-3 mr-1" />
+            )}
+            {employee.attendanceStatus === "Leave" && (
+              <UserMinus className="w-3 h-3 mr-1" />
+            )}
+            {employee.attendanceStatus === "Missed" && (
+              <CalendarClock className="w-3 h-3 mr-1" />
             )}
             {employee.attendanceStatus}
           </Badge>
@@ -1265,6 +1211,9 @@ export default function ReportsPage() {
                         <SelectItem value="Present">Present</SelectItem>
                         <SelectItem value="Absent">Absent</SelectItem>
                         <SelectItem value="Late">Late</SelectItem>
+                        <SelectItem value="Leave">Leave</SelectItem> {/* new */}
+                        <SelectItem value="Missed">Missed</SelectItem>{" "}
+                        {/* new */}
                       </SelectContent>
                     </Select>
                     <Select
