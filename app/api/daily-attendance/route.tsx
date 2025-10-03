@@ -48,17 +48,15 @@ export async function GET(req: Request) {
 
     // 🆕 3️⃣ Fetch leave requests (Pending Team Lead status) for this date
     // Check if selectedDate falls between start_date and end_date
-    const { data: leaveRequests, error: leaveError } = await supabase
-      .from("leave_requests")
-      .select("employee_id, leave_type, status, start_date, end_date")
-      .eq("status", "Pending Team Lead")
-      .lte("start_date", selectedDate) // start_date <= selectedDate
-      .gte("end_date", selectedDate); // end_date >= selectedDate
+   const { data: leaveRequests, error: leaveError } = await supabase
+     .from("leave_requests")
+     .select("employee_id, leave_type, status, start_date, end_date")
+     .lte("start_date", selectedDate) // start_date <= selectedDate
+     .gte("end_date", selectedDate); // end_date >= selectedDate
 
-    if (leaveError) {
-      console.error("Error fetching leave requests:", leaveError);
-    }
-
+   if (leaveError) {
+     console.error("Error fetching leave requests:", leaveError);
+   }
     // Log for debugging
     console.log(`Checking leaves for date: ${selectedDate}`);
     console.log(

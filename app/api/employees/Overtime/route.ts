@@ -123,8 +123,18 @@ export async function POST(req: NextRequest) {
     const ot_id = uuidv4();
 
     // Helper to upload image
+    // Helper to upload image
     const uploadImage = async (file: File | null, label: string) => {
       if (!file) return null;
+
+      // 🚨 Check file size (Supabase default = 50 MB)
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
+        throw new Error(
+          `${label} upload failed: File too large. Max size is 50MB.`
+        );
+      }
+
       const ext = file.name.split(".").pop();
       const path = `ot/${ot_id}_${label}.${ext}`;
 
@@ -145,10 +155,6 @@ export async function POST(req: NextRequest) {
         .from("ot-images")
         .getPublicUrl(path);
 
-      console.log(
-        `✅ ${label} uploaded successfully:`,
-        publicUrlData?.publicUrl
-      );
       return publicUrlData?.publicUrl ?? null;
     };
 
