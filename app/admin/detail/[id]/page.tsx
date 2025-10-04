@@ -355,39 +355,17 @@ export default function EmployeeAttendanceDetail() {
           if (workLogMap.has(dateKey)) {
             const log = workLogMap.get(dateKey)!;
 
-            const today = new Date();
-            const todayStr =
-              today.getFullYear() +
-              "-" +
-              String(today.getMonth() + 1).padStart(2, "0") +
-              "-" +
-              String(today.getDate()).padStart(2, "0");
-
+            // ✅ FIXED: Working day = any day with check-in (regardless of check-out)
             let finalStatus: string = "Absent";
 
-            if (
-              log.checkIn &&
-              log.checkIn !== "--" &&
-              log.checkIn !== "-" &&
-              log.checkOut &&
-              log.checkOut !== "--" &&
-              log.checkOut !== "-"
-            ) {
+            if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-") {
+              // Has check-in = counted as Present/Working day
               finalStatus = "Present";
-            } else if (
-              log.checkIn &&
-              log.checkIn !== "--" &&
-              log.checkIn !== "-" &&
-              (!log.checkOut || log.checkOut === "--" || log.checkOut === "-")
-            ) {
-              if (dateKey === todayStr) {
-                finalStatus = "Present";
-              } else {
-                finalStatus = "Absent";
-              }
             } else if (log.status === "Leave" || log.status === "Permission") {
+              // No check-in but has Leave/Permission status
               finalStatus = log.status;
             } else {
+              // No check-in and no Leave/Permission = Absent
               finalStatus = "Absent";
             }
 

@@ -3,6 +3,28 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { v4 as uuidv4 } from "uuid";
 import { parseISO } from "date-fns";
 
+// 🔄 Utility to resolve employeeId (UUID) from either UUID or code
+async function resolveEmployeeId(
+  supabase: any,
+  rawId: string
+): Promise<string | null> {
+  const isUuid = rawId.includes("-") && rawId.length >= 36;
+  if (isUuid) return rawId;
+
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("employee_id", rawId)
+    .single();
+
+  if (error || !data) {
+    console.error("Failed to resolve employee ID:", error);
+    return null;
+  }
+
+  return data.id;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const supabase = createServerSupabaseClient();
@@ -14,70 +36,69 @@ export async function GET(req: NextRequest) {
     const year = searchParams.get("year");
     const countOnly = searchParams.get("count") === "true";
     const status = searchParams.get("status");
-    const getAllRecords = searchParams.get("getAll") === "true"; // New parameter to get all records
+    const getAllRecords = searchParams.get("getAll") === "true";
 
-    // 🆕 NEW: Get ALL records from leave_requests table (for debugging)
+    // Get ALL records from leave_requests table (for debugging)
     if (getAllRecords) {
       console.log("🔍 Fetching ALL records from leave_requests table...");
-      
-      const { data: allRecords, count: totalCount, error: allError } = await supabase
+
+      const {
+        data: allRecords,
+        count: totalCount,
+        error: allError,
+      } = await supabase
         .from("leave_requests")
         .select("*", { count: "exact" })
         .order("created_at", { ascending: false });
 
       if (allError) {
         console.error("❌ Error fetching all records:", allError);
-        return NextResponse.json({ 
-          error: "Failed to fetch all records", 
-          details: allError.message 
-        }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: "Failed to fetch all records",
+            details: allError.message,
+          },
+          { status: 500 }
+        );
       }
 
-      console.log(`✅ Found ${totalCount} total records in leave_requests table`);
-      return NextResponse.json({ 
-        data: allRecords || [],
-        count: totalCount || 0,
-        message: `Found ${totalCount} total records in leave_requests table`
-      }, { status: 200 });
+      console.log(
+        `✅ Found ${totalCount} total records in leave_requests table`
+      );
+      return NextResponse.json(
+        {
+          data: allRecords || [],
+          count: totalCount || 0,
+          message: `Found ${totalCount} total records in leave_requests table`,
+        },
+        { status: 200 }
+      );
     }
 
     // Handle team lead requests (fetch all requests for team members)
     if (teamLeadId) {
       console.log("Fetching leave requests for team lead:", teamLeadId);
 
-      // First, let's try to get ALL leave_requests and see what's in the table
-      console.log("🔍 Debug: Checking all leave_requests first...");
-      const { data: debugAll, error: debugError } = await supabase
-        .from("leave_requests")
-        .select("*")
-        .limit(5);
-
-      if (debugError) {
-        console.error("❌ Debug query failed:", debugError);
-      } else {
-        console.log("🔍 Sample leave_requests data:", JSON.stringify(debugAll, null, 2));
+      const teamLeadUUID = await resolveEmployeeId(supabase, teamLeadId);
+      if (!teamLeadUUID) {
+        return NextResponse.json(
+          { error: "Invalid team lead ID" },
+          { status: 404 }
+        );
       }
 
-      // Convert team lead code to UUID
-      const { data: teamLeadData, error: teamLeadError } = await supabase
-        .from("employees")
-        .select("id")
-        .eq("employee_id", teamLeadId)
-        .single();
-
-      if (teamLeadError || !teamLeadData) {
-        console.error("Team lead not found:", teamLeadError);
-        return NextResponse.json({ error: "Invalid team lead ID" }, { status: 404 });
-      }
-
-      const teamLeadUUID = teamLeadData.id;
       console.log("Team lead UUID:", teamLeadUUID);
 
-      // 🆕 Simplified approach - Just get all leave requests for now
-      console.log("🔍 Trying simplified approach: Get all leave requests");
-      const { data: allLeaveRequests, count: allCount, error: simpleError } = await supabase
+      // Get all leave requests
+      console.log("🔍 Fetching leave requests for team lead");
+      const {
+        data: allLeaveRequests,
+        count: allCount,
+        error: simpleError,
+      } = await supabase
         .from("leave_requests")
-        .select(`
+        .select(
+          `
           *,
           employees!left(
             name,
@@ -87,156 +108,188 @@ export async function GET(req: NextRequest) {
             emailAddress,
             address
           )
-        `, { count: "exact" })
+        `,
+          { count: "exact" }
+        )
         .order("created_at", { ascending: false });
 
       if (simpleError) {
-        console.error("❌ Simple query failed:", simpleError);
-        
-        // Try even simpler - just get leave_requests without join
-        const { data: verySimple, count: verySimpleCount, error: verySimpleError } = await supabase
-          .from("leave_requests")
-          .select("*", { count: "exact" })
-          .order("created_at", { ascending: false });
-
-        if (verySimpleError) {
-          console.error("❌ Very simple query also failed:", verySimpleError);
-          return NextResponse.json({ 
-            error: "All queries failed", 
-            details: verySimpleError.message 
-          }, { status: 500 });
-        }
-
-        console.log(`✅ Very simple query worked! Found ${verySimpleCount} records`);
-        return NextResponse.json({ 
-          data: verySimple || [],
-          count: verySimpleCount || 0,
-          note: "Retrieved without employee details due to join issues"
-        }, { status: 200 });
+        console.error("❌ Query failed:", simpleError);
+        return NextResponse.json(
+          {
+            error: "Failed to fetch leave requests",
+            details: simpleError.message,
+          },
+          { status: 500 }
+        );
       }
 
-      console.log(`✅ Simple query worked! Found ${allCount} records`);
-      return NextResponse.json({ 
-        data: allLeaveRequests || [],
-        count: allCount || 0 
-      }, { status: 200 });
+      console.log(`✅ Found ${allCount} records`);
+      return NextResponse.json(
+        {
+          data: allLeaveRequests || [],
+          count: allCount || 0,
+        },
+        { status: 200 }
+      );
     }
 
     // Handle individual employee requests
-    if (!rawEmployeeId || !month || !year) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
+    if (!rawEmployeeId) {
+      return NextResponse.json(
+        { error: "Missing employee ID" },
+        { status: 400 }
+      );
     }
 
     // Convert employee code -> UUID
-    const { data: employeeData, error: employeeError } = await supabase
-      .from("employees")
-      .select("id, employee_id")
-      .eq("employee_id", rawEmployeeId)
-      .single();
-
-    if (employeeError || !employeeData) {
-      console.error("Employee not found:", employeeError);
-      
-      // 🆕 If employee UUID lookup fails, try with the raw employee ID directly
-      console.log("🔍 Trying with raw employee ID:", rawEmployeeId);
-      const { data: directQuery, count: directCount, error: directError } = await supabase
-        .from("leave_requests")
-        .select("*", { count: "exact" })
-        .eq("employee_id", rawEmployeeId) // Try with raw ID
-        .order("created_at", { ascending: false });
-
-      if (!directError && directQuery) {
-        console.log(`✅ Direct query worked! Found ${directCount} records`);
-        return NextResponse.json({ 
-          data: directQuery,
-          count: directCount,
-          note: "Used raw employee_id instead of UUID"
-        }, { status: 200 });
-      }
-
-      return NextResponse.json({ error: "Invalid employee ID or not found" }, { status: 404 });
+    const uuid = await resolveEmployeeId(supabase, rawEmployeeId);
+    if (!uuid) {
+      console.error("Employee not found:", rawEmployeeId);
+      return NextResponse.json(
+        { error: "Invalid employee ID or not found" },
+        { status: 404 }
+      );
     }
 
-    const uuid = employeeData.id;
+    console.log(
+      `Found employee UUID: ${uuid} for employee_id: ${rawEmployeeId}`
+    );
 
-    // Try to get employee's leave requests
-    const { data: employeeLeaves, count: empCount, error: empError } = await supabase
+    // 🔍 Build query - same as permission API
+    let query = supabase
       .from("leave_requests")
-      .select("*", { count: "exact" })
-      .eq("employee_id", uuid)
-      .order("created_at", { ascending: false });
+      .select("*", { count: countOnly ? "exact" : undefined })
+      .eq("employee_id", uuid);
 
-    if (empError) {
-      console.error("❌ Employee leaves query failed:", empError);
-      return NextResponse.json({ 
-        error: "Failed to fetch employee leaves", 
-        details: empError.message 
-      }, { status: 500 });
+    // Apply month and year filters if provided - same logic as permission API
+    if (month && year) {
+      const monthInt = parseInt(month);
+      const yearInt = parseInt(year);
+      console.log(`Applying filters - month: ${monthInt}, year: ${yearInt}`);
+
+      query = query.eq("month", monthInt).eq("year", yearInt);
     }
 
-    console.log(`✅ Found ${empCount} leave requests for employee ${rawEmployeeId}`);
-    return NextResponse.json({ 
-      data: employeeLeaves || [],
-      count: empCount || 0 
-    }, { status: 200 });
+    // Apply status filter if provided
+    if (status) {
+      query = query.eq("status", status);
+    }
 
+    query = query.order("created_at", { ascending: false });
+
+    const { data, error, count: total } = await query;
+
+    if (error) {
+      console.error("❌ Employee leaves query failed:", error);
+      return NextResponse.json(
+        {
+          error: "Failed to fetch employee leaves",
+          details: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log(
+      `✅ Leave count for ${rawEmployeeId} (${month}/${year}): ${total || 0}`
+    );
+
+    if (countOnly) {
+      return NextResponse.json({ count: total || 0 }, { status: 200 });
+    }
+
+    return NextResponse.json(
+      {
+        data: data || [],
+        count: total || 0,
+      },
+      { status: 200 }
+    );
   } catch (err) {
     console.error("Server error:", err);
-    return NextResponse.json({ 
-      error: "Server error", 
-      details: err instanceof Error ? err.message : "Unknown error" 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Server error",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }
 
-// POST Handler (unchanged)
+// POST Handler
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const body = await request.json();
 
   const {
-    employee_id,
+    employee_id: rawEmployeeId,
     employee_name,
-    from_date,
-    to_date,
+    employee_email,
+    start_date,
+    end_date,
     leave_type,
     reason,
-    month,
-    year,
-    team_lead_id
+    team_lead_id,
+    manager_id,
   } = body;
 
+  const employee_id = await resolveEmployeeId(supabase, rawEmployeeId);
+  if (!employee_id) {
+    return NextResponse.json({ error: "Invalid employee ID" }, { status: 404 });
+  }
+
   const id = uuidv4();
-  const created_at = new Date().toISOString();
-  const parsedFromDate = parseISO(from_date);
-  const parsedToDate = parseISO(to_date);
+  const parsedStartDate = parseISO(start_date);
+  const parsedEndDate = parseISO(end_date);
+
+  // Extract month and year from start_date (same as permission API)
+  const leaveDate = new Date(start_date);
+  const month = leaveDate.getMonth() + 1; // 1-12
+  const year = leaveDate.getFullYear();
+
+  console.log(
+    `Creating leave request for ${employee_name} - month: ${month}, year: ${year}`
+  );
 
   const { data, error } = await supabase.from("leave_requests").insert([
     {
       id,
       employee_id,
       employee_name,
-      from_date: parsedFromDate,
-      to_date: parsedToDate,
+      employee_email,
+      start_date: parsedStartDate,
+      end_date: parsedEndDate,
       leave_type,
       reason,
-      created_at,
       status: "Pending",
       month,
       year,
-      team_lead_id
-    }
+      team_lead_id,
+      manager_id,
+    },
   ]);
 
   if (error) {
-    console.error("Error inserting leave request:", error.message, error.details);
-    return NextResponse.json({ error: "Failed to apply for leave" }, { status: 500 });
+    console.error(
+      "Error inserting leave request:",
+      error.message,
+      error.details
+    );
+    return NextResponse.json(
+      { error: "Failed to apply for leave" },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ message: "Leave applied successfully" }, { status: 200 });
+  return NextResponse.json(
+    { message: "Leave applied successfully" },
+    { status: 200 }
+  );
 }
 
-// PATCH Handler (unchanged)
+// PATCH Handler
 export async function PATCH(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const body = await request.json();
@@ -249,8 +302,14 @@ export async function PATCH(request: NextRequest) {
 
   if (error) {
     console.error("Error updating leave status:", error.message, error.details);
-    return NextResponse.json({ error: "Failed to update leave status" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update leave status" },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ message: "Leave status updated successfully" }, { status: 200 });
+  return NextResponse.json(
+    { message: "Leave status updated successfully" },
+    { status: 200 }
+  );
 }
