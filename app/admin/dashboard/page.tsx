@@ -406,47 +406,86 @@ export default function AttendanceOverview() {
       }));
     }
   };
-
-  // Process attendance data while preserving backend workingDays
   const fetchAttendanceSummary = async (
     employees: DashboardEmployee[],
-    totalDaysToUse: number
+    totalDaysToUse: number,
+    month: string,
+    year: string
   ) => {
     try {
       console.log(
-        `Processing attendance data - preserving backend workingDays for ${employees.length} employees`
+        `Fetching working days using detail page API for ${employees.length} employees for ${month}/${year}`
       );
 
       const updatedEmployees = await Promise.all(
         employees.map(async (employee) => {
           try {
-            // IMPORTANT: Preserve the workingDays from backend, don't recalculate
-            console.log(`Preserving backend data for ${employee.name}:`, {
-              id: employee.id,
-              workingDays: employee.workingDays,
-              totalDays: totalDaysToUse,
+            // Use the EXACT SAME API endpoint as the detail page
+            const response = await fetch(
+              `/api/employees/${encodeURIComponent(
+                employee.id
+              )}?month=${month}&year=${year}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+              }
+            );
+
+            if (!response.ok) {
+              console.warn(
+                `Failed to fetch data for ${employee.name}: ${response.status}`
+              );
+              return {
+                ...employee,
+                workingDays: 0,
+                missedDays: totalDaysToUse,
+                totalDays: totalDaysToUse,
+              };
+            }
+
+            const data = await response.json();
+
+            // Get the daily work logs
+            const dailyWorkLog = data.dailyWorkLog || [];
+
+            console.log(
+              `${employee.name}: Received ${dailyWorkLog.length} work log entries`
+            );
+
+            // Count working days - EXACT SAME LOGIC as detail page
+            let workingDaysCount = 0;
+
+            dailyWorkLog.forEach((log: any) => {
+              const checkIn = log.checkIn || log.check_in;
+
+              // ✅ Working day = has check-in (matches detail page exactly)
+              if (checkIn && checkIn !== "--" && checkIn !== "-") {
+                workingDaysCount++;
+                console.log(`  ✓ ${log.date}: checked in at ${checkIn}`);
+              } else {
+                console.log(
+                  `  ✗ ${log.date}: no check-in (status: ${log.status})`
+                );
+              }
             });
 
-            // Calculate missed days based on backend workingDays
-            const missedDays = Math.max(
-              0,
-              totalDaysToUse - employee.workingDays
-            );
+            console.log(`${employee.name}: ${workingDaysCount} working days`);
+
+            const missedDays = Math.max(0, totalDaysToUse - workingDaysCount);
 
             return {
               ...employee,
-              workingDays: employee.workingDays, // PRESERVE backend value
+              workingDays: workingDaysCount,
               missedDays,
               totalDays: totalDaysToUse,
             };
           } catch (err) {
-            console.error(
-              `Error processing attendance for employee ${employee.name}:`,
-              err
-            );
+            console.error(`Error processing ${employee.name}:`, err);
             return {
               ...employee,
-              missedDays: totalDaysToUse - employee.workingDays,
+              workingDays: 0,
+              missedDays: totalDaysToUse,
               totalDays: totalDaysToUse,
             };
           }
@@ -454,27 +493,27 @@ export default function AttendanceOverview() {
       );
 
       console.log(
-        "Final attendance data with preserved workingDays:",
+        "✅ Final working days (using detail page API):",
         updatedEmployees.map((emp) => ({
           name: emp.name,
           id: emp.id,
-          totalDays: emp.totalDays,
           workingDays: emp.workingDays,
-          missedDays: emp.missedDays,
         }))
       );
+
       return updatedEmployees;
     } catch (err) {
       console.error("Error in fetchAttendanceSummary:", err);
       return employees.map((emp) => ({
         ...emp,
-        missedDays: totalDaysToUse - emp.workingDays,
+        workingDays: 0,
+        missedDays: totalDaysToUse,
         totalDays: totalDaysToUse,
       }));
     }
   };
-
   // Fetch leave and permission counts for selected month/year
+  // Fetch leave days and permission counts for selected month/year
   const fetchRequestCounts = async (
     employees: DashboardEmployee[],
     totalDaysToUse: number,
@@ -483,7 +522,20 @@ export default function AttendanceOverview() {
   ) => {
     try {
       console.log(
-        `Fetching request counts for ${employees.length} employees for ${month}/${year}`
+        `Fetching leave days and permission counts for ${employees.length} employees for ${month}/${year}`
+      );
+
+      // Calculate the date range for the selected month
+      const monthInt = parseInt(month);
+      const yearInt = parseInt(year);
+      const firstDay = new Date(yearInt, monthInt - 1, 1);
+      const lastDay = new Date(yearInt, monthInt, 0);
+
+      const startDate = firstDay.toISOString().split("T")[0];
+      const endDate = lastDay.toISOString().split("T")[0];
+
+      console.log(
+        `Date range for ${month}/${year}: ${startDate} to ${endDate}`
       );
 
       const updatedEmployees = await Promise.all(
@@ -492,32 +544,47 @@ export default function AttendanceOverview() {
             // Ensure month is zero-padded for API calls
             const paddedMonth = month.padStart(2, "0");
 
-            // Fetch leave request count for selected month/year
-            const leaveResponse = await fetch(
-              `/api/leave-request?employeeId=${encodeURIComponent(
-                employee.id
-              )}&count=true&month=${paddedMonth}&year=${year}`,
-              {
-                method: "GET",
-                headers: { "Content-Type": "application/json" },
-                cache: "no-store",
-              }
-            );
+            // Calculate actual leave DAYS by checking daily-attendance for each day
+            let leaveDaysCount = 0;
 
-            let leaveCount = 0;
-            if (leaveResponse.ok) {
-              const leaveData = await leaveResponse.json();
-              leaveCount = leaveData.count || 0;
-              console.log(
-                `Leave count for ${employee.name} (${month}/${year}):`,
-                leaveCount
-              );
-            } else {
-              console.error(
-                `Failed to fetch leave count for ${employee.name}:`,
-                leaveResponse.status
-              );
+            // Iterate through each day of the month
+            for (let day = 1; day <= lastDay.getDate(); day++) {
+              const currentDate = new Date(yearInt, monthInt - 1, day)
+                .toISOString()
+                .split("T")[0];
+
+              try {
+                const dailyResponse = await fetch(
+                  `/api/daily-attendance?date=${currentDate}`,
+                  {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                    cache: "no-store",
+                  }
+                );
+
+                if (dailyResponse.ok) {
+                  const dailyData = await dailyResponse.json();
+                  const empData = dailyData.employees?.find(
+                    (e: any) => e.id === employee.id
+                  );
+
+                  // Count days where attendance status is "Leave"
+                  if (empData && empData.attendanceStatus === "Leave") {
+                    leaveDaysCount++;
+                  }
+                }
+              } catch (dayErr) {
+                console.error(
+                  `Error checking ${currentDate} for ${employee.name}:`,
+                  dayErr
+                );
+              }
             }
+
+            console.log(
+              `Leave days for ${employee.name} (${month}/${year}): ${leaveDaysCount} days`
+            );
 
             // Fetch permission request count for selected month/year
             const permissionResponse = await fetch(
@@ -548,12 +615,11 @@ export default function AttendanceOverview() {
 
             return {
               ...employee,
-              leaveRequestCount: leaveCount,
+              leaveRequestCount: leaveDaysCount,
               permissionRequestCount: permissionCount,
-              leaves: leaveCount,
+              leaves: leaveDaysCount,
               permissions: permissionCount,
               totalDays: totalDaysToUse,
-              // PRESERVE the workingDays from backend
               workingDays: employee.workingDays,
             };
           } catch (err) {
@@ -568,18 +634,19 @@ export default function AttendanceOverview() {
               leaves: 0,
               permissions: 0,
               totalDays: totalDaysToUse,
-              workingDays: employee.workingDays, // PRESERVE the workingDays from backend
+              workingDays: employee.workingDays,
             };
           }
         })
       );
 
       console.log(
-        "Final employees with counts and preserved workingDays:",
+        "Final employees with leave days and preserved workingDays:",
         updatedEmployees.map((emp) => ({
           name: emp.name,
           id: emp.id,
           workingDays: emp.workingDays,
+          leaveDays: emp.leaveRequestCount,
           totalDays: emp.totalDays,
         }))
       );
@@ -593,7 +660,7 @@ export default function AttendanceOverview() {
         leaves: 0,
         permissions: 0,
         totalDays: totalDaysToUse,
-        workingDays: emp.workingDays, // PRESERVE the workingDays from backend
+        workingDays: emp.workingDays,
       }));
     }
   };
@@ -881,7 +948,9 @@ export default function AttendanceOverview() {
         );
         const employeesWithAttendance = await fetchAttendanceSummary(
           data.employees,
-          totalDaysToUse
+          totalDaysToUse,
+          selectedMonth, // Added
+          selectedYear
         );
 
         console.log(

@@ -263,23 +263,35 @@ export default function EmployeeAttendanceDetail() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const response = await fetch(
-        `/api/leave-request?employeeId=${employeeId}&count=true&month=${selectedMonth.padStart(
-          2,
-          "0"
-        )}&year=${selectedYear}`,
-        { signal: controller.signal }
-      );
+      // Get the date range for the selected month
+      const dateRange = generateDateRange(selectedMonth, selectedYear);
+      let totalLeaveDays = 0;
+
+      // Fetch attendance for each day in the month
+      for (const { dateKey } of dateRange) {
+        const response = await fetch(`/api/daily-attendance?date=${dateKey}`, {
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const employee = data.employees?.find(
+            (emp: any) => emp.id === employeeId
+          );
+
+          // Count if this employee has Leave status on this date
+          if (employee && employee.attendanceStatus === "Leave") {
+            totalLeaveDays++;
+          }
+        }
+      }
 
       clearTimeout(timeoutId);
 
-      if (response.ok) {
-        const data = await response.json();
-        const leaveCount = data.count || 0;
-        setEmployeeData((prev) =>
-          prev ? { ...prev, leaves: leaveCount } : null
-        );
-      }
+      console.log(`✓ Total Leave Days for ${employeeId}: ${totalLeaveDays}`);
+      setEmployeeData((prev) =>
+        prev ? { ...prev, leaves: totalLeaveDays } : null
+      );
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         console.error("Leave count request timed out");
