@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
 
       console.log("Team lead UUID:", teamLeadUUID);
 
-      // Get all leave requests
+      // 🔥 FIX: Fetch leave requests WITHOUT join first
       console.log("🔍 Fetching leave requests for team lead");
       const {
         data: allLeaveRequests,
@@ -97,20 +97,7 @@ export async function GET(req: NextRequest) {
         error: simpleError,
       } = await supabase
         .from("leave_requests")
-        .select(
-          `
-          *,
-          employees!left(
-            name,
-            employee_id,
-            designation,
-            phoneNumber,
-            emailAddress,
-            address
-          )
-        `,
-          { count: "exact" }
-        )
+        .select("*", { count: "exact" })
         .order("created_at", { ascending: false });
 
       if (simpleError) {
@@ -124,7 +111,44 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      console.log(`✅ Found ${allCount} records`);
+      console.log(`✅ Found ${allCount} leave requests`);
+
+      // 🔥 NOW fetch employee data separately for each request
+      if (allLeaveRequests && allLeaveRequests.length > 0) {
+        const employeeIds = [
+          ...new Set(allLeaveRequests.map((req) => req.employee_id)),
+        ];
+
+        const { data: employees, error: empError } = await supabase
+          .from("employees")
+          .select(
+            "id, name, employee_id, designation, phoneNumber, emailAddress, address"
+          )
+          .in("id", employeeIds);
+
+        if (empError) {
+          console.error("❌ Employee fetch failed:", empError);
+        } else if (employees) {
+          // Create a map for quick lookup
+          const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+
+          // Attach employee data to each leave request
+          allLeaveRequests.forEach((request) => {
+            const employee = employeeMap.get(request.employee_id);
+            if (employee) {
+              request.employee = {
+                name: employee.name,
+                employee_id: employee.employee_id,
+                designation: employee.designation,
+                phoneNumber: employee.phoneNumber,
+                emailAddress: employee.emailAddress,
+                address: employee.address,
+              };
+            }
+          });
+        }
+      }
+
       return NextResponse.json(
         {
           data: allLeaveRequests || [],

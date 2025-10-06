@@ -2,23 +2,27 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
 // 🔄 Utility to resolve employeeId (UUID) from either UUID or code
-async function resolveEmployeeId(supabase: any, rawId: string): Promise<string | null> {
-  const isUuid = rawId.includes("-") && rawId.length >= 36
-  if (isUuid) return rawId
+async function resolveEmployeeId(
+  supabase: any,
+  rawId: string
+): Promise<string | null> {
+  const isUuid = rawId.includes("-") && rawId.length >= 36;
+  if (isUuid) return rawId;
 
   const { data, error } = await supabase
     .from("employees")
     .select("id")
     .eq("employee_id", rawId)
-    .single()
+    .single();
 
   if (error || !data) {
-    console.error("Failed to resolve employee ID:", error)
-    return null
+    console.error("Failed to resolve employee ID:", error);
+    return null;
   }
 
-  return data.id
+  return data.id;
 }
+
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient()
@@ -100,60 +104,158 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerSupabaseClient();
 
   try {
-    const { searchParams } = new URL(request.url)
-    const employeeRaw = searchParams.get("employeeId")
-    const teamLeadId = searchParams.get("teamLeadId")
-    const count = searchParams.get("count") === "true"
-    const month = searchParams.get("month")
-    const year = searchParams.get("year")
+    const { searchParams } = new URL(request.url);
+    const employeeRaw = searchParams.get("employeeId");
+    const teamLeadRaw = searchParams.get("teamLeadId");
+    const count = searchParams.get("count") === "true";
 
-    const employeeId = employeeRaw ? await resolveEmployeeId(supabase, employeeRaw) : null
-    if (employeeRaw && !employeeId) {
-      return NextResponse.json({ error: "Invalid employee ID or code" }, { status: 404 })
+    console.log("📥 Permission Request API Called");
+    console.log("teamLeadRaw:", teamLeadRaw);
+
+    if (teamLeadRaw) {
+      // Step 1: Resolve team lead UUID
+      console.log("teamLeadRaw:", teamLeadRaw);
+      const teamLeadUUID = await resolveEmployeeId(supabase, teamLeadRaw);
+      console.log("Resolved Team Lead UUID:", teamLeadUUID);
+
+      if (!teamLeadUUID) {
+        return NextResponse.json(
+          { error: "Invalid team lead ID" },
+          { status: 404 }
+        );
+      }
+
+      // Step 2: Fetch active team members - FIXED: Remove nested select
+      const { data: teamMembers, error: teamError } = await supabase
+        .from("team_members")
+        .select("employee_id")
+        .eq("team_lead_id", teamLeadUUID)
+        .eq("is_active", true);
+
+      console.log("👥 Team Members Query Result:", {
+        count: teamMembers?.length || 0,
+        error: teamError,
+        members: teamMembers,
+      });
+
+      if (teamError) {
+        console.error("❌ Team members fetch error:", teamError);
+        return NextResponse.json(
+          { error: "Failed to fetch team members", details: teamError.message },
+          { status: 500 }
+        );
+      }
+
+     const teamMemberIds = (teamMembers || []).map((tm) => tm.employee_id);
+     console.log("Team Member IDs:", teamMemberIds);
+     teamMemberIds.push(teamLeadUUID);
+      // Step 3: Fetch permission requests for team members
+     let query = supabase
+       .from("permission_requests")
+       .select("*", { count: count ? "exact" : undefined })
+       .in("employee_id", teamMemberIds)
+       .order("created_at", { ascending: false });
+
+
+      const { data, error, count: total } = await query;
+
+      console.log("📊 Permission Requests Query Result:", {
+        count: data?.length || 0,
+        error: error,
+        total: total,
+      });
+
+      if (error) {
+        console.error("❌ Permission request fetch error:", error);
+        return NextResponse.json(
+          { error: "Failed to fetch permission requests" },
+          { status: 500 }
+        );
+      }
+
+      // Step 4: Fetch employee details for the requests
+      if (data && data.length > 0) {
+        const employeeIds = [...new Set(data.map((req) => req.employee_id))];
+
+        const { data: employees, error: empError } = await supabase
+          .from("employees")
+          .select(
+            "id, name, employee_id, designation, phoneNumber, emailAddress, address"
+          )
+          .in("id", employeeIds);
+
+        console.log("👤 Employee Details:", {
+          count: employees?.length || 0,
+          error: empError,
+        });
+
+        if (!empError && employees) {
+          const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+
+          data.forEach((request) => {
+            const employee = employeeMap.get(request.employee_id);
+            if (employee) {
+              request.employee = {
+                name: employee.name,
+                employee_id: employee.employee_id,
+                designation: employee.designation,
+                phoneNumber: employee.phoneNumber,
+                emailAddress: employee.emailAddress,
+                address: employee.address,
+              };
+            }
+          });
+        }
+      }
+
+      console.log("✅ Returning permission requests:", data?.length || 0);
+      return NextResponse.json({ data: data || [], count: total || 0 });
     }
 
-    // 🔍 Build query
-    let query = supabase
-      .from("permission_requests")
-      .select("*", { count: count ? "exact" : undefined })
+    // Handle employeeId case
+    if (employeeRaw) {
+      const employeeId = await resolveEmployeeId(supabase, employeeRaw);
+      if (!employeeId) {
+        return NextResponse.json(
+          { error: "Invalid employee ID or code" },
+          { status: 404 }
+        );
+      }
 
-    if (employeeId) {
-      query = query.eq("employee_id", employeeId)
-    } else if (teamLeadId) {
-      query = query.eq("team_lead_id", teamLeadId)
-    } else {
-      return NextResponse.json({ error: "Missing employeeId or teamLeadId" }, { status: 400 })
+      let query = supabase
+        .from("permission_requests")
+        .select("*", { count: count ? "exact" : undefined })
+        .eq("employee_id", employeeId)
+        .order("created_at", { ascending: false });
+
+      const { data, error, count: total } = await query;
+
+      if (error) {
+        console.error("Permission request fetch error:", error);
+        return NextResponse.json(
+          { error: "Failed to fetch permission requests" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ data: data || [], count: total || 0 });
     }
 
-    // Optional month/year filter
-    if (month && year) {
-      const start = `${year}-${month.padStart(2, "0")}-01`
-      const end = new Date(Number(year), Number(month), 0).toISOString().split("T")[0]
-      query = query.gte("created_at", start).lte("created_at", end)
-    }
-
-    const { data, error, count: total } = await query
-
-    if (error) {
-      console.error("Permission request fetch error:", error)
-      return NextResponse.json({ error: "Failed to fetch permission request count" }, { status: 500 })
-    }
-
-    if (count) {
-      return NextResponse.json({ count: total || 0 })
-    }
-
-    return NextResponse.json({ data: data || [] })
+    return NextResponse.json(
+      { error: "Missing employeeId or teamLeadId" },
+      { status: 400 }
+    );
   } catch (error) {
-    console.error("Server error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("💥 Server error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
-
-
 export async function PATCH(request: NextRequest) {
   const supabase = createServerSupabaseClient()
 

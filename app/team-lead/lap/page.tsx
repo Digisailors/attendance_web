@@ -474,52 +474,53 @@ export default function TeamLeadLeavePermissionRequests() {
     }
   };
 
-  const fetchPermissionRequests = async () => {
-    try {
-      const response = await fetch(
-        `/api/permission-request?teamLeadId=${teamLeadId}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const requestsData = data.data || [];
+ const fetchPermissionRequests = async () => {
+  try {
+    const response = await fetch(
+      `/api/permission-request?teamLeadId=${teamLeadId}`
+    );
 
-        // Filter: Only show requests from actual team members
-        const teamMemberIds = getTeamMemberIds();
-        const filteredRequests = requestsData.filter(
-          (request: PermissionRequest) =>
-            teamMemberIds.includes(request.employee_id)
-        );
+    if (response.ok) {
+      const data = await response.json();
+      const requestsData = data.data || [];
 
-        const processedRequests = filteredRequests.map(
-          (request: PermissionRequest) => ({
-            ...request,
-            applied_date: getAppliedDate(request),
-            duration_hours: getCalculatedDuration(request),
-          })
-        );
+      console.log("📥 Permission requests received:", requestsData.length);
 
-        setPermissionRequests(processedRequests);
+      // Process requests with calculated duration
+      const processedRequests = requestsData.map((request: PermissionRequest) => ({
+        ...request,
+        applied_date: getAppliedDate(request),
+        duration_hours: getCalculatedDuration(request),
+      }));
 
-        const total = processedRequests.length;
-        const pending = processedRequests.filter(
-          (r: PermissionRequest) => r.status === "Pending"
-        ).length;
-        const approved = processedRequests.filter(
-          (r: PermissionRequest) => r.status === "Approved"
-        ).length;
-        const rejected = processedRequests.filter(
-          (r: PermissionRequest) => r.status === "Rejected"
-        ).length;
-        setPermissionStats({ total, pending, approved, rejected });
+      // ✅ Set the processed requests
+      setPermissionRequests(processedRequests);
 
-        console.log(
-          `Filtered permission requests: ${processedRequests.length} from team members out of ${requestsData.length} total`
-        );
-      }
-    } catch (error) {
-      console.error("Error fetching permission requests:", error);
+      // Calculate stats
+      const total = processedRequests.length;
+      const pending = processedRequests.filter(
+        (r: PermissionRequest) => r.status === "Pending Team Lead" || r.status === "Pending"
+      ).length;
+      const approved = processedRequests.filter(
+        (r: PermissionRequest) => r.status === "Approved" || r.status === "Pending Manager Approval"
+      ).length;
+      const rejected = processedRequests.filter(
+        (r: PermissionRequest) => r.status === "Rejected"
+      ).length;
+
+      setPermissionStats({ total, pending, approved, rejected });
+
+      console.log(`✅ Permission requests loaded: ${processedRequests.length}`);
+    } else {
+      console.error("Failed to fetch permission requests");
+      setPermissionRequests([]);
     }
-  };
+  } catch (error) {
+    console.error("Error fetching permission requests:", error);
+    setPermissionRequests([]);
+  }
+};
+
 
  const handleApproveLeave = async (
    request: LeaveRequest,
