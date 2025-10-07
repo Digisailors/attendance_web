@@ -86,6 +86,7 @@ interface PermissionRequest {
   created_at?: string;
   team_lead_comments?: string;
   manager_comments?: string;
+  team_lead_ids?: string[]; // Add this line
   employee: {
     name: string;
     employee_id: string;
@@ -95,7 +96,6 @@ interface PermissionRequest {
     address?: string;
   };
 }
-
 interface TeamMember {
   id: string;
   employee_id: string;
@@ -474,35 +474,98 @@ export default function TeamLeadLeavePermissionRequests() {
     }
   };
 
- const fetchPermissionRequests = async () => {
+const fetchPermissionRequests = async () => {
   try {
+    console.log("🚀 Fetching permission requests for team lead:", teamLeadId);
+
+    if (!teamLeadId) {
+      console.error("❌ No team lead ID available");
+      return;
+    }
+
     const response = await fetch(
       `/api/permission-request?teamLeadId=${teamLeadId}`
     );
 
-    if (response.ok) {
-      const data = await response.json();
-      const requestsData = data.data || [];
+    console.log("📡 Response status:", response.status);
+    console.log("📡 Response ok:", response.ok);
 
-      console.log("📥 Permission requests received:", requestsData.length);
+    if (response.ok) {
+      const responseData = await response.json();
+      console.log("📦 Full API response:", responseData);
+
+      const requestsData = responseData.data || [];
+      console.log("📋 Requests data array:", requestsData);
+      console.log("📊 Number of requests:", requestsData.length);
+
+      // Log sample request if any exist
+      if (requestsData.length > 0) {
+        console.log("📄 Sample request:", requestsData[0]);
+      } else {
+        console.warn("⚠️ No permission requests returned");
+      }
+
+      // Filter: Show requests where this team lead is eligible OR already processed by them
+      const eligibleRequests = requestsData.filter(
+        (request: PermissionRequest) => {
+          console.log(`Checking request ${request.id}:`, {
+            team_lead_ids: request.team_lead_ids,
+            team_lead_id: request.team_lead_id,
+            status: request.status,
+            currentTeamLeadId: teamLeadId,
+          });
+
+          // Check if this team lead is in the team_lead_ids array
+          const isEligible =
+            request.team_lead_ids && request.team_lead_ids.includes(teamLeadId);
+
+          // Check if request is still pending
+          const isPending = ["Pending Team Lead", "Pending"].includes(
+            request.status
+          );
+
+          const shouldShow =
+            (isEligible && isPending) || request.team_lead_id === teamLeadId;
+
+          console.log(`Request ${request.id} - Should show:`, shouldShow, {
+            isEligible,
+            isPending,
+            processedByThisTL: request.team_lead_id === teamLeadId,
+          });
+
+          return shouldShow;
+        }
+      );
+
+      console.log(
+        "✅ Eligible requests after filtering:",
+        eligibleRequests.length
+      );
 
       // Process requests with calculated duration
-      const processedRequests = requestsData.map((request: PermissionRequest) => ({
-        ...request,
-        applied_date: getAppliedDate(request),
-        duration_hours: getCalculatedDuration(request),
-      }));
+      const processedRequests = eligibleRequests.map(
+        (request: PermissionRequest) => {
+          const processed = {
+            ...request,
+            applied_date: getAppliedDate(request),
+            duration_hours: getCalculatedDuration(request),
+          };
+          console.log(`Processed request ${request.id}:`, processed);
+          return processed;
+        }
+      );
 
-      // ✅ Set the processed requests
       setPermissionRequests(processedRequests);
 
       // Calculate stats
       const total = processedRequests.length;
       const pending = processedRequests.filter(
-        (r: PermissionRequest) => r.status === "Pending Team Lead" || r.status === "Pending"
+        (r: PermissionRequest) =>
+          r.status === "Pending Team Lead" || r.status === "Pending"
       ).length;
       const approved = processedRequests.filter(
-        (r: PermissionRequest) => r.status === "Approved" || r.status === "Pending Manager Approval"
+        (r: PermissionRequest) =>
+          r.status === "Approved" || r.status === "Pending Manager Approval"
       ).length;
       const rejected = processedRequests.filter(
         (r: PermissionRequest) => r.status === "Rejected"
@@ -510,13 +573,13 @@ export default function TeamLeadLeavePermissionRequests() {
 
       setPermissionStats({ total, pending, approved, rejected });
 
-      console.log(`✅ Permission requests loaded: ${processedRequests.length}`);
+      console.log("📊 Stats:", { total, pending, approved, rejected });
     } else {
-      console.error("Failed to fetch permission requests");
-      setPermissionRequests([]);
+      const errorData = await response.json();
+      console.error("❌ API Error:", errorData);
     }
   } catch (error) {
-    console.error("Error fetching permission requests:", error);
+    console.error("❌ Fetch error:", error);
     setPermissionRequests([]);
   }
 };

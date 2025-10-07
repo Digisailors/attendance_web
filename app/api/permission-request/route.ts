@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { type NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase";
 
-// 🔄 Utility to resolve employeeId (UUID) from either UUID or code
+// Utility to resolve employeeId (UUID) from either UUID or code
 async function resolveEmployeeId(
   supabase: any,
   rawId: string
@@ -23,277 +23,441 @@ async function resolveEmployeeId(
   return data.id;
 }
 
-
 export async function POST(request: NextRequest) {
-  const supabase = createServerSupabaseClient()
-
   try {
-    const body = await request.json()
-    const { employeeId: rawEmployeeId, permissionType, date, startTime, endTime, reason } = body
+    const body = await request.json();
+    const { employeeId, permissionType, date, startTime, endTime, reason } =
+      body;
 
-    if (!rawEmployeeId || !permissionType || !date || !startTime || !endTime || !reason) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    if (
+      !employeeId ||
+      !permissionType ||
+      !date ||
+      !startTime ||
+      !endTime ||
+      !reason
+    ) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
-    const employeeId = await resolveEmployeeId(supabase, rawEmployeeId)
-    if (!employeeId) return NextResponse.json({ error: "Invalid employee ID or code" }, { status: 404 })
-
+    // Get employee details
     const { data: employee, error: employeeError } = await supabase
       .from("employees")
       .select("id, name, email_address, manager_id")
       .eq("id", employeeId)
-      .single()
+      .single();
 
     if (employeeError || !employee) {
-      console.error("Employee fetch error:", employeeError)
-      return NextResponse.json({ error: "Employee not found" }, { status: 404 })
+      console.error("Employee fetch error:", employeeError);
+      return NextResponse.json(
+        { error: "Employee not found" },
+        { status: 404 }
+      );
     }
 
-    const { data: teamMember, error: teamError } = await supabase
+    // ✅ Get ALL team leads for this employee
+    const { data: teamMembers, error: teamError } = await supabase
       .from("team_members")
       .select("team_lead_id")
       .eq("employee_id", employeeId)
-      .eq("is_active", true)
-      .single()
+      .eq("is_active", true);
 
-    if (teamError || !teamMember) {
-      console.error("Team member fetch error:", teamError)
-      return NextResponse.json({ error: "Team lead not found for this employee" }, { status: 404 })
+    if (teamError || !teamMembers || teamMembers.length === 0) {
+      console.error("Team member fetch error:", teamError);
+      return NextResponse.json(
+        { error: "No active team leads found for this employee" },
+        { status: 404 }
+      );
     }
 
+    // Extract all team lead IDs
+    const teamLeadIds = teamMembers.map((tm) => tm.team_lead_id);
+    console.log("Team Lead IDs for employee:", teamLeadIds);
+
+    // ✅ Insert permission request with ALL team leads
     const { data: permissionRequest, error: insertError } = await supabase
       .from("permission_requests")
       .insert({
         employee_id: employeeId,
         employee_name: employee.name,
         employee_email: employee.email_address,
-        team_lead_id: teamMember.team_lead_id,
+        team_lead_id: teamLeadIds[0], // First team lead (for backward compatibility)
+        team_lead_ids: teamLeadIds, // ✅ Store all team leads
         manager_id: employee.manager_id,
         permission_type: permissionType,
-        date,
+        date: date,
         start_time: startTime,
         end_time: endTime,
-        reason,
+        reason: reason,
         status: "Pending Team Lead",
       })
       .select()
-      .single()
+      .single();
 
     if (insertError) {
-      console.error("Insert permission request error:", insertError)
-      return NextResponse.json({ error: "Failed to submit permission request" }, { status: 500 })
+      console.error("Error inserting permission request:", insertError);
+      return NextResponse.json(
+        { error: "Failed to submit permission request" },
+        { status: 500 }
+      );
     }
 
-    await supabase.from("notifications").insert({
-      recipient_type: "team-lead",
-      recipient_id: teamMember.team_lead_id,
-      title: "New Permission Request",
-      message: `${employee.name} has submitted a permission request for ${permissionType}`,
-      type: "permission_request",
-      reference_id: permissionRequest.id,
-    })
+    // ✅ Create notifications for ALL team leads
+    const notificationPromises = teamLeadIds.map((teamLeadId) =>
+      supabase.from("notifications").insert({
+        recipient_type: "team-lead",
+        recipient_id: teamLeadId,
+        title: "New Permission Request",
+        message: `${employee.name} has submitted a permission request for ${permissionType}`,
+        type: "permission_request",
+        reference_id: permissionRequest.id,
+      })
+    );
+
+    await Promise.all(notificationPromises);
+    console.log(`Sent notifications to ${teamLeadIds.length} team leads`);
 
     return NextResponse.json({
       message: "Permission request submitted successfully",
       data: permissionRequest,
-    })
+    });
   } catch (error) {
-    console.error("Error in permission POST API:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-export async function GET(request: NextRequest) {
-  const supabase = createServerSupabaseClient();
-
-  try {
-    const { searchParams } = new URL(request.url);
-    const employeeRaw = searchParams.get("employeeId");
-    const teamLeadRaw = searchParams.get("teamLeadId");
-    const count = searchParams.get("count") === "true";
-
-    console.log("📥 Permission Request API Called");
-    console.log("teamLeadRaw:", teamLeadRaw);
-
-    if (teamLeadRaw) {
-      // Step 1: Resolve team lead UUID
-      console.log("teamLeadRaw:", teamLeadRaw);
-      const teamLeadUUID = await resolveEmployeeId(supabase, teamLeadRaw);
-      console.log("Resolved Team Lead UUID:", teamLeadUUID);
-
-      if (!teamLeadUUID) {
-        return NextResponse.json(
-          { error: "Invalid team lead ID" },
-          { status: 404 }
-        );
-      }
-
-      // Step 2: Fetch active team members - FIXED: Remove nested select
-      const { data: teamMembers, error: teamError } = await supabase
-        .from("team_members")
-        .select("employee_id")
-        .eq("team_lead_id", teamLeadUUID)
-        .eq("is_active", true);
-
-      console.log("👥 Team Members Query Result:", {
-        count: teamMembers?.length || 0,
-        error: teamError,
-        members: teamMembers,
-      });
-
-      if (teamError) {
-        console.error("❌ Team members fetch error:", teamError);
-        return NextResponse.json(
-          { error: "Failed to fetch team members", details: teamError.message },
-          { status: 500 }
-        );
-      }
-
-     const teamMemberIds = (teamMembers || []).map((tm) => tm.employee_id);
-     console.log("Team Member IDs:", teamMemberIds);
-     teamMemberIds.push(teamLeadUUID);
-      // Step 3: Fetch permission requests for team members
-     let query = supabase
-       .from("permission_requests")
-       .select("*", { count: count ? "exact" : undefined })
-       .in("employee_id", teamMemberIds)
-       .order("created_at", { ascending: false });
-
-
-      const { data, error, count: total } = await query;
-
-      console.log("📊 Permission Requests Query Result:", {
-        count: data?.length || 0,
-        error: error,
-        total: total,
-      });
-
-      if (error) {
-        console.error("❌ Permission request fetch error:", error);
-        return NextResponse.json(
-          { error: "Failed to fetch permission requests" },
-          { status: 500 }
-        );
-      }
-
-      // Step 4: Fetch employee details for the requests
-      if (data && data.length > 0) {
-        const employeeIds = [...new Set(data.map((req) => req.employee_id))];
-
-        const { data: employees, error: empError } = await supabase
-          .from("employees")
-          .select(
-            "id, name, employee_id, designation, phoneNumber, emailAddress, address"
-          )
-          .in("id", employeeIds);
-
-        console.log("👤 Employee Details:", {
-          count: employees?.length || 0,
-          error: empError,
-        });
-
-        if (!empError && employees) {
-          const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
-
-          data.forEach((request) => {
-            const employee = employeeMap.get(request.employee_id);
-            if (employee) {
-              request.employee = {
-                name: employee.name,
-                employee_id: employee.employee_id,
-                designation: employee.designation,
-                phoneNumber: employee.phoneNumber,
-                emailAddress: employee.emailAddress,
-                address: employee.address,
-              };
-            }
-          });
-        }
-      }
-
-      console.log("✅ Returning permission requests:", data?.length || 0);
-      return NextResponse.json({ data: data || [], count: total || 0 });
-    }
-
-    // Handle employeeId case
-    if (employeeRaw) {
-      const employeeId = await resolveEmployeeId(supabase, employeeRaw);
-      if (!employeeId) {
-        return NextResponse.json(
-          { error: "Invalid employee ID or code" },
-          { status: 404 }
-        );
-      }
-
-      let query = supabase
-        .from("permission_requests")
-        .select("*", { count: count ? "exact" : undefined })
-        .eq("employee_id", employeeId)
-        .order("created_at", { ascending: false });
-
-      const { data, error, count: total } = await query;
-
-      if (error) {
-        console.error("Permission request fetch error:", error);
-        return NextResponse.json(
-          { error: "Failed to fetch permission requests" },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ data: data || [], count: total || 0 });
-    }
-
-    return NextResponse.json(
-      { error: "Missing employeeId or teamLeadId" },
-      { status: 400 }
-    );
-  } catch (error) {
-    console.error("💥 Server error:", error);
+    console.error("Error in permission request API:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
     );
   }
 }
-export async function PATCH(request: NextRequest) {
-  const supabase = createServerSupabaseClient()
 
+export async function GET(req: Request) {
   try {
-    const body = await request.json()
-    const { requestId, action, teamLeadId, managerId, comments, userType } = body
+    const { searchParams } = new URL(req.url);
+    const teamLeadId = searchParams.get("teamLeadId");
+    const employeeId = searchParams.get("employeeId");
+    const status = searchParams.get("status");
 
-    if (!requestId || !action || !userType) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    console.log("🔍 GET Permission Requests:", {
+      teamLeadId,
+      employeeId,
+      status,
+    });
+
+    const supabase = createServerSupabaseClient();
+
+    // ✅ EMPLOYEE VIEW: Fetch their own permission requests
+    if (employeeId && !teamLeadId) {
+      console.log("📋 Fetching permission requests for employee:", employeeId);
+
+      // Resolve employee code to UUID if needed
+      const resolvedEmployeeId = await resolveEmployeeId(supabase, employeeId);
+
+      if (!resolvedEmployeeId) {
+        return NextResponse.json(
+          { error: "Employee not found" },
+          { status: 404 }
+        );
+      }
+
+      let query = supabase
+        .from("permission_requests")
+        .select(
+          `
+          *,
+          employee:employees!fk_employee_id(
+            name,
+            employee_id,
+            designation,
+            phone_number,
+            email_address,
+            address
+          )
+        `
+        )
+        .eq("employee_id", resolvedEmployeeId)
+        .order("created_at", { ascending: false });
+
+      // Apply status filter if provided and not "All"
+      if (status && status !== "All") {
+        query = query.eq("status", status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("❌ Error fetching employee permission requests:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      console.log("✅ Found permission requests:", data?.length);
+
+      const transformedData = data?.map((request) => ({
+        id: request.id,
+        employee_id: request.employee_id,
+        employee_name: request.employee?.name || request.employee_name,
+        permission_type: request.permission_type,
+        date: request.date,
+        start_time: request.start_time,
+        end_time: request.end_time,
+        duration_hours: request.duration_hours || 0,
+        reason: request.reason,
+        status: request.status,
+        applied_date: request.created_at,
+        created_at: request.created_at,
+        team_lead_comments: request.team_lead_comments,
+        manager_comments: request.manager_comments,
+        employee: {
+          name: request.employee?.name || "Unknown",
+          employee_id: request.employee?.employee_id || "",
+          designation: request.employee?.designation || "",
+          phone_number: request.employee?.phone_number,
+          email_address: request.employee?.email_address,
+          address: request.employee?.address,
+        },
+      }));
+
+      return NextResponse.json({ data: transformedData }, { status: 200 });
     }
 
+    // ✅ TEAM LEAD VIEW: Fetch requests for their team members
+    if (teamLeadId && !employeeId) {
+      console.log("🔍 Fetching permission requests for team lead:", teamLeadId);
+
+      // Step 1: Get the team lead's internal UUID
+      const { data: teamLeadEmployee, error: teamLeadError } = await supabase
+        .from("employees")
+        .select("id, employee_id")
+        .eq("employee_id", teamLeadId)
+        .single();
+
+      if (teamLeadError || !teamLeadEmployee) {
+        console.error("❌ Team lead not found:", teamLeadError);
+        return NextResponse.json(
+          { error: "Team lead not found" },
+          { status: 404 }
+        );
+      }
+
+      console.log("✅ Team lead found:", teamLeadEmployee);
+
+      // Step 2: Get ALL active team members (employee UUIDs)
+      const { data: teamMembers, error: teamError } = await supabase
+        .from("team_members")
+        .select("employee_id")
+        .eq("team_lead_id", teamLeadId)
+        .eq("is_active", true);
+
+      if (teamError) {
+        console.error("❌ Error fetching team members:", teamError);
+        return NextResponse.json(
+          { error: "Failed to fetch team members" },
+          { status: 500 }
+        );
+      }
+
+      const teamMemberIds = teamMembers?.map((tm) => tm.employee_id) || [];
+      console.log("👥 Team member UUIDs:", teamMemberIds);
+
+      if (teamMemberIds.length === 0) {
+        console.warn("⚠️ No team members found for this team lead");
+        return NextResponse.json({ data: [] }, { status: 200 });
+      }
+
+      // Step 3: Fetch permission requests for team members
+      const { data, error } = await supabase
+        .from("permission_requests")
+        .select(
+          `
+          *,
+          employee:employees!fk_employee_id(
+            name,
+            employee_id,
+            designation,
+            phone_number,
+            email_address,
+            address
+          )
+        `
+        )
+        .in("employee_id", teamMemberIds)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("❌ Supabase query error:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      console.log("📦 Permission requests found:", data?.length);
+
+      // Step 4: Filter requests
+      const filteredData = data?.filter((request) => {
+        const isPending = ["Pending Team Lead", "Pending"].includes(
+          request.status
+        );
+        const processedByThisTeamLead = request.team_lead_id === teamLeadId;
+        return isPending || processedByThisTeamLead;
+      });
+
+      console.log(
+        "✅ Filtered requests (pending or processed by this TL):",
+        filteredData?.length
+      );
+
+      // Step 5: Transform the data
+      const transformedData = filteredData?.map((request) => ({
+        id: request.id,
+        employee_id: request.employee_id,
+        employee_name: request.employee?.name || request.employee_name,
+        permission_type: request.permission_type,
+        date: request.date,
+        start_time: request.start_time,
+        end_time: request.end_time,
+        duration_hours: request.duration_hours || 0,
+        reason: request.reason,
+        status: request.status,
+        applied_date: request.created_at,
+        created_at: request.created_at,
+        team_lead_comments: request.team_lead_comments,
+        manager_comments: request.manager_comments,
+        team_lead_id: request.team_lead_id,
+        team_lead_ids: request.team_lead_ids || [teamLeadId],
+        employee: {
+          name: request.employee?.name || "Unknown",
+          employee_id: request.employee?.employee_id || "",
+          designation: request.employee?.designation || "",
+          phoneNumber: request.employee?.phone_number,
+          emailAddress: request.employee?.email_address,
+          address: request.employee?.address,
+        },
+      }));
+
+      console.log("✨ Transformed data count:", transformedData?.length);
+
+      return NextResponse.json({ data: transformedData }, { status: 200 });
+    }
+
+    // ❌ Neither teamLeadId nor employeeId provided
+    return NextResponse.json(
+      { error: "Missing required parameter: teamLeadId or employeeId" },
+      { status: 400 }
+    );
+  } catch (err) {
+    console.error("❌ API Crash:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const supabase = createServerSupabaseClient();
+
+  try {
+    const body = await request.json();
+    const { requestId, action, teamLeadId, managerId, comments, userType } =
+      body;
+
+    console.log("🔄 PATCH Permission Request:", {
+      requestId,
+      action,
+      teamLeadId,
+      userType,
+    });
+
+    if (!requestId || !action || !userType) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch the permission request
     const { data: permissionRequest, error: fetchError } = await supabase
       .from("permission_requests")
       .select("*")
       .eq("id", requestId)
-      .single()
+      .single();
 
     if (fetchError || !permissionRequest) {
-      return NextResponse.json({ error: "Permission request not found" }, { status: 404 })
+      console.error("❌ Request not found:", fetchError);
+      return NextResponse.json(
+        { error: "Permission request not found" },
+        { status: 404 }
+      );
     }
+
+    console.log("📋 Found request:", {
+      id: permissionRequest.id,
+      employee_id: permissionRequest.employee_id,
+      status: permissionRequest.status,
+    });
 
     if (userType === "team-lead") {
-      if (!teamLeadId || permissionRequest.team_lead_id !== teamLeadId) {
-        return NextResponse.json({ error: "Unauthorized team lead" }, { status: 403 })
+      if (!teamLeadId) {
+        return NextResponse.json(
+          { error: "Team lead ID required" },
+          { status: 400 }
+        );
       }
-      if (permissionRequest.status !== "Pending Team Lead") {
-        return NextResponse.json({ error: "Invalid status for team lead action" }, { status: 400 })
+
+      // ✅ Verify this team lead manages this employee
+      const { data: teamMember, error: teamError } = await supabase
+        .from("team_members")
+        .select("id, team_lead_id")
+        .eq("employee_id", permissionRequest.employee_id)
+        .eq("team_lead_id", teamLeadId)
+        .eq("is_active", true)
+        .single();
+
+      console.log("🔍 Team member check:", { teamMember, teamError });
+
+      if (teamError || !teamMember) {
+        console.error("❌ Team member verification failed:", teamError);
+        return NextResponse.json(
+          {
+            error:
+              "You are not authorized to process this request. This employee is not in your team.",
+          },
+          { status: 403 }
+        );
       }
+
+      console.log("✅ Team lead authorized:", teamLeadId);
+
+      // ✅ Check if request is still pending (not processed by ANY team lead yet)
+      if (
+        !["Pending Team Lead", "Pending"].includes(permissionRequest.status)
+      ) {
+        return NextResponse.json(
+          {
+            error: `Request already processed. Current status: ${permissionRequest.status}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      console.log("✅ Request is pending, proceeding with action:", action);
     } else if (userType === "manager") {
       if (!managerId || permissionRequest.manager_id !== managerId) {
-        return NextResponse.json({ error: "Unauthorized manager" }, { status: 403 })
+        return NextResponse.json(
+          { error: "Unauthorized manager" },
+          { status: 403 }
+        );
       }
       if (permissionRequest.status !== "Pending Manager Approval") {
-        return NextResponse.json({ error: "Invalid status for manager action" }, { status: 400 })
+        return NextResponse.json(
+          { error: "Invalid status for manager action" },
+          { status: 400 }
+        );
       }
     }
 
-    const updateData: any = {}
+    // Prepare update data
+    const updateData: any = {};
     let notification = {
       recipient_id: permissionRequest.employee_id,
       recipient_type: "employee",
@@ -301,56 +465,104 @@ export async function PATCH(request: NextRequest) {
       message: "",
       type: "permission_request_update",
       reference_id: requestId,
-    }
+    };
 
     if (action === "approve") {
       if (userType === "team-lead") {
-        updateData.status = "Pending Manager Approval"
-        updateData.team_lead_comments = comments || null
-        notification.title = "Approved by Team Lead"
-        notification.message = `Your permission request is approved by your Team Lead.`
-        notification.recipient_id = permissionRequest.manager_id
-        notification.recipient_type = "manager"
+        // ✅ Move to manager approval - no other team lead can approve now
+        updateData.status = "Pending Manager Approval";
+        updateData.team_lead_comments = comments || null;
+        updateData.team_lead_id = teamLeadId; // Store which team lead approved
+
+        // Add this team lead to the processed array
+        const currentTeamLeadIds = permissionRequest.team_lead_ids || [];
+        if (!currentTeamLeadIds.includes(teamLeadId)) {
+          updateData.team_lead_ids = [...currentTeamLeadIds, teamLeadId];
+        }
+
+        notification.title = "Permission Approved by Team Lead";
+        notification.message = `Your permission request has been approved by your Team Lead and is now pending Manager approval.`;
+        notification.recipient_id = permissionRequest.manager_id;
+        notification.recipient_type = "manager";
       } else {
-        updateData.status = "Approved"
-        updateData.manager_comments = comments || null
-        updateData.approved_at = new Date().toISOString()
-        notification.title = "Permission Approved"
-        notification.message = `Your permission request has been approved.`
+        updateData.status = "Approved";
+        updateData.manager_comments = comments || null;
+        updateData.approved_at = new Date().toISOString();
+        notification.title = "Permission Approved";
+        notification.message = `Your permission request has been fully approved.`;
       }
-    } else {
-      updateData.status = "Rejected"
-      updateData.rejected_at = new Date().toISOString()
+    } else if (action === "reject") {
+      // ✅ Reject immediately - no other team lead can process now
+      updateData.status = "Rejected";
+      updateData.rejected_at = new Date().toISOString();
+
       if (userType === "team-lead") {
-        updateData.team_lead_comments = comments || null
-        notification.message = `Your request was rejected by your Team Lead.`
+        updateData.team_lead_comments = comments || null;
+        updateData.team_lead_id = teamLeadId; // Store which team lead rejected
+
+        // Add this team lead to the processed array
+        const currentTeamLeadIds = permissionRequest.team_lead_ids || [];
+        if (!currentTeamLeadIds.includes(teamLeadId)) {
+          updateData.team_lead_ids = [...currentTeamLeadIds, teamLeadId];
+        }
+
+        notification.title = "Permission Rejected";
+        notification.message = `Your permission request has been rejected by your Team Lead.${
+          comments ? ` Reason: ${comments}` : ""
+        }`;
       } else {
-        updateData.manager_comments = comments || null
-        notification.message = `Your request was rejected by your Manager.`
+        updateData.manager_comments = comments || null;
+        notification.title = "Permission Rejected";
+        notification.message = `Your permission request has been rejected by your Manager.${
+          comments ? ` Reason: ${comments}` : ""
+        }`;
       }
-      notification.title = "Permission Rejected"
     }
 
+    console.log("📝 Updating request with data:", updateData);
+
+    // Update the request
     const { data: updatedRequest, error: updateError } = await supabase
       .from("permission_requests")
       .update(updateData)
       .eq("id", requestId)
       .select()
-      .single()
+      .single();
 
     if (updateError) {
-      console.error("Update error:", updateError)
-      return NextResponse.json({ error: "Failed to update request" }, { status: 500 })
+      console.error("❌ Update error:", updateError);
+      return NextResponse.json(
+        { error: "Failed to update request" },
+        { status: 500 }
+      );
     }
 
-    await supabase.from("notifications").insert(notification)
+    // Send notification to employee
+    const { error: notifError } = await supabase
+      .from("notifications")
+      .insert(notification);
+
+    if (notifError) {
+      console.warn("⚠️ Notification failed:", notifError);
+    }
+
+    console.log(
+      `✅ Permission request ${action}d by ${userType} ${
+        teamLeadId || managerId
+      }`
+    );
 
     return NextResponse.json({
-      message: `Permission request ${action === "approve" ? "approved" : "rejected"} successfully`,
+      message: `Permission request ${
+        action === "approve" ? "approved" : "rejected"
+      } successfully`,
       data: updatedRequest,
-    })
+    });
   } catch (error) {
-    console.error("PATCH error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("❌ PATCH error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
