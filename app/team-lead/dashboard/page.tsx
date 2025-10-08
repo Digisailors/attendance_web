@@ -36,19 +36,12 @@ interface DailyState {
 // Fetch IST time from timeapi.io (for check-in/check-out only)
 const fetchISTTime = async () => {
   try {
-    const res = await fetch(
-      "https://timeapi.io/api/time/current/zone?timeZone=Asia/Kolkata"
-    );
+    // Calls your server API which fetches real global time
+    const res = await fetch("/api/current-time");
     if (!res.ok) throw new Error("Failed to fetch IST time");
     const data = await res.json();
-    return new Date(
-      data.year,
-      data.month - 1,
-      data.day,
-      data.hour,
-      data.minute,
-      data.seconds
-    );
+    console.log("Time source:", data.source); // Shows if using real time or fallback
+    return new Date(data.time);
   } catch (error) {
     console.error("IST time API error:", error);
     return null;
