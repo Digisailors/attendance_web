@@ -45,6 +45,8 @@ import {
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
+
+// Add team_lead_id to both interfaces (around line 11 and 77)
 interface LeaveRequest {
   id: string;
   employee_id: string;
@@ -59,8 +61,9 @@ interface LeaveRequest {
   created_at?: string;
   team_lead_comments?: string;
   manager_comments?: string;
-  leave_group_id?: string; // <-- Added for group approval
-  team_lead_ids?: string[]; // <-- Added to fix TS error for team lead eligibility
+  leave_group_id?: string;
+  team_lead_ids?: string[]; // Array of all eligible team leads
+  team_lead_id?: string; // ✅ ADD THIS - The team lead who actually approved/rejected
   employee: {
     name: string;
     employee_id: string;
@@ -86,7 +89,8 @@ interface PermissionRequest {
   created_at?: string;
   team_lead_comments?: string;
   manager_comments?: string;
-  team_lead_ids?: string[]; // Add this line
+  team_lead_ids?: string[]; // Array of all eligible team leads
+  team_lead_id?: string; // ✅ ADD THIS - The team lead who actually approved/rejected
   employee: {
     name: string;
     employee_id: string;
@@ -401,383 +405,290 @@ export default function TeamLeadLeavePermissionRequests() {
     return teamMembers.map((member) => member.employee_id);
   };
 
-  const fetchLeaveRequests = async () => {
-    try {
-      setLoading(true);
-
-      const currentDate = new Date();
-      const currentMonth = currentDate.getMonth() + 1;
-      const currentYear = currentDate.getFullYear();
-
-      const response = await fetch(
-        `/api/leave-request?teamLeadId=${teamLeadId}&month=${currentMonth}&year=${currentYear}`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const requestsData = data.data || [];
-
-        // Filter: Only show requests where this team lead is eligible AND request is still pending
-        const eligibleRequests = requestsData.filter(
-          (request: LeaveRequest) => {
-            // Check if this team lead is in the team_lead_ids array
-            const isEligible =
-              request.team_lead_ids &&
-              request.team_lead_ids.includes(teamLeadId);
-
-            // Check if request is still pending (not processed by any team lead)
-            const isPending = ["Pending Team Lead", "Pending"].includes(
-              request.status
-            );
-
-            // Show if either: eligible and pending, OR this team lead already processed it
-            return (
-              (isEligible && isPending) || request.team_lead_id === teamLeadId
-            );
-          }
-        );
-
-        const processedRequests = eligibleRequests.map(
-          (request: LeaveRequest) => ({
-            ...request,
-            applied_date: getAppliedDate(request),
-            total_days: getTotalDays(request),
-          })
-        );
-
-        setLeaveRequests(processedRequests);
-
-        const total = processedRequests.length;
-        const pending = processedRequests.filter((r: LeaveRequest) =>
-          ["Pending Team Lead", "Pending"].includes(r.status)
-        ).length;
-        const approved = processedRequests.filter(
-          (r: LeaveRequest) =>
-            r.status === "Approved" || r.status === "Pending Manager Approval"
-        ).length;
-        const rejected = processedRequests.filter(
-          (r: LeaveRequest) => r.status === "Rejected"
-        ).length;
-
-        setLeaveStats({ total, pending, approved, rejected });
-
-        console.log(
-          `Eligible leave requests: ${processedRequests.length} for team lead ${teamLeadId}`
-        );
-      } else {
-        console.error("Server responded with:", await response.json());
-      }
-    } catch (error) {
-      console.error("Error fetching leave requests:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-const fetchPermissionRequests = async () => {
-  try {
-    console.log("🚀 Fetching permission requests for team lead:", teamLeadId);
-
-    if (!teamLeadId) {
-      console.error("❌ No team lead ID available");
-      return;
-    }
-
-    const response = await fetch(
-      `/api/permission-request?teamLeadId=${teamLeadId}`
-    );
-
-    console.log("📡 Response status:", response.status);
-    console.log("📡 Response ok:", response.ok);
-
-    if (response.ok) {
-      const responseData = await response.json();
-      console.log("📦 Full API response:", responseData);
-
-      const requestsData = responseData.data || [];
-      console.log("📋 Requests data array:", requestsData);
-      console.log("📊 Number of requests:", requestsData.length);
-
-      // Log sample request if any exist
-      if (requestsData.length > 0) {
-        console.log("📄 Sample request:", requestsData[0]);
-      } else {
-        console.warn("⚠️ No permission requests returned");
-      }
-
-      // Filter: Show requests where this team lead is eligible OR already processed by them
-      const eligibleRequests = requestsData.filter(
-        (request: PermissionRequest) => {
-          console.log(`Checking request ${request.id}:`, {
-            team_lead_ids: request.team_lead_ids,
-            team_lead_id: request.team_lead_id,
-            status: request.status,
-            currentTeamLeadId: teamLeadId,
-          });
-
-          // Check if this team lead is in the team_lead_ids array
-          const isEligible =
-            request.team_lead_ids && request.team_lead_ids.includes(teamLeadId);
-
-          // Check if request is still pending
-          const isPending = ["Pending Team Lead", "Pending"].includes(
-            request.status
-          );
-
-          const shouldShow =
-            (isEligible && isPending) || request.team_lead_id === teamLeadId;
-
-          console.log(`Request ${request.id} - Should show:`, shouldShow, {
-            isEligible,
-            isPending,
-            processedByThisTL: request.team_lead_id === teamLeadId,
-          });
-
-          return shouldShow;
-        }
-      );
-
-      console.log(
-        "✅ Eligible requests after filtering:",
-        eligibleRequests.length
-      );
-
-      // Process requests with calculated duration
-      const processedRequests = eligibleRequests.map(
-        (request: PermissionRequest) => {
-          const processed = {
-            ...request,
-            applied_date: getAppliedDate(request),
-            duration_hours: getCalculatedDuration(request),
-          };
-          console.log(`Processed request ${request.id}:`, processed);
-          return processed;
-        }
-      );
-
-      setPermissionRequests(processedRequests);
-
-      // Calculate stats
-      const total = processedRequests.length;
-      const pending = processedRequests.filter(
-        (r: PermissionRequest) =>
-          r.status === "Pending Team Lead" || r.status === "Pending"
-      ).length;
-      const approved = processedRequests.filter(
-        (r: PermissionRequest) =>
-          r.status === "Approved" || r.status === "Pending Manager Approval"
-      ).length;
-      const rejected = processedRequests.filter(
-        (r: PermissionRequest) => r.status === "Rejected"
-      ).length;
-
-      setPermissionStats({ total, pending, approved, rejected });
-
-      console.log("📊 Stats:", { total, pending, approved, rejected });
-    } else {
-      const errorData = await response.json();
-      console.error("❌ API Error:", errorData);
-    }
-  } catch (error) {
-    console.error("❌ Fetch error:", error);
-    setPermissionRequests([]);
-  }
-};
-
-
- const handleApproveLeave = async (
-   request: LeaveRequest,
-   event?: React.MouseEvent
- ) => {
-   event?.stopPropagation();
-   event?.preventDefault();
-   if (processingId) return;
-   setProcessingId(request.id);
-
+ const fetchLeaveRequests = async () => {
    try {
-     const response = await fetch(`/api/team-lead/leave-requests`, {
-       method: "PATCH",
-       headers: {
-         "Content-Type": "application/json",
-       },
-       body: JSON.stringify({
-         requestId: request.id,
-         action: "approve",
-         userType: "team-lead",
-         teamLeadId: teamLeadId,
-         comments: comments[request.id] || "",
-       }),
-     });
+     setLoading(true);
+
+     const currentDate = new Date();
+     const currentMonth = currentDate.getMonth() + 1;
+     const currentYear = currentDate.getFullYear();
+
+     const response = await fetch(
+       `/api/team-lead/leave-requests?teamLeadId=${teamLeadId}&month=${currentMonth}&year=${currentYear}`
+     );
 
      if (response.ok) {
-       setRecentlyProcessed((prev) => ({
-         ...prev,
-         [request.id]: comments[request.id] || "",
-       }));
-       await fetchLeaveRequests();
-       setComments((prev) => ({
-         ...prev,
-         [request.id]: "",
-       }));
-       console.log("Leave request approved successfully");
+       const data = await response.json();
+       const requestsData = data.data || [];
 
-       toast({
-         title: "Success",
-         description: "Leave request approved successfully",
-         variant: "default",
+       // ✅ UPDATED FILTER LOGIC
+       const eligibleRequests = requestsData.filter((request: LeaveRequest) => {
+         // Check if this team lead is in the team_lead_ids array (eligible to approve)
+         const isEligible =
+           request.team_lead_ids && request.team_lead_ids.includes(teamLeadId);
+
+         // Check if request is still pending (not processed yet)
+         const isPending = ["Pending Team Lead", "Pending"].includes(
+           request.status
+         );
+
+         // Check if this team lead already processed it
+         const processedByMe = request.team_lead_id === teamLeadId;
+
+         // Show if: (eligible AND still pending) OR (already processed by this team lead)
+         return (isEligible && isPending) || processedByMe;
        });
+
+       const processedRequests = eligibleRequests.map(
+         (request: LeaveRequest) => ({
+           ...request,
+           applied_date: getAppliedDate(request),
+           total_days: getTotalDays(request),
+         })
+       );
+
+       setLeaveRequests(processedRequests);
+
+       const total = processedRequests.length;
+       const pending = processedRequests.filter((r: LeaveRequest) =>
+         ["Pending Team Lead", "Pending"].includes(r.status)
+       ).length;
+       const approved = processedRequests.filter(
+         (r: LeaveRequest) =>
+           r.status === "Approved" || r.status === "Pending Manager Approval"
+       ).length;
+       const rejected = processedRequests.filter(
+         (r: LeaveRequest) => r.status === "Rejected"
+       ).length;
+
+       setLeaveStats({ total, pending, approved, rejected });
+
+       console.log(
+         `Eligible leave requests: ${processedRequests.length} for team lead ${teamLeadId}`
+       );
      } else {
-       const errorData = await response.json();
-       console.error("Failed to approve leave request", errorData);
-       toast({
-         title: "Error",
-         description: `Failed to approve leave request: ${
-           errorData.error || "Unknown error"
-         }`,
-         variant: "destructive",
-       });
+       console.error("Server responded with:", await response.json());
      }
    } catch (error) {
-     console.error("Error approving leave request:", error);
-     toast({
-       title: "Error",
-       description: `An error occurred: ${
-         error instanceof Error ? error.message : String(error)
-       }`,
-       variant: "destructive",
-     });
+     console.error("Error fetching leave requests:", error);
    } finally {
-     setProcessingId(null);
+     setLoading(false);
    }
  };
 
- const handleRejectLeave = async (
-   request: LeaveRequest,
-   event?: React.MouseEvent
- ) => {
-   event?.stopPropagation();
-   event?.preventDefault();
-   if (processingId) return;
-   setProcessingId(request.id);
-
+ // Updated fetchPermissionRequests function (around line 395-445)
+ const fetchPermissionRequests = async () => {
    try {
-     const response = await fetch(`/api/team-lead/leave-requests`, {
-       method: "PATCH",
-       headers: {
-         "Content-Type": "application/json",
-       },
-       body: JSON.stringify({
-         requestId: request.id,
-         action: "reject",
-         userType: "team-lead",
-         teamLeadId: teamLeadId,
-         comments: comments[request.id] || "",
-       }),
-     });
+     setLoading(true);
+
+     const response = await fetch(
+       `/api/permission-request?teamLeadId=${teamLeadId}`
+     );
 
      if (response.ok) {
-       setRecentlyProcessed((prev) => ({
-         ...prev,
-         [request.id]: comments[request.id] || "",
-       }));
-       await fetchLeaveRequests();
-       setComments((prev) => ({
-         ...prev,
-         [request.id]: "",
-       }));
-       console.log("Leave request rejected successfully");
+       const data = await response.json();
+       const requestsData = data.data || [];
 
-       toast({
-         title: "Success",
-         description: "Leave request rejected",
-         variant: "default",
-       });
+       // ✅ UPDATED FILTER LOGIC
+       const eligibleRequests = requestsData.filter(
+         (request: PermissionRequest) => {
+           // Check if this team lead is in the team_lead_ids array (eligible to approve)
+           const isEligible =
+             request.team_lead_ids &&
+             request.team_lead_ids.includes(teamLeadId);
+
+           // Check if request is still pending (not processed yet)
+           const isPending = ["Pending Team Lead", "Pending"].includes(
+             request.status
+           );
+
+           // Check if this team lead already processed it
+           const processedByMe = request.team_lead_id === teamLeadId;
+
+           // Show if: (eligible AND still pending) OR (already processed by this team lead)
+           return (isEligible && isPending) || processedByMe;
+         }
+       );
+
+       const processedRequests = eligibleRequests.map(
+         (request: PermissionRequest) => ({
+           ...request,
+           applied_date: getAppliedDate(request),
+           duration_hours: getCalculatedDuration(request),
+         })
+       );
+
+       setPermissionRequests(processedRequests);
+
+       const total = processedRequests.length;
+       const pending = processedRequests.filter(
+         (r: PermissionRequest) =>
+           r.status === "Pending Team Lead" || r.status === "Pending"
+       ).length;
+       const approved = processedRequests.filter(
+         (r: PermissionRequest) =>
+           r.status === "Approved" || r.status === "Pending Manager Approval"
+       ).length;
+       const rejected = processedRequests.filter(
+         (r: PermissionRequest) => r.status === "Rejected"
+       ).length;
+
+       setPermissionStats({ total, pending, approved, rejected });
+
+       console.log(
+         `Eligible permission requests: ${processedRequests.length} for team lead ${teamLeadId}`
+       );
      } else {
-       const errorData = await response.json();
-       console.error("Failed to reject leave request", errorData);
-       toast({
-         title: "Error",
-         description: `Failed to reject leave request: ${
-           errorData.error || "Unknown error"
-         }`,
-         variant: "destructive",
-       });
+       console.error("Server responded with:", await response.json());
      }
    } catch (error) {
-     console.error("Error rejecting leave request:", error);
-     toast({
-       title: "Error",
-       description: `An error occurred: ${
-         error instanceof Error ? error.message : String(error)
-       }`,
-       variant: "destructive",
-     });
+     console.error("Error fetching permission requests:", error);
    } finally {
-     setProcessingId(null);
+     setLoading(false);
    }
  };
-  const handleApprovePermission = async (
-    requestId: string,
+
+  const handleApproveLeave = async (
+    request: LeaveRequest,
     event?: React.MouseEvent
   ) => {
     event?.stopPropagation();
     event?.preventDefault();
     if (processingId) return;
-    setProcessingId(requestId);
+    setProcessingId(request.id);
+
     try {
-      const response = await fetch(`/api/team-lead/permission-requests`, {
+      const response = await fetch(`/api/team-lead/leave-requests`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          requestId: requestId,
+          requestId: request.id,
           action: "approve",
           userType: "team-lead",
           teamLeadId: teamLeadId,
-          comments: comments[requestId] || "",
+          comments: comments[request.id] || "",
         }),
       });
+
       if (response.ok) {
         setRecentlyProcessed((prev) => ({
           ...prev,
-          [requestId]: comments[requestId] || "",
+          [request.id]: comments[request.id] || "",
         }));
-        await fetchPermissionRequests();
+        await fetchLeaveRequests();
         setComments((prev) => ({
           ...prev,
-          [requestId]: "",
+          [request.id]: "",
         }));
-        console.log("Permission request approved successfully");
+        console.log("Leave request approved successfully");
+
+        toast({
+          title: "Success",
+          description: "Leave request approved successfully",
+          variant: "default",
+        });
       } else {
-        console.error("Failed to approve permission request");
         const errorData = await response.json();
-        alert(
-          `Failed to approve permission request: ${
+        console.error("Failed to approve leave request", errorData);
+        toast({
+          title: "Error",
+          description: `Failed to approve leave request: ${
             errorData.error || "Unknown error"
-          }`
-        );
+          }`,
+          variant: "destructive",
+        });
       }
     } catch (error) {
-      console.error("Error approving permission request:", error);
-      alert(
-        `An error occurred: ${
+      console.error("Error approving leave request:", error);
+      toast({
+        title: "Error",
+        description: `An error occurred: ${
           error instanceof Error ? error.message : String(error)
-        }`
-      );
+        }`,
+        variant: "destructive",
+      });
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleRejectPermission = async (
-    requestId: string,
+  const handleRejectLeave = async (
+    request: LeaveRequest,
     event?: React.MouseEvent
   ) => {
     event?.stopPropagation();
     event?.preventDefault();
     if (processingId) return;
-    setProcessingId(requestId);
+    setProcessingId(request.id);
+
+    try {
+      const response = await fetch(`/api/team-lead/leave-requests`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: request.id,
+          action: "reject",
+          userType: "team-lead",
+          teamLeadId: teamLeadId,
+          comments: comments[request.id] || "",
+        }),
+      });
+
+      if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [request.id]: comments[request.id] || "",
+        }));
+        await fetchLeaveRequests();
+        setComments((prev) => ({
+          ...prev,
+          [request.id]: "",
+        }));
+        console.log("Leave request rejected successfully");
+
+        toast({
+          title: "Success",
+          description: "Leave request rejected",
+          variant: "default",
+        });
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to reject leave request", errorData);
+        toast({
+          title: "Error",
+          description: `Failed to reject leave request: ${
+            errorData.error || "Unknown error"
+          }`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error rejecting leave request:", error);
+      toast({
+        title: "Error",
+        description: `An error occurred: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+  // Replace the handleApprovePermission function in your frontend
+  const handleApprovePermission = async (
+    request: PermissionRequest, // ✅ Changed from request.id to full request
+    event?: React.MouseEvent
+  ) => {
+    event?.stopPropagation();
+    event?.preventDefault();
+    if (processingId) return;
+    setProcessingId(request.id);
+
     try {
       const response = await fetch(`/api/team-lead/permission-requests`, {
         method: "PATCH",
@@ -785,40 +696,118 @@ const fetchPermissionRequests = async () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          requestId: requestId,
-          action: "reject",
-          teamLeadId: teamLeadId,
+          requestId: request.id,
+          action: "approve",
           userType: "team-lead",
-          comments: comments[requestId] || "",
+          teamLeadId: teamLeadId,
+          comments: comments[request.id] || "",
         }),
       });
+
       if (response.ok) {
         setRecentlyProcessed((prev) => ({
           ...prev,
-          [requestId]: comments[requestId] || "",
+          [request.id]: comments[request.id] || "",
         }));
         await fetchPermissionRequests();
         setComments((prev) => ({
           ...prev,
-          [requestId]: "",
+          [request.id]: "",
+        }));
+        console.log("Permission request approved successfully");
+
+        toast({
+          title: "Success",
+          description: "Permission request approved successfully",
+          variant: "default",
+        });
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to approve permission request", errorData);
+        toast({
+          title: "Error",
+          description: `Failed to approve permission request: ${
+            errorData.error || "Unknown error"
+          }`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error approving permission request:", error);
+      toast({
+        title: "Error",
+        description: `An error occurred: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Replace the handleRejectPermission function in your frontend
+  const handleRejectPermission = async (
+    request: PermissionRequest, // ✅ Changed from request.id to full request
+    event?: React.MouseEvent
+  ) => {
+    event?.stopPropagation();
+    event?.preventDefault();
+    if (processingId) return;
+    setProcessingId(request.id);
+
+    try {
+      const response = await fetch(`/api/team-lead/permission-requests`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: request.id,
+          action: "reject",
+          userType: "team-lead",
+          teamLeadId: teamLeadId,
+          comments: comments[request.id] || "",
+        }),
+      });
+
+      if (response.ok) {
+        setRecentlyProcessed((prev) => ({
+          ...prev,
+          [request.id]: comments[request.id] || "",
+        }));
+        await fetchPermissionRequests();
+        setComments((prev) => ({
+          ...prev,
+          [request.id]: "",
         }));
         console.log("Permission request rejected successfully");
+
+        toast({
+          title: "Success",
+          description: "Permission request rejected",
+          variant: "default",
+        });
       } else {
-        console.error("Failed to reject permission request");
         const errorData = await response.json();
-        alert(
-          `Failed to reject permission request: ${
+        console.error("Failed to reject permission request", errorData);
+        toast({
+          title: "Error",
+          description: `Failed to reject permission request: ${
             errorData.error || "Unknown error"
-          }`
-        );
+          }`,
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Error rejecting permission request:", error);
-      alert(
-        `An error occurred: ${
+      toast({
+        title: "Error",
+        description: `An error occurred: ${
           error instanceof Error ? error.message : String(error)
-        }`
-      );
+        }`,
+        variant: "destructive",
+      });
     } finally {
       setProcessingId(null);
     }
@@ -1805,7 +1794,7 @@ const fetchPermissionRequests = async () => {
                                             <Button
                                               onClick={(e) =>
                                                 handleApprovePermission(
-                                                  request.id,
+                                                  request,
                                                   e
                                                 )
                                               }
@@ -1821,7 +1810,7 @@ const fetchPermissionRequests = async () => {
                                             <Button
                                               onClick={(e) =>
                                                 handleRejectPermission(
-                                                  request.id,
+                                                  request,
                                                   e
                                                 )
                                               }

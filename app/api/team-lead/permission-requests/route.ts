@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase";
 
+const supabase = createServerSupabaseClient();
+
+// 🟩 POST — Employee applies for Permission
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -21,191 +24,155 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get employee details
-    const { data: employee, error: employeeError } = await supabase
+    // 1️⃣ Fetch employee details (includes manager)
+    const { data: employee, error: empError } = await supabase
       .from("employees")
       .select("id, name, email_address, manager_id")
       .eq("id", employeeId)
       .single();
 
-    if (employeeError || !employee) {
+    if (empError || !employee)
       return NextResponse.json(
         { error: "Employee not found" },
         { status: 404 }
       );
-    }
 
-    // Get ALL team leads for this employee (multiple team memberships)
+    // 2️⃣ Fetch all active team leads for this employee
     const { data: teamMembers, error: teamError } = await supabase
       .from("team_members")
       .select("team_lead_id")
       .eq("employee_id", employeeId)
       .eq("is_active", true);
 
-    console.log("👥 Team members found:", teamMembers);
-
-    if (teamError) {
-      console.error("❌ Error fetching team members:", teamError);
+    if (teamError || !teamMembers || teamMembers.length === 0) {
       return NextResponse.json(
-        { error: "Failed to fetch team members" },
-        { status: 500 }
-      );
-    }
-
-    if (!teamMembers || teamMembers.length === 0) {
-      console.warn("⚠️ No team leads found for employee:", employeeId);
-      return NextResponse.json(
-        { error: "No team lead found for this employee" },
+        { error: "No active team leads found" },
         { status: 404 }
       );
     }
 
-    // Extract all team lead IDs and filter out any null/undefined values
-    const teamLeadIds = teamMembers
-      .map((tm) => tm.team_lead_id)
-      .filter((id) => id && id !== "DEFAULT_LEAD"); // Remove invalid IDs
+    const teamLeadIds = teamMembers.map((tm) => tm.team_lead_id);
+    const permissionGroupId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2);
 
-    console.log("📋 Team lead IDs extracted:", teamLeadIds);
-
-    if (teamLeadIds.length === 0) {
-      console.error("❌ No valid team lead IDs found");
-      return NextResponse.json(
-        { error: "No valid team lead found for this employee" },
-        { status: 404 }
-      );
-    }
-
-    const primaryTeamLeadId = teamLeadIds[0]; // Use first as primary for backward compatibility
-
-    // Insert permission request
-    const { data: permissionRequest, error: insertError } = await supabase
+    // 3️⃣ Insert into permission_requests (with team_lead_id as null initially)
+    const { data: inserted, error: insertError } = await supabase
       .from("permission_requests")
       .insert({
-        employee_id: employeeId,
+        employee_id: employee.id,
         employee_name: employee.name,
         employee_email: employee.email_address,
-        team_lead_id: primaryTeamLeadId, // Primary team lead
-        team_lead_ids: teamLeadIds, // ALL eligible team leads
-        manager_id: employee.manager_id,
         permission_type: permissionType,
-        date: date,
+        date,
         start_time: startTime,
         end_time: endTime,
-        reason: reason,
+        reason,
         status: "Pending Team Lead",
+        team_lead_id: null, // ✅ Will be set when a team lead approves/rejects
+        team_lead_ids: teamLeadIds, // ✅ Array of all eligible team leads
+        manager_id: employee.manager_id,
+        permission_group_id: permissionGroupId,
       })
       .select()
       .single();
 
     if (insertError) {
-      console.error("Error inserting permission request:", insertError);
+      console.error("❌ Insert failed:", insertError);
       return NextResponse.json(
         { error: "Failed to submit permission request" },
         { status: 500 }
       );
     }
 
-    // Create notifications for ALL team leads
-    const notificationPromises = teamLeadIds.map((tlId) =>
-      supabase.from("notifications").insert({
-        recipient_type: "team-lead",
-        recipient_id: tlId,
-        title: "New Permission Request",
-        message: `${employee.name} has submitted a permission request for ${permissionType}`,
-        type: "permission_request",
-        reference_id: permissionRequest.id,
-      })
-    );
+    // 4️⃣ Notify all team leads
+    const notifications = teamLeadIds.map((leadId) => ({
+      recipient_type: "team-lead",
+      recipient_id: leadId,
+      title: "New Permission Request",
+      message: `${employee.name} submitted a permission request for ${permissionType}`,
+      type: "permission_request",
+      reference_id: permissionGroupId,
+    }));
 
-    await Promise.all(notificationPromises).catch((err) => {
-      console.error("Error creating notifications:", err);
-    });
+    await supabase.from("notifications").insert(notifications);
 
-    return NextResponse.json({
-      message: "Permission request submitted successfully",
-      data: permissionRequest,
-    });
-  } catch (error) {
-    console.error("Error in permission request API:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      { message: "Permission request submitted successfully", data: inserted },
+      { status: 200 }
     );
+  } catch (err) {
+    console.error("Error in Permission POST:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
+// 🟦 GET — Team Lead fetches all permission requests
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get("employeeId");
-    const teamLeadId = searchParams.get("teamLeadId");
-
-    console.log("📡 GET Permission Requests - Params:", {
-      employeeId,
-      teamLeadId,
-    });
+    const url = new URL(request.url);
+    const teamLeadId = url.searchParams.get("teamLeadId");
+    const month = url.searchParams.get("month");
+    const year = url.searchParams.get("year");
 
     let query = supabase
       .from("permission_requests")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (employeeId) {
-      query = query.eq("employee_id", employeeId);
-    }
-
+    // Filter by teamLeadId if provided (check if teamLeadId is in team_lead_ids array)
     if (teamLeadId) {
-      // FIXED: Query using contains for the array
-      // This will find all requests where teamLeadId is in the team_lead_ids array
       query = query.contains("team_lead_ids", [teamLeadId]);
-      console.log("🔍 Filtering by team_lead_ids contains:", teamLeadId);
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("❌ Error fetching permission requests:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch permission requests" },
-        { status: 500 }
-      );
+    // Filter by date if provided
+    if (month && year) {
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 0);
+      query = query
+        .gte("created_at", startDate.toISOString())
+        .lte("created_at", endDate.toISOString());
     }
 
-    console.log("✅ Found permission requests:", data?.length || 0);
-    if (data && data.length > 0) {
-      console.log("📄 Sample request:", {
-        id: data[0].id,
-        team_lead_id: data[0].team_lead_id,
-        team_lead_ids: data[0].team_lead_ids,
-        status: data[0].status,
-      });
+    const { data: requests, error } = await query;
+
+    if (error)
+      return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Manually fetch employee details for each permission request
+    const results = [];
+    for (const req of requests || []) {
+      const { data: emp } = await supabase
+        .from("employees")
+        .select(
+          "name, id as employee_id, designation, phoneNumber, emailAddress, address"
+        )
+        .eq("id", req.employee_id)
+        .single();
+      results.push({ ...req, employee: emp || null });
     }
 
-    return NextResponse.json({ data });
-  } catch (error) {
-    console.error("❌ Error in GET permission requests:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.log(`Fetched ${results.length} permission requests`);
+    return NextResponse.json({ data: results }, { status: 200 });
+  } catch (err) {
+    console.error("GET Permission error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
+// 🟥 PATCH — Team Lead approves/rejects
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const { requestId, action, teamLeadId, comments, userType } = body;
 
-    console.log("🔍 PATCH Request received:", {
-      requestId,
-      action,
-      teamLeadId,
-      userType,
-    });
-
     if (!requestId || !action || !teamLeadId || !userType) {
       return NextResponse.json(
-        { error: "Missing required fields: requestId, action, teamLeadId" },
+        {
+          error:
+            "Missing required fields: requestId, action, teamLeadId, userType",
+        },
         { status: 400 }
       );
     }
@@ -217,7 +184,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Get the permission request details
+    // 1️⃣ Fetch the permission request
     const { data: permissionRequest, error: fetchError } = await supabase
       .from("permission_requests")
       .select("*")
@@ -225,88 +192,37 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (fetchError || !permissionRequest) {
-      console.error("❌ Permission request not found:", fetchError);
       return NextResponse.json(
         { error: "Permission request not found" },
         { status: 404 }
       );
     }
 
-    console.log("📋 Permission request data:", {
-      id: permissionRequest.id,
-      status: permissionRequest.status,
-      team_lead_id: permissionRequest.team_lead_id,
-      team_lead_ids: permissionRequest.team_lead_ids,
-    });
-
-    // Check if request is still pending
-    if (!["Pending", "Pending Team Lead"].includes(permissionRequest.status)) {
-      return NextResponse.json(
-        {
-          error: `Request is not pending team lead approval (current status: ${permissionRequest.status})`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // **FIXED: Authorization check for multi-team-lead support with fallback**
-    let teamLeadIdsArray = permissionRequest.team_lead_ids;
-
-    // Fallback: If team_lead_ids is null/empty, create array from team_lead_id
+    // 2️⃣ Check if this team lead is eligible to process this request
     if (
-      !teamLeadIdsArray ||
-      !Array.isArray(teamLeadIdsArray) ||
-      teamLeadIdsArray.length === 0
+      !permissionRequest.team_lead_ids ||
+      !permissionRequest.team_lead_ids.includes(teamLeadId)
     ) {
-      if (permissionRequest.team_lead_id) {
-        teamLeadIdsArray = [permissionRequest.team_lead_id];
-
-        // Update the database with this array for future use
-        await supabase
-          .from("permission_requests")
-          .update({ team_lead_ids: teamLeadIdsArray })
-          .eq("id", requestId)
-          .then(() => console.log("✅ Updated team_lead_ids array"))
-          .catch((err) =>
-            console.error("⚠️ Failed to update team_lead_ids:", err)
-          );
-      } else {
-        teamLeadIdsArray = [];
-      }
-    }
-
-    const isInTeamLeadIds = teamLeadIdsArray.includes(teamLeadId);
-    const isPrimaryTeamLead = permissionRequest.team_lead_id === teamLeadId;
-    const isAuthorized = isInTeamLeadIds || isPrimaryTeamLead;
-
-    console.log("🔐 Authorization check:", {
-      requestingTeamLeadId: teamLeadId,
-      requestTeamLeadId: permissionRequest.team_lead_id,
-      requestTeamLeadIdsArray: teamLeadIdsArray,
-      isInTeamLeadIds,
-      isPrimaryTeamLead,
-      isAuthorized,
-    });
-
-    if (!isAuthorized) {
-      console.error("❌ Unauthorized team lead:", {
-        requestingTeamLead: teamLeadId,
-        allowedTeamLeads: teamLeadIdsArray,
-        primaryTeamLead: permissionRequest.team_lead_id,
-      });
       return NextResponse.json(
         {
-          error:
-            "Unauthorized: You can only approve/reject requests assigned to you",
+          error: "You are not authorized to process this permission request",
         },
         { status: 403 }
       );
     }
 
-    // Update the permission request
+    // 3️⃣ Check if the request is still pending
+    if (!["Pending Team Lead", "Pending"].includes(permissionRequest.status)) {
+      return NextResponse.json(
+        { error: "This permission request has already been processed" },
+        { status: 400 }
+      );
+    }
+
+    // 4️⃣ Prepare update data
     const updateData: any = {
       team_lead_comments: comments || null,
-      team_lead_id: teamLeadId, // Record which team lead processed it
+      team_lead_id: teamLeadId, // ✅ Set the acting team lead who approved/rejected
     };
 
     let notificationTitle = "";
@@ -315,23 +231,34 @@ export async function PATCH(request: NextRequest) {
     let notificationRecipientType = "employee";
 
     if (action === "approve") {
-      // When team lead approves, send to manager for final approval
       updateData.status = "Pending Manager Approval";
       updateData.approved_at = new Date().toISOString();
+
       notificationTitle = "Permission Request Approved by Team Lead";
-      notificationMessage = `${permissionRequest.employee_name}'s permission request for ${permissionRequest.permission_type} has been approved by their Team Lead and is now pending your approval.`;
-      notificationRecipientId = permissionRequest.manager_id;
-      notificationRecipientType = "manager";
+      notificationMessage = `Your permission request for ${permissionRequest.permission_type} has been approved by your Team Lead and is now pending Manager approval.`;
+
+      // Also notify manager if exists
+      if (permissionRequest.manager_id) {
+        setTimeout(async () => {
+          await supabase.from("notifications").insert({
+            recipient_type: "manager",
+            recipient_id: permissionRequest.manager_id,
+            title: "Permission Request Pending Approval",
+            message: `${permissionRequest.employee_name}'s permission request for ${permissionRequest.permission_type} has been approved by Team Lead and requires your approval.`,
+            type: "permission_request_pending",
+            reference_id: permissionRequest.id,
+          });
+        }, 100);
+      }
     } else {
-      // When team lead rejects, request is fully rejected
       updateData.status = "Rejected";
       updateData.rejected_at = new Date().toISOString();
+
       notificationTitle = "Permission Request Rejected";
       notificationMessage = `Your permission request for ${permissionRequest.permission_type} has been rejected by your Team Lead.`;
     }
 
-    console.log("💾 Updating permission request with:", updateData);
-
+    // 5️⃣ Update the permission request
     const { data: updatedRequest, error: updateError } = await supabase
       .from("permission_requests")
       .update(updateData)
@@ -340,42 +267,36 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (updateError) {
-      console.error("❌ Error updating permission request:", updateError);
+      console.error("Error updating permission request:", updateError);
       return NextResponse.json(
         { error: "Failed to update permission request" },
         { status: 500 }
       );
     }
 
-    console.log("✅ Permission request updated successfully");
+    // 6️⃣ Create notification for employee
+    const { error: notificationError } = await supabase
+      .from("notifications")
+      .insert({
+        recipient_type: notificationRecipientType,
+        recipient_id: notificationRecipientId,
+        title: notificationTitle,
+        message:
+          notificationMessage + (comments ? ` Comment: ${comments}` : ""),
+        type: "permission_request_update",
+        reference_id: permissionRequest.id,
+      });
 
-    // Create notification
-    if (notificationRecipientId) {
-      const { error: notificationError } = await supabase
-        .from("notifications")
-        .insert({
-          recipient_type: notificationRecipientType,
-          recipient_id: notificationRecipientId,
-          title: notificationTitle,
-          message:
-            notificationMessage + (comments ? `. Comment: ${comments}` : ""),
-          type: "permission_request_update",
-          reference_id: requestId,
-        });
-
-      if (notificationError) {
-        console.error("Error creating notification:", notificationError);
-      }
+    if (notificationError) {
+      console.error("Error creating notification:", notificationError);
     }
 
     return NextResponse.json({
-      message: `Permission request ${
-        action === "approve" ? "approved and sent to manager" : "rejected"
-      } successfully`,
+      message: `Permission request ${action}d successfully`,
       data: updatedRequest,
     });
   } catch (error) {
-    console.error("❌ Error in PATCH permission request:", error);
+    console.error("Error in PATCH permission request:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

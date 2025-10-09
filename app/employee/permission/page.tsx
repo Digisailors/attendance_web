@@ -37,6 +37,8 @@ export default function PermissionRequestPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Replace your entire handleSubmit function with this (NO API CALL - Direct insert like leave):
+
   const handleSubmit = async () => {
     if (!permissionType || !date || !startTime || !endTime || !reason) {
       toast({
@@ -59,6 +61,7 @@ export default function PermissionRequestPage() {
     setIsSubmitting(true);
 
     try {
+      // ✅ Fetch employee data
       const { data: employee, error: employeeError } = await supabase
         .from("employees")
         .select("*")
@@ -66,89 +69,114 @@ export default function PermissionRequestPage() {
         .single();
 
       if (employeeError || !employee) {
+        console.error("Employee error:", employeeError);
         toast({
-          title: "Employee Not Found",
-          description: employeeError?.message || "No record found.",
+          title: "Error",
+          description: `Employee record not found: ${
+            employeeError?.message || "Unknown error"
+          }`,
           variant: "destructive",
         });
         setIsSubmitting(false);
         return;
       }
 
-      const { data: teamMember, error: teamError } = await supabase
+      // ✅ Fetch all active team leads for this employee (same as leave)
+      const { data: teamMembers, error: teamError } = await supabase
         .from("team_members")
         .select("team_lead_id")
         .eq("employee_id", employee.id)
-        .eq("is_active", true)
-        .single();
+        .eq("is_active", true);
 
-      const teamLeadId = teamMember?.team_lead_id || "DEFAULT_LEAD";
+      let teamLeadIds = [];
+      if (!teamError && teamMembers && teamMembers.length > 0) {
+        teamLeadIds = teamMembers.map((tm) => tm.team_lead_id);
+      }
 
-      const permissionRequestData = {
-        employee_id: employee.id,
-        employee_name: employee.name || user.email.split("@")[0],
-        employee_email: employee.email_address,
-        team_lead_id: teamLeadId,
-        permission_type: permissionType,
-        date: format(date, "yyyy-MM-dd"),
-        start_time: startTime,
-        end_time: endTime,
-        reason: reason,
-        status: "Pending",
-      };
+      if (teamLeadIds.length === 0) {
+        toast({
+          title: "Error",
+          description: "No active team leads found. Please contact HR.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
-      const { data: permissionRequest, error: insertError } = await supabase
+      // ✅ Generate a unique group id (optional, if you want to track related permissions)
+      const permissionGroupId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).substring(2);
+
+      // ✅ Direct insert to Supabase (same as leave - NO API)
+      const { data: permissionRequestData, error: insertError } = await supabase
         .from("permission_requests")
-        .insert(permissionRequestData)
+        .insert({
+          employee_id: employee.id,
+          employee_name: employee.name || user.email.split("@")[0],
+          employee_email: employee.email_address,
+          team_lead_id: null, // Will be set when someone approves
+          team_lead_ids: teamLeadIds, // Store all eligible team leads
+          manager_id: employee.manager_id,
+          permission_type: permissionType,
+          date: date ? format(date, "yyyy-MM-dd") : null,
+          start_time: startTime,
+          end_time: endTime,
+          reason: reason,
+          status: "Pending Team Lead",
+        })
         .select()
         .single();
 
       if (insertError) {
+        console.error("Error inserting permission request:", insertError);
         toast({
-          title: "Submission Failed",
-          description: insertError.message,
+          title: "Error",
+          description: `Failed to submit permission request: ${insertError.message}`,
           variant: "destructive",
         });
         setIsSubmitting(false);
         return;
       }
 
-      if (
-        teamMember?.team_lead_id &&
-        teamMember.team_lead_id !== "DEFAULT_LEAD"
-      ) {
-        const { error: notificationError } = await supabase
-          .from("notifications")
-          .insert({
-            recipient_type: "team-lead",
-            recipient_id: teamMember.team_lead_id,
-            title: "New Permission Request",
-            message: `${
-              employee.name || user.email.split("@")[0]
-            } has submitted a permission request for ${permissionType}`,
-            type: "permission_request",
-            reference_id: permissionRequest.id,
-          });
+      // ✅ Send notification to ALL eligible team leads (same as leave)
+      const notifications = teamLeadIds.map((teamLeadId) => ({
+        recipient_type: "team-lead",
+        recipient_id: teamLeadId,
+        title: "New Permission Request",
+        message: `${
+          employee.name || user.email.split("@")[0]
+        } has submitted a permission request for ${permissionType}`,
+        type: "permission_request",
+        reference_id: permissionRequestData.id,
+      }));
 
-        if (notificationError) {
-          console.error("Notification error:", notificationError);
-        }
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .insert(notifications);
+
+      if (notificationError) {
+        console.error("Error creating notification:", notificationError);
       }
 
       toast({
-        title: "Request Submitted",
+        title: "Success",
         description: "Permission request submitted successfully!",
+        variant: "default",
       });
 
+      // Reset form
       setPermissionType("");
       setDate(undefined);
       setStartTime("");
       setEndTime("");
       setReason("");
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error submitting permission request:", error);
       toast({
-        title: "Unexpected Error",
-        description: error.message || "An error occurred.",
+        title: "Error",
+        description: `An error occurred: ${JSON.stringify(error)}`,
         variant: "destructive",
       });
     } finally {

@@ -243,6 +243,7 @@ export async function GET(req: NextRequest) {
 }
 
 // POST Handler
+// POST Handler - UPDATED VERSION
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const body = await request.json();
@@ -251,64 +252,77 @@ export async function POST(request: NextRequest) {
     employee_id: rawEmployeeId,
     employee_name,
     employee_email,
-    start_date,
-    end_date,
-    leave_type,
+    permission_type,
+    date,
+    start_time,
+    end_time,
     reason,
-    team_lead_id,
-    manager_id,
   } = body;
 
+  // 1️⃣ Resolve employee UUID
   const employee_id = await resolveEmployeeId(supabase, rawEmployeeId);
   if (!employee_id) {
     return NextResponse.json({ error: "Invalid employee ID" }, { status: 404 });
   }
 
-  const id = uuidv4();
-  const parsedStartDate = parseISO(start_date);
-  const parsedEndDate = parseISO(end_date);
+  // 2️⃣ Fetch the employee's team leads (plural) and manager
+  const { data: empData, error: empErr } = await supabase
+    .from("employees")
+    .select("team_lead_ids, manager_id")  // ✅ Changed from team_lead_id to team_lead_ids
+    .eq("id", employee_id)
+    .single();
 
-  // Extract month and year from start_date (same as permission API)
-  const leaveDate = new Date(start_date);
-  const month = leaveDate.getMonth() + 1; // 1-12
-  const year = leaveDate.getFullYear();
+  if (empErr || !empData) {
+    console.error("❌ Could not fetch team leads/manager for employee:", empErr);
+    return NextResponse.json(
+      { error: "Could not find team leads for employee" },
+      { status: 400 }
+    );
+  }
+
+  const { team_lead_ids, manager_id } = empData;
+
+  // 3️⃣ Extract month and year from date
+  const parsedDate = parseISO(date);
+  const month = parsedDate.getMonth() + 1;
+  const year = parsedDate.getFullYear();
+
+  const id = uuidv4();
 
   console.log(
-    `Creating leave request for ${employee_name} - month: ${month}, year: ${year}`
+    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(team_lead_ids)}, manager: ${manager_id}`
   );
 
-  const { data, error } = await supabase.from("leave_requests").insert([
+  // 4️⃣ Insert with team_lead_ids array (not single team_lead_id)
+  const { data, error } = await supabase.from("permission_requests").insert([
     {
       id,
       employee_id,
       employee_name,
       employee_email,
-      start_date: parsedStartDate,
-      end_date: parsedEndDate,
-      leave_type,
+      permission_type,
+      date: parsedDate,
+      start_time,
+      end_time,
       reason,
       status: "Pending",
       month,
       year,
-      team_lead_id,
+      team_lead_ids, // ✅ Array of team lead IDs
       manager_id,
     },
   ]);
 
   if (error) {
-    console.error(
-      "Error inserting leave request:",
-      error.message,
-      error.details
-    );
+    console.error("❌ Error inserting permission:", error);
     return NextResponse.json(
-      { error: "Failed to apply for leave" },
+      { error: "Failed to apply for permission", details: error.message },
       { status: 500 }
     );
   }
 
   return NextResponse.json(
-    { message: "Leave applied successfully" },
+    { message: "Permission applied successfully" },
     { status: 200 }
   );
 }
