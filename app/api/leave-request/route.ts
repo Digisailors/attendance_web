@@ -268,12 +268,15 @@ export async function POST(request: NextRequest) {
   // 2️⃣ Fetch the employee's team leads (plural) and manager
   const { data: empData, error: empErr } = await supabase
     .from("employees")
-    .select("team_lead_ids, manager_id")  // ✅ Changed from team_lead_id to team_lead_ids
+    .select("team_lead_ids, manager_id") // ✅ Changed from team_lead_id to team_lead_ids
     .eq("id", employee_id)
     .single();
 
   if (empErr || !empData) {
-    console.error("❌ Could not fetch team leads/manager for employee:", empErr);
+    console.error(
+      "❌ Could not fetch team leads/manager for employee:",
+      empErr
+    );
     return NextResponse.json(
       { error: "Could not find team leads for employee" },
       { status: 400 }
@@ -290,7 +293,9 @@ export async function POST(request: NextRequest) {
   const id = uuidv4();
 
   console.log(
-    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(team_lead_ids)}, manager: ${manager_id}`
+    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(
+      team_lead_ids
+    )}, manager: ${manager_id}`
   );
 
   // 4️⃣ Insert with team_lead_ids array (not single team_lead_id)

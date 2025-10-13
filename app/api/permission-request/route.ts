@@ -154,9 +154,10 @@ export async function POST(request: NextRequest) {
   const { team_lead_ids, manager_id } = empData;
 
   // ✅ Fallback if no team leads assigned
-  const finalTeamLeadIds = team_lead_ids && team_lead_ids.length > 0 
-    ? team_lead_ids 
-    : ["DEFAULT_LEAD"];
+  const finalTeamLeadIds =
+    team_lead_ids && team_lead_ids.length > 0
+      ? team_lead_ids
+      : ["DEFAULT_LEAD"];
 
   const parsedDate = parseISO(date);
   const month = parsedDate.getMonth() + 1;
@@ -165,7 +166,9 @@ export async function POST(request: NextRequest) {
   const id = uuidv4();
 
   console.log(
-    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(finalTeamLeadIds)}, manager: ${manager_id}`
+    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(
+      finalTeamLeadIds
+    )}, manager: ${manager_id}`
   );
 
   // ✅ Insert and return the created record
@@ -203,10 +206,10 @@ export async function POST(request: NextRequest) {
 
   // ✅ Return the created record with ID
   return NextResponse.json(
-    { 
+    {
       message: "Permission applied successfully",
       id: createdRecord.id, // Return the ID for notifications
-      data: createdRecord
+      data: createdRecord,
     },
     { status: 200 }
   );

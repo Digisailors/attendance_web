@@ -11,14 +11,16 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("permission_requests")
-      .select(`
+      .select(
+        `
         *,
         employee:employees!fk_employee_id(
           id, 
           name, 
           email_address
         )
-      `)
+      `
+      )
       .eq("manager_id", managerId)
       .order("created_at", { ascending: false });
 
@@ -30,13 +32,19 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Error fetching permission requests:", error);
-      return NextResponse.json({ error: "Failed to fetch permission requests" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to fetch permission requests" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ data: data || [] });
   } catch (error) {
     console.error("Error in GET permission requests:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -48,11 +56,17 @@ export async function PATCH(request: NextRequest) {
     const { requestId, action, comments, userType } = body;
 
     if (!requestId || !action || !userType) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
     if (!["approve", "reject"].includes(action)) {
-      return NextResponse.json({ error: 'Invalid action. Use "approve" or "reject"' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid action. Use "approve" or "reject"' },
+        { status: 400 }
+      );
     }
 
     const { data: permissionRequest, error: fetchError } = await supabase
@@ -62,11 +76,19 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (fetchError || !permissionRequest) {
-      return NextResponse.json({ error: "Permission request not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Permission request not found" },
+        { status: 404 }
+      );
     }
 
     if (permissionRequest.status !== "Pending Manager Approval") {
-      return NextResponse.json({ error: `Request is not pending manager approval (current status: ${permissionRequest.status})` }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `Request is not pending manager approval (current status: ${permissionRequest.status})`,
+        },
+        { status: 400 }
+      );
     }
 
     const updateData: any = {
@@ -98,29 +120,40 @@ export async function PATCH(request: NextRequest) {
 
     if (updateError) {
       console.error("Error updating permission request:", updateError);
-      return NextResponse.json({ error: "Failed to update permission request" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to update permission request" },
+        { status: 500 }
+      );
     }
 
     // Create notification for employee
-    const { error: notificationError } = await supabase.from("notifications").insert({
-      recipient_type: "employee",
-      recipient_id: notificationRecipientId,
-      title: notificationTitle,
-      message: notificationMessage + (comments ? `. Comments: ${comments}` : ""),
-      type: "permission_request_update",
-      reference_id: requestId,
-    });
+    const { error: notificationError } = await supabase
+      .from("notifications")
+      .insert({
+        recipient_type: "employee",
+        recipient_id: notificationRecipientId,
+        title: notificationTitle,
+        message:
+          notificationMessage + (comments ? `. Comments: ${comments}` : ""),
+        type: "permission_request_update",
+        reference_id: requestId,
+      });
 
     if (notificationError) {
       console.error("Error creating notification:", notificationError);
     }
 
     return NextResponse.json({
-      message: `Permission request ${action === "approve" ? "approved" : "rejected"} successfully`,
+      message: `Permission request ${
+        action === "approve" ? "approved" : "rejected"
+      } successfully`,
       data: updatedRequest,
     });
   } catch (error) {
     console.error("Error in PATCH permission request:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
