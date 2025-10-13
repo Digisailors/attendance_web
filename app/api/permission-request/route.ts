@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { parseISO } from "date-fns";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabaseServer";
 
 // Create the server client instance at the top
 const supabase = createServerSupabaseClient();

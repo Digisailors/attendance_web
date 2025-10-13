@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-  serverExternalPackages: ['xlsx'],// Optional
-  },
+  // For Next.js 15+, move serverExternalPackages OUT of experimental
+  serverExternalPackages: ["xlsx", "@supabase/supabase-js"],
 
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

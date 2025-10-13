@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabaseServer";
 import { v4 as uuidv4 } from "uuid";
 import { parseISO } from "date-fns";
 
