@@ -1,108 +1,108 @@
+// contexts/AuthContext.tsx
 "use client";
-import React, { createContext, useContext, useEffect, useState } from 'react'
-import { User } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
-import { employeeQueries } from '@/lib/queries'
-import { Database } from '@/lib/database.types'
 
-type Employee = Database['public']['Tables']['employees']['Row']
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+
+interface User {
+  id: string;
+  email: string;
+  userType: string;
+  name?: string;
+}
 
 interface AuthContextType {
-  user: User | null
-  employee: Employee | null
-  loading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: any }>
-  signOut: () => Promise<void>
-  refreshEmployee: () => Promise<void>
+  user: User | null;
+  login: (userData: User) => void;
+  logout: () => void;
+  isLoading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [employee, setEmployee] = useState<Employee | null>(null)
-  const [loading, setLoading] = useState(true)
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        loadEmployee(session.user.email!)
-      } else {
-        setLoading(false)
-      }
-    })
+    // Check if user is logged in on mount
+    const checkAuth = async () => {
+      try {
+        if (typeof window !== "undefined") {
+          const storedUser = localStorage.getItem("user");
+          if (storedUser) {
+            const userData = JSON.parse(storedUser);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await loadEmployee(session.user.email!)
-        } else {
-          setEmployee(null)
-          setLoading(false)
+            // Ensure user has an id field
+            if (!userData.id && userData.email) {
+              // If no id, fetch from API or generate from email
+              try {
+                const response = await fetch(
+                  `/api/employees/profile?email=${userData.email}`
+                );
+                if (response.ok) {
+                  const profile = await response.json();
+                  userData.id = profile.id || profile.employee_id;
+                }
+              } catch (error) {
+                console.error("Error fetching user profile:", error);
+                // Fallback: use email as id if API fails
+                userData.id = userData.email;
+              }
+            }
+
+            setUser(userData);
+
+            // Update localStorage with id if it was missing
+            if (userData.id) {
+              localStorage.setItem("user", JSON.stringify(userData));
+            }
+          }
         }
+      } catch (error) {
+        console.error("Error checking auth:", error);
+      } finally {
+        setIsLoading(false);
       }
-    )
+    };
 
-    return () => subscription.unsubscribe()
-  }, [])
+    checkAuth();
+  }, []);
 
-  const loadEmployee = async (email: string) => {
-    try {
-      const { data, error } = await employeeQueries.getEmployeeByEmail(email)
-      if (error) {
-        console.error('Error loading employee:', error)
-      } else {
-        setEmployee(data)
-      }
-    } catch (error) {
-      console.error('Error loading employee:', error)
-    } finally {
-      setLoading(false)
+  const login = (userData: User) => {
+    setUser(userData);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(userData));
     }
-  }
+  };
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    return { error }
-  }
-
-  const signOut = async () => {
-    await supabase.auth.signOut()
-  }
-
-  const refreshEmployee = async () => {
-    if (user?.email) {
-      await loadEmployee(user.email)
+  const logout = () => {
+    setUser(null);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
     }
-  }
-
-  const value = {
-    user,
-    employee,
-    loading,
-    signIn,
-    signOut,
-    refreshEmployee
-  }
+    router.push("/login");
+  };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-};
+}

@@ -15,7 +15,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from "@/components/ui/calendar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseServer";
 import { useToast } from "@/hooks/use-toast";
 
 interface User {

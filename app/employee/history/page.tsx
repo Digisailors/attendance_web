@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseServer";
 
 interface LeaveRequest {
   id: string;

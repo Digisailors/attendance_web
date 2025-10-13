@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseServer";
 
 export async function POST(request: NextRequest) {
   try {
@@ -168,7 +168,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
 
 export async function PATCH(request: NextRequest) {
   try {

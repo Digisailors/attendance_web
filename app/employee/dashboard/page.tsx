@@ -57,14 +57,19 @@ const toISTString = (date) => {
 
 // Memoized components to prevent unnecessary re-renders
 const MemoizedSidebar = memo(() => <Sidebar userType="employee" />)
+const MemoizedHeader = memo(
+  ({ displayName, userId }: { displayName: string; userId?: string }) => (
+    <Header
+      title="Employee Portal"
+      subtitle={`Welcome back, ${displayName}`}
+      userType="employee"
+      userId={displayName}
+    />
+  )
+);
 
-const MemoizedHeader = memo(({ displayName }: { displayName: string }) => (
-  <Header 
-    title="Employee Portal" 
-    subtitle={`Welcome back, ${displayName}`} 
-    userType="employee" 
-  />
-))
+
+
 
 export default function EmployeeDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date())
