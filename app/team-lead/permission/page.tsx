@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
-import { supabase } from "@/lib/supabaseServer";
+import { supabase } from "@/lib/supabase";
 
 interface User {
   id: string;

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabaseServer";
+import { createServerSupabaseClient } from "@/lib/supabase";
 
 // ✅ Moved helper functions to top level
 const getYearMonthRanges = (start: Date, end: Date) => {

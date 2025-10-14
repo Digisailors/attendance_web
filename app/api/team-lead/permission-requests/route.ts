@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabaseServer";
+import { createServerSupabaseClient } from "@/lib/supabase";
 
 const supabase = createServerSupabaseClient();
 
