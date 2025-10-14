@@ -340,10 +340,10 @@ export function Sidebar({ userType, className }: SidebarProps) {
     </Button>
   );
 
-  const renderMenuItem = (item, index) => {
+  const renderMenuItem = (item:any, index:any) => {
     if (item.type === "dropdown") {
       const isReportsActive = item.items?.some(
-        (subItem) => pathname === subItem.href
+        (subItem:any) => pathname === subItem.href
       );
 
       return (
@@ -373,7 +373,7 @@ export function Sidebar({ userType, className }: SidebarProps) {
 
           {reportsDropdownOpen && (!collapsed || window.innerWidth < 768) && (
             <div className="ml-4 space-y-1">
-              {item.items?.map((subItem, subIndex) => (
+              {item.items?.map((subItem:any, subIndex:any) => (
                 <Link key={subIndex} href={subItem.href}>
                   <Button
                     variant={pathname === subItem.href ? "default" : "ghost"}
