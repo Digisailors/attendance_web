@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import NotificationBell from "@/components/NotificationBell"; // ✅ Added import
+
 
 interface HeaderProps {
   title: string;
@@ -49,13 +49,7 @@ export function Header({ title, subtitle, userType, userId }: HeaderProps) {
            )}
          </div>
 
-         <div className="flex items-center gap-4">
-           {/* Notification Bell - Only for employees, team-leads, and managers */}
-           {userId &&
-             ["employee", "team-lead", "manager"].includes(userType) && (
-               <NotificationBell userId={userId} />
-             )}
-         </div>
+         
        </div>
      </header>
    );

@@ -134,12 +134,6 @@ export function Sidebar({ userType, className }: SidebarProps) {
               },
             ],
           },
-          {
-            icon: Home,
-            label: "Dashboard",
-            href: "/admin/settings",
-            type: "link",
-          },
         ];
       case "employee":
         return [
