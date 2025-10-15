@@ -68,7 +68,7 @@ export default function EmployeeDashboard() {
   const [user, setUser ] = useState<User | null>(null)
   const [employeeData, setEmployeeData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-
+const [loadingEmployee, setLoadingEmployee] = useState(true);
   // Helper function to get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     return new Date().toISOString().split('T')[0]
@@ -421,13 +421,26 @@ const handleCheckIn = async () => {
     }
     return 0;
   }
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gray-50">
+        
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Get display name from employee data or fallback to email
   const displayName = employeeData?.name || user?.email?.split("@")[0] || "Employee"
 
   return (
        <ProtectedRoute allowedRoles={['team-lead']}>
-<div className="flex h-screen overflow-hidden">
+          <div className="flex h-screen overflow-hidden">
          <Sidebar userType="team-lead" />
          <div className="flex-1 flex flex-col overflow-auto">
            <Header
