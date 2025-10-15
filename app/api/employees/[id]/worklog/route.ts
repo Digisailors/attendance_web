@@ -12,73 +12,46 @@ const supabase = createClient(
   }
 );
 
-// Helper function to get IST date (YYYY-MM-DD)
+// Helper function to get IST date
 const getISTDate = () => {
   const now = new Date();
   const istDate = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-  const year = istDate.getFullYear();
-  const month = String(istDate.getMonth() + 1).padStart(2, "0");
-  const day = String(istDate.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return istDate.toISOString().split("T")[0];
+};
+
+// Helper function to convert IST datetime to time string
+const getISTTimeString = (isoString: string) => {
+  const date = new Date(isoString);
+  // Ensure we're working with IST time
+  const istTime = new Date(
+    date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
+  return istTime.toTimeString().split(" ")[0]; // Format: HH:MM:SS
 };
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const employeeId = params.id;
-    const { searchParams } = new URL(request.url);
-    const requestedDate = searchParams.get("date");
-    const today = requestedDate || getISTDate();
-
-    const { data: employee, error } = await supabase
-      .from("employees")
-      .select("id")
-      .eq("employee_id", employeeId)
-      .single();
-
-    if (error || !employee) {
-      console.error("Employee not found:", error);
-      return NextResponse.json(
-        { error: "Employee not found" },
-        { status: 404 }
-      );
-    }
-
-    const { data: worklog, error: worklogError } = await supabase
-      .from("daily_work_log")
-      .select("*")
-      .eq("employee_id", employee.id)
-      .eq("date", today)
-      .single();
-
-    if (worklogError) {
-      if (worklogError.code === "PGRST116") {
-        // No worklog found for this date
-        return NextResponse.json({}, { status: 200 });
-      }
-      console.error("Error fetching worklog:", worklogError);
-      return NextResponse.json(
-        { error: worklogError.message },
-        { status: 400 }
-      );
-    }
-
-    // Return worklog as-is (PostgreSQL timestamptz will be in ISO format)
-    return NextResponse.json(worklog || {});
-  } catch (err) {
-    console.error("Error in GET request:", err);
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 }
-    );
-  }
+  const employeeId = params.id;
+  const today = getISTDate(); // Use IST date
+  const { data: employee, error } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("employee_id", employeeId)
+    .single();
+  if (error || !employee)
+    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+  const { data: worklog } = await supabase
+    .from("daily_work_log")
+    .select("*")
+    .eq("employee_id", employee.id)
+    .eq("date", today)
+    .single();
+  if (!worklog) return NextResponse.json({}, { status: 200 });
+  return NextResponse.json(worklog);
 }
 
 export async function POST(
@@ -100,16 +73,13 @@ export async function POST(
       .single();
 
     if (employeeError || !employee) {
-      console.error("Employee not found:", employeeError);
       return NextResponse.json(
         { error: "Employee not found" },
         { status: 404 }
       );
     }
 
-    const today = getISTDate();
-
-    // Check for existing entry
+    const today = getISTDate(); // Use IST date
     const { data: existingEntry, error: checkError } = await supabase
       .from("daily_work_log")
       .select("*")
@@ -117,16 +87,10 @@ export async function POST(
       .eq("date", today)
       .maybeSingle();
 
-    if (checkError) {
-      console.error("Error checking existing entry:", checkError);
-      return NextResponse.json(
-        { error: "Database error", details: checkError.message },
-        { status: 500 }
-      );
-    }
+    let workLogData;
 
-    // HANDLE CHECK-IN ONLY
     if (checkInTime && !checkOutTime) {
+      // Handle CHECK-IN ONLY
       if (existingEntry) {
         return NextResponse.json(
           { error: "Already checked in today" },
@@ -134,15 +98,16 @@ export async function POST(
         );
       }
 
-      // checkInTime comes as ISO string from frontend
-      // PostgreSQL timestamptz will automatically handle the conversion
+      // Convert IST time to time string properly
+      const checkInTimeString = getISTTimeString(checkInTime);
+
       const { data: inserted, error: insertError } = await supabase
         .from("daily_work_log")
         .insert([
           {
             employee_id: employee.id,
             date: today,
-            check_in: checkInTime, // Pass ISO string directly
+            check_in: checkInTimeString,
             status: "Present",
           },
         ])
@@ -150,14 +115,13 @@ export async function POST(
         .single();
 
       if (insertError) {
-        console.error("Insert error:", insertError);
         return NextResponse.json(
           { error: "Failed to insert check-in", details: insertError.message },
           { status: 500 }
         );
       }
 
-      // UPDATE ATTENDANCE
+      // Attendance Update
       const istNow = new Date(
         new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
       );
@@ -172,77 +136,54 @@ export async function POST(
         .eq("year", year)
         .maybeSingle();
 
-      if (attErr) {
-        console.error("Error checking attendance:", attErr);
-      }
-
       if (attendance) {
-        const { error: updateAttError } = await supabase
+        await supabase
           .from("attendance")
           .update({ working_days: attendance.working_days + 1 })
           .eq("id", attendance.id);
-
-        if (updateAttError) {
-          console.error("Error updating attendance:", updateAttError);
-        }
       } else {
-        const { error: insertAttError } = await supabase
-          .from("attendance")
-          .insert([
-            {
-              employee_id: employee.id,
-              month,
-              year,
-              total_days: 30,
-              working_days: 1,
-              permissions: 0,
-              leaves: 0,
-              missed_days: 0,
-            },
-          ]);
-
-        if (insertAttError) {
-          console.error("Error inserting attendance:", insertAttError);
-        }
+        await supabase.from("attendance").insert([
+          {
+            employee_id: employee.id,
+            month,
+            year,
+            total_days: 30,
+            working_days: 1,
+            permissions: 0,
+            leaves: 0,
+            missed_days: 0,
+          },
+        ]);
       }
 
-      console.log("Check-in successful:", inserted);
-      return NextResponse.json({
-        message: "Checked in successfully",
-        data: inserted,
-      });
+      return NextResponse.json({ message: "Checked in successfully" });
     }
 
-    // HANDLE CHECK-OUT (update existing entry)
     if (checkOutTime && workType && workDescription) {
+      // Handle CHECK-OUT and update existing entry
       if (!existingEntry) {
         return NextResponse.json(
-          { error: "Check-in entry not found. Please check in first." },
+          { error: "Check-in entry not found" },
           { status: 400 }
         );
       }
 
-      // Calculate hours worked
-      const checkInDate = new Date(checkInTime);
-      const checkOutDate = new Date(checkOutTime);
+      // Convert checkout time to IST time string
+      const checkOutTimeString = getISTTimeString(checkOutTime);
 
-      if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
-        return NextResponse.json(
-          { error: "Invalid timestamp format" },
-          { status: 400 }
-        );
-      }
+      // Create proper Date objects for hour calculation
+      const checkInDate = new Date(checkInTime); // This is already IST from frontend
+      const checkOutDate = new Date(checkOutTime); // This is already IST from frontend
 
       const hoursWorked = (
         (checkOutDate.getTime() - checkInDate.getTime()) /
         (1000 * 60 * 60)
       ).toFixed(2);
 
-      // Update the existing entry with checkout info
       const { data: updated, error: updateError } = await supabase
         .from("daily_work_log")
         .update({
-          check_out: checkOutTime, // Pass ISO string directly
+          check_out: checkOutTimeString,
           hours: parseFloat(hoursWorked),
           project: workType,
           description: workDescription,
@@ -252,30 +193,23 @@ export async function POST(
         .single();
 
       if (updateError) {
-        console.error("Update error:", updateError);
         return NextResponse.json(
           { error: "Failed to update check-out", details: updateError.message },
           { status: 500 }
         );
       }
 
-      console.log("Check-out successful:", updated);
       return NextResponse.json({
         message: "Checked out successfully",
         workLog: updated,
       });
     }
 
-    // Invalid request
     return NextResponse.json(
-      {
-        error:
-          "Invalid request body. Provide either checkInTime only, or checkInTime with checkOutTime, workType, and workDescription.",
-      },
+      { error: "Invalid request body" },
       { status: 400 }
     );
   } catch (err) {
-    console.error("Error in POST request:", err);
     return NextResponse.json(
       {
         error: "Internal server error",
