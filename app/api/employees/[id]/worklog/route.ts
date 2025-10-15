@@ -21,14 +21,15 @@ const getISTDate = () => {
   return istDate.toISOString().split("T")[0];
 };
 
-// Helper function to convert IST datetime to time string
-const getISTTimeString = (isoString: string) => {
+// Helper function to convert ISO string to IST timestamp
+const getISTTimestamp = (isoString: string) => {
   const date = new Date(isoString);
-  // Ensure we're working with IST time
-  const istTime = new Date(
+  // Create a new date object in IST
+  const istDate = new Date(
     date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-  return istTime.toTimeString().split(" ")[0]; // Format: HH:MM:SS
+  // Return as ISO string which includes timezone info
+  return istDate.toISOString();
 };
 
 export async function GET(
@@ -98,8 +99,8 @@ export async function POST(
         );
       }
 
-      // Convert IST time to time string properly
-      const checkInTimeString = getISTTimeString(checkInTime);
+      // Convert to full IST timestamp instead of just time
+      const checkInTimestamp = getISTTimestamp(checkInTime);
 
       const { data: inserted, error: insertError } = await supabase
         .from("daily_work_log")
@@ -107,7 +108,7 @@ export async function POST(
           {
             employee_id: employee.id,
             date: today,
-            check_in: checkInTimeString,
+            check_in: checkInTimestamp, // Now using full timestamp
             status: "Present",
           },
         ])
@@ -115,6 +116,7 @@ export async function POST(
         .single();
 
       if (insertError) {
+        console.error("Insert error:", insertError);
         return NextResponse.json(
           { error: "Failed to insert check-in", details: insertError.message },
           { status: 500 }
@@ -168,8 +170,8 @@ export async function POST(
         );
       }
 
-      // Convert checkout time to IST time string
-      const checkOutTimeString = getISTTimeString(checkOutTime);
+      // Convert to full IST timestamp instead of just time
+      const checkOutTimestamp = getISTTimestamp(checkOutTime);
 
       // Create proper Date objects for hour calculation
       const checkInDate = new Date(checkInTime); // This is already IST from frontend
@@ -183,7 +185,7 @@ export async function POST(
       const { data: updated, error: updateError } = await supabase
         .from("daily_work_log")
         .update({
-          check_out: checkOutTimeString,
+          check_out: checkOutTimestamp, // Now using full timestamp
           hours: parseFloat(hoursWorked),
           project: workType,
           description: workDescription,
@@ -193,6 +195,7 @@ export async function POST(
         .single();
 
       if (updateError) {
+        console.error("Update error:", updateError);
         return NextResponse.json(
           { error: "Failed to update check-out", details: updateError.message },
           { status: 500 }
@@ -210,6 +213,7 @@ export async function POST(
       { status: 400 }
     );
   } catch (err) {
+    console.error("Error:", err);
     return NextResponse.json(
       {
         error: "Internal server error",
