@@ -12,24 +12,16 @@ const supabase = createClient(
   }
 );
 
-// Helper function to get IST date
+// Helper function to get IST date (YYYY-MM-DD)
 const getISTDate = () => {
   const now = new Date();
   const istDate = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
-  return istDate.toISOString().split("T")[0];
-};
-
-// Helper function to convert ISO string to IST timestamp
-const getISTTimestamp = (isoString: string) => {
-  const date = new Date(isoString);
-  // Create a new date object in IST
-  const istDate = new Date(
-    date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-  );
-  // Return as ISO string which includes timezone info
-  return istDate.toISOString();
+  const year = istDate.getFullYear();
+  const month = String(istDate.getMonth() + 1).padStart(2, "0");
+  const day = String(istDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 export async function GET(
@@ -38,7 +30,9 @@ export async function GET(
 ) {
   try {
     const employeeId = params.id;
-    const today = getISTDate(); // Use IST date
+    const { searchParams } = new URL(request.url);
+    const requestedDate = searchParams.get("date");
+    const today = requestedDate || getISTDate();
 
     const { data: employee, error } = await supabase
       .from("employees")
@@ -63,6 +57,7 @@ export async function GET(
 
     if (worklogError) {
       if (worklogError.code === "PGRST116") {
+        // No worklog found for this date
         return NextResponse.json({}, { status: 200 });
       }
       console.error("Error fetching worklog:", worklogError);
@@ -72,6 +67,7 @@ export async function GET(
       );
     }
 
+    // Return worklog as-is (PostgreSQL timestamptz will be in ISO format)
     return NextResponse.json(worklog || {});
   } catch (err) {
     console.error("Error in GET request:", err);
@@ -111,7 +107,9 @@ export async function POST(
       );
     }
 
-    const today = getISTDate(); // Use IST date
+    const today = getISTDate();
+
+    // Check for existing entry
     const { data: existingEntry, error: checkError } = await supabase
       .from("daily_work_log")
       .select("*")
@@ -127,10 +125,8 @@ export async function POST(
       );
     }
 
-    let workLogData;
-
+    // HANDLE CHECK-IN ONLY
     if (checkInTime && !checkOutTime) {
-      // Handle CHECK-IN ONLY
       if (existingEntry) {
         return NextResponse.json(
           { error: "Already checked in today" },
@@ -138,16 +134,15 @@ export async function POST(
         );
       }
 
-      // Convert to full IST timestamp instead of just time
-      const checkInTimestamp = getISTTimestamp(checkInTime);
-
+      // checkInTime comes as ISO string from frontend
+      // PostgreSQL timestamptz will automatically handle the conversion
       const { data: inserted, error: insertError } = await supabase
         .from("daily_work_log")
         .insert([
           {
             employee_id: employee.id,
             date: today,
-            check_in: checkInTimestamp, // Now using full timestamp
+            check_in: checkInTime, // Pass ISO string directly
             status: "Present",
           },
         ])
@@ -155,13 +150,14 @@ export async function POST(
         .single();
 
       if (insertError) {
+        console.error("Insert error:", insertError);
         return NextResponse.json(
           { error: "Failed to insert check-in", details: insertError.message },
           { status: 500 }
         );
       }
 
-      // Attendance Update
+      // UPDATE ATTENDANCE
       const istNow = new Date(
         new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
       );
@@ -210,34 +206,43 @@ export async function POST(
         }
       }
 
-      return NextResponse.json({ message: "Checked in successfully" });
+      console.log("Check-in successful:", inserted);
+      return NextResponse.json({
+        message: "Checked in successfully",
+        data: inserted,
+      });
     }
 
+    // HANDLE CHECK-OUT (update existing entry)
     if (checkOutTime && workType && workDescription) {
-      // Handle CHECK-OUT and update existing entry
       if (!existingEntry) {
         return NextResponse.json(
-          { error: "Check-in entry not found" },
+          { error: "Check-in entry not found. Please check in first." },
           { status: 400 }
         );
       }
 
-      // Convert to full IST timestamp instead of just time
-      const checkOutTimestamp = getISTTimestamp(checkOutTime);
+      // Calculate hours worked
+      const checkInDate = new Date(checkInTime);
+      const checkOutDate = new Date(checkOutTime);
 
-      // Create proper Date objects for hour calculation
-      const checkInDate = new Date(checkInTime); // This is already IST from frontend
-      const checkOutDate = new Date(checkOutTime); // This is already IST from frontend
+      if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+        return NextResponse.json(
+          { error: "Invalid timestamp format" },
+          { status: 400 }
+        );
+      }
 
       const hoursWorked = (
         (checkOutDate.getTime() - checkInDate.getTime()) /
         (1000 * 60 * 60)
       ).toFixed(2);
 
+      // Update the existing entry with checkout info
       const { data: updated, error: updateError } = await supabase
         .from("daily_work_log")
         .update({
-          check_out: checkOutTimestamp, // Now using full timestamp
+          check_out: checkOutTime, // Pass ISO string directly
           hours: parseFloat(hoursWorked),
           project: workType,
           description: workDescription,
@@ -247,23 +252,30 @@ export async function POST(
         .single();
 
       if (updateError) {
+        console.error("Update error:", updateError);
         return NextResponse.json(
           { error: "Failed to update check-out", details: updateError.message },
           { status: 500 }
         );
       }
 
+      console.log("Check-out successful:", updated);
       return NextResponse.json({
         message: "Checked out successfully",
         workLog: updated,
       });
     }
 
+    // Invalid request
     return NextResponse.json(
-      { error: "Invalid request body" },
+      {
+        error:
+          "Invalid request body. Provide either checkInTime only, or checkInTime with checkOutTime, workType, and workDescription.",
+      },
       { status: 400 }
     );
   } catch (err) {
+    console.error("Error in POST request:", err);
     return NextResponse.json(
       {
         error: "Internal server error",
