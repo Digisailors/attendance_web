@@ -35,23 +35,53 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const employeeId = params.id;
-  const today = getISTDate(); // Use IST date
-  const { data: employee, error } = await supabase
-    .from("employees")
-    .select("id")
-    .eq("employee_id", employeeId)
-    .single();
-  if (error || !employee)
-    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
-  const { data: worklog } = await supabase
-    .from("daily_work_log")
-    .select("*")
-    .eq("employee_id", employee.id)
-    .eq("date", today)
-    .single();
-  if (!worklog) return NextResponse.json({}, { status: 200 });
-  return NextResponse.json(worklog);
+  try {
+    const employeeId = params.id;
+    const today = getISTDate(); // Use IST date
+
+    const { data: employee, error } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("employee_id", employeeId)
+      .single();
+
+    if (error || !employee) {
+      console.error("Employee not found:", error);
+      return NextResponse.json(
+        { error: "Employee not found" },
+        { status: 404 }
+      );
+    }
+
+    const { data: worklog, error: worklogError } = await supabase
+      .from("daily_work_log")
+      .select("*")
+      .eq("employee_id", employee.id)
+      .eq("date", today)
+      .single();
+
+    if (worklogError) {
+      if (worklogError.code === "PGRST116") {
+        return NextResponse.json({}, { status: 200 });
+      }
+      console.error("Error fetching worklog:", worklogError);
+      return NextResponse.json(
+        { error: worklogError.message },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(worklog || {});
+  } catch (err) {
+    console.error("Error in GET request:", err);
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(
@@ -73,6 +103,7 @@ export async function POST(
       .single();
 
     if (employeeError || !employee) {
+      console.error("Employee not found:", employeeError);
       return NextResponse.json(
         { error: "Employee not found" },
         { status: 404 }
@@ -86,6 +117,14 @@ export async function POST(
       .eq("employee_id", employee.id)
       .eq("date", today)
       .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing entry:", checkError);
+      return NextResponse.json(
+        { error: "Database error", details: checkError.message },
+        { status: 500 }
+      );
+    }
 
     let workLogData;
 
@@ -115,6 +154,7 @@ export async function POST(
         .single();
 
       if (insertError) {
+        console.error("Failed to insert check-in:", insertError);
         return NextResponse.json(
           { error: "Failed to insert check-in", details: insertError.message },
           { status: 500 }
@@ -136,24 +176,38 @@ export async function POST(
         .eq("year", year)
         .maybeSingle();
 
+      if (attErr) {
+        console.error("Error checking attendance:", attErr);
+      }
+
       if (attendance) {
-        await supabase
+        const { error: updateAttError } = await supabase
           .from("attendance")
           .update({ working_days: attendance.working_days + 1 })
           .eq("id", attendance.id);
+
+        if (updateAttError) {
+          console.error("Error updating attendance:", updateAttError);
+        }
       } else {
-        await supabase.from("attendance").insert([
-          {
-            employee_id: employee.id,
-            month,
-            year,
-            total_days: 30,
-            working_days: 1,
-            permissions: 0,
-            leaves: 0,
-            missed_days: 0,
-          },
-        ]);
+        const { error: insertAttError } = await supabase
+          .from("attendance")
+          .insert([
+            {
+              employee_id: employee.id,
+              month,
+              year,
+              total_days: 30,
+              working_days: 1,
+              permissions: 0,
+              leaves: 0,
+              missed_days: 0,
+            },
+          ]);
+
+        if (insertAttError) {
+          console.error("Error inserting attendance:", insertAttError);
+        }
       }
 
       return NextResponse.json({ message: "Checked in successfully" });
@@ -193,6 +247,7 @@ export async function POST(
         .single();
 
       if (updateError) {
+        console.error("Failed to update check-out:", updateError);
         return NextResponse.json(
           { error: "Failed to update check-out", details: updateError.message },
           { status: 500 }
@@ -210,6 +265,7 @@ export async function POST(
       { status: 400 }
     );
   } catch (err) {
+    console.error("Error in POST request:", err);
     return NextResponse.json(
       {
         error: "Internal server error",
