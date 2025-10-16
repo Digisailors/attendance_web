@@ -12,16 +12,32 @@ const supabase = createClient(
   }
 );
 
-// Helper function to get IST date
-const getISTDate = () => {
-  const now = new Date();
-  const istDate = new Date(
-    now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-  );
-  return istDate.toISOString().split("T")[0];
+// Fetch server time in IST
+const fetchServerTime = async () => {
+  try {
+    const response = await fetch(
+      `${
+        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+      }/api/server-time`
+    );
+    if (!response.ok) throw new Error("Failed to fetch server time");
+    const data = await response.json();
+    return new Date(data.time);
+  } catch (error) {
+    console.error("Error fetching server time:", error);
+    // Fallback to local time converted to IST
+    const now = new Date();
+    return new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  }
 };
 
-// Helper function to convert IST datetime to time string
+// Helper function to get IST date from server time
+const getISTDate = async () => {
+  const istTime = await fetchServerTime();
+  return istTime.toISOString().split("T")[0];
+};
+
+// Helper function to convert ISO datetime to time string (HH:MM:SS)
 const getISTTimeString = (isoString: string) => {
   const date = new Date(isoString);
   // Ensure we're working with IST time
@@ -36,21 +52,26 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const employeeId = params.id;
-  const today = getISTDate(); // Use IST date
+  const today = await getISTDate(); // Use server time for IST date
+
   const { data: employee, error } = await supabase
     .from("employees")
     .select("id")
     .eq("employee_id", employeeId)
     .single();
+
   if (error || !employee)
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+
   const { data: worklog } = await supabase
     .from("daily_work_log")
     .select("*")
     .eq("employee_id", employee.id)
     .eq("date", today)
     .single();
+
   if (!worklog) return NextResponse.json({}, { status: 200 });
+
   return NextResponse.json(worklog);
 }
 
@@ -79,15 +100,14 @@ export async function POST(
       );
     }
 
-    const today = getISTDate(); // Use IST date
+    const today = await getISTDate(); // Use server time for IST date
+
     const { data: existingEntry, error: checkError } = await supabase
       .from("daily_work_log")
       .select("*")
       .eq("employee_id", employee.id)
       .eq("date", today)
       .maybeSingle();
-
-    let workLogData;
 
     if (checkInTime && !checkOutTime) {
       // Handle CHECK-IN ONLY
@@ -98,7 +118,7 @@ export async function POST(
         );
       }
 
-      // Convert IST time to time string properly
+      // Convert ISO string to time string (HH:MM:SS)
       const checkInTimeString = getISTTimeString(checkInTime);
 
       const { data: inserted, error: insertError } = await supabase
@@ -121,10 +141,8 @@ export async function POST(
         );
       }
 
-      // Attendance Update
-      const istNow = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-      );
+      // Attendance Update using server time
+      const istNow = await fetchServerTime();
       const month = istNow.getMonth() + 1;
       const year = istNow.getFullYear();
 
@@ -156,7 +174,10 @@ export async function POST(
         ]);
       }
 
-      return NextResponse.json({ message: "Checked in successfully" });
+      return NextResponse.json({
+        message: "Checked in successfully",
+        data: inserted,
+      });
     }
 
     if (checkOutTime && workType && workDescription) {
@@ -171,9 +192,9 @@ export async function POST(
       // Convert checkout time to IST time string
       const checkOutTimeString = getISTTimeString(checkOutTime);
 
-      // Create proper Date objects for hour calculation
-      const checkInDate = new Date(checkInTime); // This is already IST from frontend
-      const checkOutDate = new Date(checkOutTime); // This is already IST from frontend
+      // Calculate hours worked using the ISO strings
+      const checkInDate = new Date(checkInTime);
+      const checkOutDate = new Date(checkOutTime);
 
       const hoursWorked = (
         (checkOutDate.getTime() - checkInDate.getTime()) /
