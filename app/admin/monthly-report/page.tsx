@@ -54,6 +54,7 @@ import {
   UserX,
   Download,
   X,
+  CalendarRange,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import Link from "next/link";
@@ -186,6 +187,11 @@ export default function MonthlyReports() {
     hasPreviousPage: false,
   });
   const [exportLoading, setExportLoading] = useState(false);
+
+  // Date range filter state
+  const [useDateRange, setUseDateRange] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   // Fetch employees list
   const fetchEmployees = useCallback(
@@ -371,181 +377,229 @@ export default function MonthlyReports() {
     }
   };
 
+  // Helper function to filter work logs by date range
+  const filterWorkLogsByDateRange = (
+    workLogs: DailyWorkLog[]
+  ): DailyWorkLog[] => {
+    if (!useDateRange || !startDate || !endDate) {
+      return workLogs;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    return workLogs.filter((log) => {
+      try {
+        const parts = log.date.split(",");
+        if (parts.length < 2) return false;
+        const monthDay = parts[1].trim();
+        const fullDateStr = `${monthDay} ${selectedYear}`;
+        const logDate = new Date(fullDateStr);
+
+        if (isNaN(logDate.getTime())) return false;
+
+        return logDate >= start && logDate <= end;
+      } catch {
+        return false;
+      }
+    });
+  };
+
   // Fetch monthly data for selected employees with overtime, leaves, and permissions
-   const fetchMonthlyData = async (
-     employeeIds: string[]
-   ): Promise<EmployeeMonthlyData[]> => {
-     const results: EmployeeMonthlyData[] = [];
+  const fetchMonthlyData = async (
+    employeeIds: string[]
+  ): Promise<EmployeeMonthlyData[]> => {
+    const results: EmployeeMonthlyData[] = [];
 
-     for (const employeeId of employeeIds) {
-       try {
-         // Fetch employee work log data
-         const response = await fetch(
-           `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
-           { method: "GET", headers: { "Content-Type": "application/json" } }
-         );
+    for (const employeeId of employeeIds) {
+      try {
+        // Fetch employee work log data
+        const response = await fetch(
+          `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
+          { method: "GET", headers: { "Content-Type": "application/json" } }
+        );
 
-         if (!response.ok) continue;
+        if (!response.ok) continue;
 
-         const data = await response.json();
+        const data = await response.json();
 
-         // Fetch overtime data
-         const overtimeResponse = await fetch(
-           `/api/overtime-summary?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-           { method: "GET", headers: { "Content-Type": "application/json" } }
-         );
-         const overtimeData = overtimeResponse.ok
-           ? await overtimeResponse.json()
-           : { records: [], total_hours: 0 };
+        // Fetch overtime data
+        const overtimeResponse = await fetch(
+          `/api/overtime-summary?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
+          { method: "GET", headers: { "Content-Type": "application/json" } }
+        );
+        const overtimeData = overtimeResponse.ok
+          ? await overtimeResponse.json()
+          : { records: [], total_hours: 0 };
 
-         // Fetch leave requests
-         const leaveResponse = await fetch(
-           `/api/leave-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-           { method: "GET", headers: { "Content-Type": "application/json" } }
-         );
-         const leaveData = leaveResponse.ok
-           ? await leaveResponse.json()
-           : { data: [] };
+        // Fetch leave requests
+        const leaveResponse = await fetch(
+          `/api/leave-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
+          { method: "GET", headers: { "Content-Type": "application/json" } }
+        );
+        const leaveData = leaveResponse.ok
+          ? await leaveResponse.json()
+          : { data: [] };
 
-         // Fetch permission requests
-         const permissionResponse = await fetch(
-           `/api/permission-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-           { method: "GET", headers: { "Content-Type": "application/json" } }
-         );
-         const permissionData = permissionResponse.ok
-           ? await permissionResponse.json()
-           : { data: [] };
+        // Fetch permission requests
+        const permissionResponse = await fetch(
+          `/api/permission-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
+          { method: "GET", headers: { "Content-Type": "application/json" } }
+        );
+        const permissionData = permissionResponse.ok
+          ? await permissionResponse.json()
+          : { data: [] };
 
-         // Helper function to check if a date is Sunday
-         const isSunday = (dateStr: string): boolean => {
-           try {
-             const parts = dateStr.split(",");
-             if (parts.length < 2) return false;
-             const monthDay = parts[1].trim();
-             const fullDateStr = `${monthDay} ${selectedYear}`;
-             const date = new Date(fullDateStr);
-             if (isNaN(date.getTime())) return false;
-             return date.getDay() === 0;
-           } catch (error) {
-             return false;
-           }
-         };
-const isLate = (checkInTime: string): boolean => {
-  if (!checkInTime || checkInTime === "-") return false;
-  try {
-    const [hours, minutes] = checkInTime.split(":").map(Number);
-    if (hours > 9) return true;
-    if (hours === 9 && minutes > 1) return true;
-    return false;
-  } catch {
-    return false;
-  }
-};
+        // Helper function to check if a date is Sunday
+        const isSunday = (dateStr: string): boolean => {
+          try {
+            const parts = dateStr.split(",");
+            if (parts.length < 2) return false;
+            const monthDay = parts[1].trim();
+            const fullDateStr = `${monthDay} ${selectedYear}`;
+            const date = new Date(fullDateStr);
+            if (isNaN(date.getTime())) return false;
+            return date.getDay() === 0;
+          } catch (error) {
+            return false;
+          }
+        };
 
-         // Merge overtime data into daily work log
-           const overtimeRecords = overtimeData.records || [];
-           const dailyWorkLogWithOT = data.dailyWorkLog.map(
-             (log: DailyWorkLog) => {
-               const otRecord = overtimeRecords.find((ot: any) => {
-                 const logDateStr = log.date.split(",")[1]?.trim();
-                 const otDateObj = new Date(ot.ot_date);
-                 const otDateStr = `${otDateObj.toLocaleString("en", {
-                   month: "short",
-                 })} ${String(otDateObj.getDate()).padStart(2, "0")}`;
-                 return logDateStr === otDateStr;
-               });
+        const isLate = (checkInTime: string): boolean => {
+          if (!checkInTime || checkInTime === "-") return false;
+          try {
+            const [hours, minutes] = checkInTime.split(":").map(Number);
+            if (hours > 9) return true;
+            if (hours === 9 && minutes > 1) return true;
+            return false;
+          } catch {
+            return false;
+          }
+        };
 
-               // Determine actual status
-               let actualStatus = log.status;
-               if (
-                 !log.checkIn ||
-                 log.checkIn === "-" ||
-                 !log.checkOut ||
-                 log.checkOut === "-"
-               ) {
-                 actualStatus = "Absent";
-               } else if (log.status === "Present" && isLate(log.checkIn)) {
-                 actualStatus = "Late";
-               }
+        // Merge overtime data into daily work log
+        const overtimeRecords = overtimeData.records || [];
+        const dailyWorkLogWithOT = data.dailyWorkLog.map(
+          (log: DailyWorkLog) => {
+            const otRecord = overtimeRecords.find((ot: any) => {
+              const logDateStr = log.date.split(",")[1]?.trim();
+              const otDateObj = new Date(ot.ot_date);
+              const otDateStr = `${otDateObj.toLocaleString("en", {
+                month: "short",
+              })} ${String(otDateObj.getDate()).padStart(2, "0")}`;
+              return logDateStr === otDateStr;
+            });
 
-               return {
-                 ...log,
-                 status: actualStatus,
-                 otHours: otRecord
-                   ? otRecord.total_hours.toString()
-                   : log.otHours || "0",
-               };
-             }
-           );
+            // Determine actual status
+            let actualStatus = log.status;
+            if (
+              !log.checkIn ||
+              log.checkIn === "-" ||
+              !log.checkOut ||
+              log.checkOut === "-"
+            ) {
+              actualStatus = "Absent";
+            } else if (log.status === "Present" && isLate(log.checkIn)) {
+              actualStatus = "Late";
+            }
 
-         const totalHours = dailyWorkLogWithOT.reduce(
-           (sum: number, log: DailyWorkLog) => {
-             return (
-               sum +
-               (parseFloat(log.hours) || 0) +
-               (parseFloat(log.otHours || "0") || 0)
-             );
-           },
-           0
-         );
-const overtimeHours = overtimeData.total_hours || 0;
+            return {
+              ...log,
+              status: actualStatus,
+              otHours: otRecord
+                ? otRecord.total_hours.toString()
+                : log.otHours || "0",
+            };
+          }
+        );
 
-const workingDays = dailyWorkLogWithOT.filter(
-  (log: DailyWorkLog) => log.status === "Present" || log.status === "Late"
-).length;
-const permissions =
-  permissionData.data?.filter((p: any) => p.status === "Approved")?.length || 0;
-const leaves =
-  leaveData.data?.filter((l: any) => l.status === "Approved")?.length || 0;
+        // Filter work logs by date range if enabled
+        const filteredWorkLog = filterWorkLogsByDateRange(dailyWorkLogWithOT);
 
-const lateDays = dailyWorkLogWithOT.filter(
-  (log: DailyWorkLog) => log.status === "Late"
-).length;
+        const totalHours = filteredWorkLog.reduce(
+          (sum: number, log: DailyWorkLog) => {
+            return (
+              sum +
+              (parseFloat(log.hours) || 0) +
+              (parseFloat(log.otHours || "0") || 0)
+            );
+          },
+          0
+        );
 
-const missedDays = dailyWorkLogWithOT.filter(
-  (log: DailyWorkLog) => log.status === "Absent" && !isSunday(log.date)
-).length;
+        const overtimeHours = filteredWorkLog.reduce(
+          (sum: number, log: DailyWorkLog) =>
+            sum + (parseFloat(log.otHours || "0") || 0),
+          0
+        );
 
-         // Sort logs by date ascending (1 -> 30)
-         const sortedWorkLog = [...dailyWorkLogWithOT].sort(
-           (a: DailyWorkLog, b: DailyWorkLog) => {
-             // Parse date strings like "Mon, Sep 02"
-             const parseDate = (dateStr: string) => {
-               const parts = dateStr.split(",");
-               if (parts.length < 2) return new Date(0);
-               const monthDay = parts[1].trim(); // "Sep 02"
-               return new Date(`${monthDay} ${selectedYear}`);
-             };
+        const workingDays = filteredWorkLog.filter(
+          (log: DailyWorkLog) =>
+            log.status === "Present" || log.status === "Late"
+        ).length;
 
-             const dateA = parseDate(a.date);
-             const dateB = parseDate(b.date);
-             return dateA.getTime() - dateB.getTime();
-           }
-         );
+        const permissions =
+          permissionData.data?.filter((p: any) => p.status === "Approved")
+            ?.length || 0;
+        const leaves =
+          leaveData.data?.filter((l: any) => l.status === "Approved")?.length ||
+          0;
 
-         results.push({
-           employee: data.employee,
-           dailyWorkLog: sortedWorkLog,
-           summary: {
-             totalDays: sortedWorkLog?.length || 0,
-             workingDays,
-             permissions,
-             leaves,
-             missedDays,
-             totalHours,
-             overtimeHours,
-           },
-         });
-       } catch (error) {
-         console.error(
-           `Error fetching data for employee ${employeeId}:`,
-           error
-         );
-       }
-     }
+        const lateDays = filteredWorkLog.filter(
+          (log: DailyWorkLog) => log.status === "Late"
+        ).length;
 
-     return results;
-   };
+        const missedDays = filteredWorkLog.filter(
+          (log: DailyWorkLog) => log.status === "Absent" && !isSunday(log.date)
+        ).length;
+
+        // Sort logs by date ascending (1 -> 30)
+        const sortedWorkLog = [...filteredWorkLog].sort(
+          (a: DailyWorkLog, b: DailyWorkLog) => {
+            // Parse date strings like "Mon, Sep 02"
+            const parseDate = (dateStr: string) => {
+              const parts = dateStr.split(",");
+              if (parts.length < 2) return new Date(0);
+              const monthDay = parts[1].trim(); // "Sep 02"
+              return new Date(`${monthDay} ${selectedYear}`);
+            };
+
+            const dateA = parseDate(a.date);
+            const dateB = parseDate(b.date);
+            return dateA.getTime() - dateB.getTime();
+          }
+        );
+
+        results.push({
+          employee: data.employee,
+          dailyWorkLog: sortedWorkLog,
+          summary: {
+            totalDays: sortedWorkLog?.length || 0,
+            workingDays,
+            permissions,
+            leaves,
+            missedDays,
+            totalHours,
+            overtimeHours,
+          },
+        });
+      } catch (error) {
+        console.error(`Error fetching data for employee ${employeeId}:`, error);
+      }
+    }
+
+    return results;
+  };
+
+  // Get date range string for report title
+  const getDateRangeString = (): string => {
+    if (useDateRange && startDate && endDate) {
+      return `${new Date(startDate).toLocaleDateString()} to ${new Date(
+        endDate
+      ).toLocaleDateString()}`;
+    }
+    return `${getMonthName(selectedMonth)} ${selectedYear}`;
+  };
 
   // Export to PDF
   const exportToPDF = async () => {
@@ -555,6 +609,11 @@ const missedDays = dailyWorkLogWithOT.filter(
 
       if (employeeIds.length === 0) {
         alert("Please select at least one employee");
+        return;
+      }
+
+      if (useDateRange && (!startDate || !endDate)) {
+        alert("Please select both start and end dates");
         return;
       }
 
@@ -575,11 +634,7 @@ const missedDays = dailyWorkLogWithOT.filter(
       yPosition += 10;
 
       doc.setFontSize(12);
-      doc.text(
-        `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
-        14,
-        yPosition
-      );
+      doc.text(`Period: ${getDateRangeString()}`, 14, yPosition);
       yPosition += 5;
       doc.text(
         `Report Generated: ${new Date().toLocaleDateString()}`,
@@ -622,9 +677,9 @@ const missedDays = dailyWorkLogWithOT.filter(
         margin: { left: 14, right: 14 },
       });
 
-      const summaryFileName = `monthly-summary-${getMonthName(
-        selectedMonth
-      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+      const summaryFileName = `monthly-summary-${
+        useDateRange ? "custom-range" : getMonthName(selectedMonth)
+      }-${selectedYear}-${employeeIds.length}employees.pdf`;
       doc.save(summaryFileName);
 
       // Detailed Report
@@ -640,11 +695,7 @@ const missedDays = dailyWorkLogWithOT.filter(
       yPosition += 10;
 
       detailDoc.setFontSize(12);
-      detailDoc.text(
-        `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
-        14,
-        yPosition
-      );
+      detailDoc.text(`Period: ${getDateRangeString()}`, 14, yPosition);
       yPosition += 5;
       detailDoc.text(
         `Report Generated: ${new Date().toLocaleDateString()}`,
@@ -806,9 +857,9 @@ const missedDays = dailyWorkLogWithOT.filter(
         );
       }
 
-      const detailFileName = `monthly-detailed-${getMonthName(
-        selectedMonth
-      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+      const detailFileName = `monthly-detailed-${
+        useDateRange ? "custom-range" : getMonthName(selectedMonth)
+      }-${selectedYear}-${employeeIds.length}employees.pdf`;
       detailDoc.save(detailFileName);
 
       alert(
@@ -833,6 +884,11 @@ const missedDays = dailyWorkLogWithOT.filter(
         return;
       }
 
+      if (useDateRange && (!startDate || !endDate)) {
+        alert("Please select both start and end dates");
+        return;
+      }
+
       const monthlyData = await fetchMonthlyData(employeeIds);
 
       if (monthlyData.length === 0) {
@@ -844,7 +900,7 @@ const missedDays = dailyWorkLogWithOT.filter(
 
       const summaryData = [
         ["Monthly Employee Report Summary"],
-        [`Month: ${getMonthName(selectedMonth)} ${selectedYear}`],
+        [`Period: ${getDateRangeString()}`],
         [`Generated: ${new Date().toLocaleDateString()}`],
         [`Total Employees: ${monthlyData.length}`],
         [""],
@@ -889,12 +945,10 @@ const missedDays = dailyWorkLogWithOT.filter(
 
       XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
-     
-      
       monthlyData.forEach((employeeData, index) => {
         const employeeSheet = [
           [`${employeeData.employee.name} - Work Log`],
-          [`Month: ${getMonthName(selectedMonth)} ${selectedYear}`],
+          [`Period: ${getDateRangeString()}`],
           [`Designation: ${employeeData.employee.designation}`],
           [`Work Mode: ${employeeData.employee.workMode}`],
           [""],
@@ -909,7 +963,7 @@ const missedDays = dailyWorkLogWithOT.filter(
             `OT Hours: ${employeeData.summary.overtimeHours.toFixed(1)}`,
             `Leaves: ${employeeData.summary.leaves}`,
             `Permissions: ${employeeData.summary.permissions}`,
-            `Late: ${employeeData.summary.lateDays}`,
+            `Missed: ${employeeData.summary.missedDays}`,
           ],
           [""],
           [
@@ -947,9 +1001,9 @@ const missedDays = dailyWorkLogWithOT.filter(
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       });
 
-      const fileName = `monthly-report-${getMonthName(
-        selectedMonth
-      )}-${selectedYear}-${employeeIds.length}employees.xlsx`;
+      const fileName = `monthly-report-${
+        useDateRange ? "custom-range" : getMonthName(selectedMonth)
+      }-${selectedYear}-${employeeIds.length}employees.xlsx`;
       XLSX.writeFile(wb, fileName);
 
       alert(`Excel report generated: ${fileName}`);
@@ -1089,6 +1143,87 @@ const missedDays = dailyWorkLogWithOT.filter(
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Date Range Filter */}
+                  <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <CalendarRange className="w-5 h-5 text-purple-600" />
+                        <h3 className="font-semibold text-purple-800">
+                          Date Range Filter (Optional)
+                        </h3>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="useDateRange"
+                          checked={useDateRange}
+                          onCheckedChange={(checked) =>
+                            setUseDateRange(checked as boolean)
+                          }
+                        />
+                        <Label
+                          htmlFor="useDateRange"
+                          className="text-sm font-medium"
+                        >
+                          Enable Custom Date Range
+                        </Label>
+                      </div>
+                    </div>
+                    {useDateRange && (
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-1">
+                          <Label
+                            htmlFor="startDate"
+                            className="text-sm text-gray-700 mb-1 block"
+                          >
+                            Start Date
+                          </Label>
+                          <Input
+                            id="startDate"
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Label
+                            htmlFor="endDate"
+                            className="text-sm text-gray-700 mb-1 block"
+                          >
+                            End Date
+                          </Label>
+                          <Input
+                            id="endDate"
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full"
+                          />
+                        </div>
+                        {startDate && endDate && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setStartDate("");
+                              setEndDate("");
+                            }}
+                            className="mt-6"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {useDateRange && startDate && endDate && (
+                      <p className="text-sm text-purple-600 mt-2">
+                        Reports will be generated for:{" "}
+                        {new Date(startDate).toLocaleDateString()} to{" "}
+                        {new Date(endDate).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <h3 className="font-semibold text-blue-800 mb-3">
                       Employee Selection
