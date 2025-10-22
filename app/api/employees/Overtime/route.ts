@@ -1,21 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 // Supabase setup
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-// Validation schema
-const schema = z.object({
-  employee_id: z.string(), // Now accepts UUID directly
-  ot_date: z.string(),
-  start_time: z.string(),
-  end_time: z.string(),
-  reason: z.string(),
-});
 
 // Helper function to check if string is a valid UUID
 const isValidUUID = (uuid: string): boolean => {
@@ -24,68 +14,67 @@ const isValidUUID = (uuid: string): boolean => {
   );
 };
 
+// Helper to format datetime to time
+const formatToTime = (datetimeStr: string) => {
+  const date = new Date(datetimeStr);
+  return date.toTimeString().split(" ")[0]; // "HH:MM:SS"
+};
+
+// Helper to upload image
+const uploadImage = async (file: File | null, ot_id: string, label: string) => {
+  if (!file) return null;
+
+  const maxSize = 50 * 1024 * 1024; // 50MB
+  if (file.size > maxSize) {
+    throw new Error(
+      `${label} upload failed: File too large. Max size is 50MB.`
+    );
+  }
+
+  const ext = file.name.split(".").pop();
+  const path = `ot/${ot_id}_${label}.${ext}`;
+
+  console.log(`📤 Uploading ${label}:`, file.name, file.size, "bytes");
+
+  const { error: uploadError } = await supabase.storage
+    .from("ot-images")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type,
+    });
+
+  if (uploadError)
+    throw new Error(`${label} upload failed: ${uploadError.message}`);
+
+  const { data: publicUrlData } = supabase.storage
+    .from("ot-images")
+    .getPublicUrl(path);
+
+  return publicUrlData?.publicUrl ?? null;
+};
+
+// POST - STEP 1: Start OT (creates initial record immediately)
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const body = await req.json();
+    const { employee_id, ot_date, start_time, action } = body;
 
-    // Files
-    const image1File = formData.get("image1");
-    const image2File = formData.get("image2");
-    const image1 = image1File instanceof File ? image1File : null;
-    const image2 = image2File instanceof File ? image2File : null;
+    console.log("📥 POST Request - Starting OT immediately");
+    console.log("Received data:", { employee_id, ot_date, start_time, action });
 
-    // Payload
-    const payload = {
-      employee_id: formData.get("employee_id") as string,
-      ot_date: formData.get("ot_date") as string,
-      start_time: formData.get("start_time") as string,
-      end_time: formData.get("end_time") as string,
-      reason: formData.get("reason") as string,
-    };
-
-    console.log("📥 Received payload:", payload);
-
-    // Validate
-    const parsed = schema.safeParse(payload);
-    if (!parsed.success) {
+    // Validate required fields for OT start
+    if (!employee_id || !ot_date || !start_time) {
       return NextResponse.json(
-        { error: "Validation error", details: parsed.error.errors },
+        { error: "Missing required fields: employee_id, ot_date, start_time" },
         { status: 400 }
       );
     }
 
-    const { employee_id, ot_date, reason } = parsed.data;
     let employee_uuid = employee_id;
 
-    // 🔑 Check if employee_id is already a UUID or if it's an employee code
-    if (isValidUUID(employee_id)) {
-      console.log("✅ Employee ID is already a UUID:", employee_id);
-      // Verify the UUID exists in the employees table
-      const { data: emp, error: empError } = await supabase
-        .from("employees")
-        .select("id, employee_id, name")
-        .eq("id", employee_id)
-        .single();
-
-      if (empError || !emp) {
-        console.log(
-          "❌ Employee UUID not found in database:",
-          empError?.message
-        );
-        return NextResponse.json(
-          {
-            error: "Employee not found with provided UUID",
-            details: empError?.message,
-          },
-          { status: 404 }
-        );
-      }
-
-      employee_uuid = emp.id;
-      console.log("✅ Found employee:", emp.name, emp.employee_id);
-    } else {
-      console.log("🔄 Employee ID is a code, converting to UUID:", employee_id);
-      // Convert employee_code (like NE075) to UUID
+    // Convert employee code to UUID if needed (supports both UUID and employee_id formats)
+    if (!isValidUUID(employee_id)) {
       const { data: emp, error: empError } = await supabase
         .from("employees")
         .select("id, employee_id, name")
@@ -93,12 +82,8 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (empError || !emp) {
-        console.log("❌ Employee code not found:", empError?.message);
         return NextResponse.json(
-          {
-            error: "Employee not found with provided code",
-            details: empError?.message,
-          },
+          { error: "Employee not found", details: empError?.message },
           { status: 404 }
         );
       }
@@ -106,98 +91,68 @@ export async function POST(req: NextRequest) {
       employee_uuid = emp.id;
       console.log(
         "✅ Converted employee code to UUID:",
-        emp.employee_id,
+        employee_id,
         "->",
         emp.id
       );
     }
 
-    const formatToTime = (datetimeStr: string) => {
-      const date = new Date(datetimeStr);
-      return date.toTimeString().split(" ")[0]; // "HH:MM:SS"
-    };
+    // Check if there's already an active OT session for this employee today
+    const { data: existingOT } = await supabase
+      .from("overtime_requests")
+      .select("id, start_time, end_time")
+      .eq("employee_id", employee_uuid)
+      .eq("ot_date", ot_date)
+      .maybeSingle();
 
-    const start_time = formatToTime(payload.start_time);
-    const end_time = formatToTime(payload.end_time);
+    // If active OT exists (end_time is still placeholder), return it
+    if (existingOT && existingOT.end_time === "23:59:59") {
+      console.log("⚠️ Active OT session already exists:", existingOT.id);
+      return NextResponse.json({
+        success: true,
+        ot_id: existingOT.id,
+        message: "Active OT session already exists - resuming",
+        existing: true,
+      });
+    }
 
     const ot_id = uuidv4();
+    const formatted_start_time = formatToTime(start_time);
 
-    // Helper to upload image
-    // Helper to upload image
-    const uploadImage = async (file: File | null, label: string) => {
-      if (!file) return null;
-
-      // 🚨 Check file size (Supabase default = 50 MB)
-      const maxSize = 50 * 1024 * 1024; // 50MB
-      if (file.size > maxSize) {
-        throw new Error(
-          `${label} upload failed: File too large. Max size is 50MB.`
-        );
-      }
-
-      const ext = file.name.split(".").pop();
-      const path = `ot/${ot_id}_${label}.${ext}`;
-
-      console.log(`📤 Uploading ${label}:`, file.name, file.size, "bytes");
-
-      const { error: uploadError } = await supabase.storage
-        .from("ot-images")
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type,
-        });
-
-      if (uploadError)
-        throw new Error(`${label} upload failed: ${uploadError.message}`);
-
-      const { data: publicUrlData } = supabase.storage
-        .from("ot-images")
-        .getPublicUrl(path);
-
-      return publicUrlData?.publicUrl ?? null;
-    };
-
-    // Upload both images
-    const image1_url = await uploadImage(image1, "img1");
-    const image2_url = await uploadImage(image2, "img2");
-
-    // Insert into overtime_requests table
+    // 🎯 CREATE INITIAL OT RECORD IMMEDIATELY WITH START TIME
     const overtimeData = {
       id: ot_id,
       employee_id: employee_uuid,
       ot_date,
-      start_time,
-      end_time,
-      reason,
-      image1: image1_url,
-      image2: image2_url,
-      created_at: new Date().toISOString(),
+      start_time: formatted_start_time,
+      end_time: formatted_start_time, // Set same as start_time initially
+      reason: "OT in progress - work details pending", // Placeholder
       status: "pending",
+      is_active: true, // Mark as active session
+      created_at: new Date().toISOString(),
     };
 
-    console.log("💾 Inserting overtime request:", overtimeData);
+    console.log("💾 SAVING OT START TO DATABASE:", overtimeData);
 
     const { error: insertError } = await supabase
       .from("overtime_requests")
       .insert([overtimeData]);
 
     if (insertError) {
-      console.log("❌ Insert failed:", insertError.message);
+      console.log("❌ Database insert failed:", insertError.message);
       return NextResponse.json(
-        { error: "Failed to insert OT request", details: insertError.message },
+        { error: "Failed to create OT session", details: insertError.message },
         { status: 500 }
       );
     }
 
-    console.log("✅ OT request created successfully:", ot_id);
+    console.log("✅ OT START SAVED TO DATABASE - ID:", ot_id);
 
     return NextResponse.json({
       success: true,
       ot_id,
       employee_uuid,
-      image1_url,
-      image2_url,
+      message: "OT started and saved to database",
     });
   } catch (err: any) {
     console.error("❌ Unexpected error:", err.message);
@@ -208,18 +163,212 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// PUT - STEP 2: Submit work details (updates reason and images)
+export async function PUT(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+
+    const ot_id = formData.get("ot_id") as string;
+    const work_type = formData.get("work_type") as string;
+    const work_description = formData.get("work_description") as string;
+
+    console.log("📥 PUT Request - Submitting work for OT:", ot_id);
+
+    if (!ot_id || !work_type || !work_description) {
+      return NextResponse.json(
+        {
+          error: "Missing required fields: ot_id, work_type, work_description",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Verify OT session exists
+    const { data: otSession, error: otError } = await supabase
+      .from("overtime_requests")
+      .select("id, employee_id, end_time")
+      .eq("id", ot_id)
+      .single();
+
+    if (otError || !otSession) {
+      return NextResponse.json(
+        { error: "OT session not found", details: otError?.message },
+        { status: 404 }
+      );
+    }
+
+    // Upload images
+    const image1File = formData.get("image1");
+    const image2File = formData.get("image2");
+    const image1 = image1File instanceof File ? image1File : null;
+    const image2 = image2File instanceof File ? image2File : null;
+
+    const image1_url = await uploadImage(image1, ot_id, "img1");
+    const image2_url = await uploadImage(image2, ot_id, "img2");
+
+    // Update OT record with work details
+    const updateData: any = {
+      reason: `${work_type}: ${work_description}`,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (image1_url) updateData.image1 = image1_url;
+    if (image2_url) updateData.image2 = image2_url;
+
+    const { error: updateError } = await supabase
+      .from("overtime_requests")
+      .update(updateData)
+      .eq("id", ot_id);
+
+    if (updateError) {
+      console.log("❌ Update failed:", updateError.message);
+      return NextResponse.json(
+        { error: "Failed to submit work", details: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    console.log("✅ Work submitted successfully for OT:", ot_id);
+
+    return NextResponse.json({
+      success: true,
+      ot_id,
+      image1_url,
+      image2_url,
+      message: "Work submitted successfully",
+    });
+  } catch (err: any) {
+    console.error("❌ Unexpected error:", err.message);
+    return NextResponse.json(
+      { error: "Unexpected server error", details: err.message },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH - STEP 3: End OT (updates end_time)
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { ot_id, end_time, action } = body;
+
+    console.log("📥 PATCH Request - Ending OT:", ot_id);
+    console.log("Received data:", { ot_id, end_time, action });
+
+    if (!ot_id || !end_time) {
+      return NextResponse.json(
+        { error: "Missing required fields: ot_id, end_time" },
+        { status: 400 }
+      );
+    }
+
+    // Verify OT session exists and has work submitted
+    const { data: otSession, error: otError } = await supabase
+      .from("overtime_requests")
+      .select("id, start_time, image1, image2")
+      .eq("id", ot_id)
+      .single();
+
+    if (otError || !otSession) {
+      return NextResponse.json(
+        { error: "OT session not found", details: otError?.message },
+        { status: 404 }
+      );
+    }
+
+    // Ensure work has been submitted (images uploaded)
+    if (!otSession.image1 || !otSession.image2) {
+      return NextResponse.json(
+        { error: "Work must be submitted before ending OT" },
+        { status: 400 }
+      );
+    }
+
+    const formatted_end_time = formatToTime(end_time);
+
+    // Update OT record with actual end time
+    const { error: updateError } = await supabase
+      .from("overtime_requests")
+      .update({
+        end_time: formatted_end_time,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ot_id);
+
+    if (updateError) {
+      console.log("❌ Update failed:", updateError.message);
+      return NextResponse.json(
+        { error: "Failed to end OT", details: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    console.log("✅ OT ended successfully:", ot_id);
+
+    return NextResponse.json({
+      success: true,
+      ot_id,
+      message: "OT ended successfully",
+    });
+  } catch (err: any) {
+    console.error("❌ Unexpected error:", err.message);
+    return NextResponse.json(
+      { error: "Unexpected server error", details: err.message },
+      { status: 500 }
+    );
+  }
+}
+
+// GET - Fetch OT requests
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const employee_id = searchParams.get("employee_id");
     const team_lead_code = searchParams.get("team_lead_id");
+    const date = searchParams.get("date");
 
-    console.log("🔍 GET Request received:", { employee_id, team_lead_code });
+    console.log("🔍 GET Request received:", {
+      employee_id,
+      team_lead_code,
+      date,
+    });
+
+    // Check for active OT session (NEW - handles /active endpoint)
+    if (employee_id && date && req.url.includes("/active")) {
+      console.log("🔍 Checking for active OT session...");
+
+      let query = supabase
+        .from("overtime_requests")
+        .select("*")
+        .eq("ot_date", date)
+        .eq("end_time", "23:59:59"); // Only get records with placeholder end_time
+
+      if (isValidUUID(employee_id)) {
+        query = query.eq("employee_id", employee_id);
+      } else {
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("id")
+          .eq("employee_id", employee_id)
+          .single();
+
+        if (emp) {
+          query = query.eq("employee_id", emp.id);
+        }
+      }
+
+      const { data, error } = await query.maybeSingle();
+
+      if (error && error.code !== "PGRST116") {
+        console.log("❌ Error fetching active OT:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      console.log("Active OT result:", data);
+      return NextResponse.json(data || null);
+    }
 
     if (team_lead_code) {
-      // Get OT requests for team members using a JOIN query
-      console.log("🔍 Looking for OT requests for team lead:", team_lead_code);
-
       const { data: otRequests, error: otError } = await supabase
         .from("overtime_requests")
         .select(
@@ -237,10 +386,7 @@ export async function GET(req: NextRequest) {
         )
         .order("ot_date", { ascending: false });
 
-      console.log("🔍 Raw OT requests found:", otRequests?.length);
-
       if (otError) {
-        console.log("🚨 Error fetching OT requests:", otError);
         return NextResponse.json(
           { error: "Failed to fetch OT requests", details: otError.message },
           { status: 500 }
@@ -251,47 +397,29 @@ export async function GET(req: NextRequest) {
         return NextResponse.json([]);
       }
 
-      // Filter OT requests for team members under this team lead
-      const filteredOTRequests = [];
-
-      for (const otRequest of otRequests) {
+      const filteredOTRequests = otRequests.filter((otRequest) => {
         const employee = otRequest.employees;
-        if (!employee || !employee.team_members) continue;
+        if (!employee || !employee.team_members) return false;
 
-        // Check if any team member record has matching team lead
         const teamMemberRecords = Array.isArray(employee.team_members)
           ? employee.team_members
           : [employee.team_members];
 
-        const isTeamMember = teamMemberRecords.some((tm) => {
+        return teamMemberRecords.some((tm) => {
           if (!tm || !tm.is_active) return false;
-
-          // Check both UUID and string formats
           return (
             tm.team_lead_id === team_lead_code ||
             (typeof tm.team_lead_id === "string" &&
               tm.team_lead_id.includes(team_lead_code))
           );
         });
+      });
 
-        if (isTeamMember) {
-          filteredOTRequests.push(otRequest);
-        }
-      }
-
-      console.log(
-        "🔍 Filtered OT requests for team lead:",
-        filteredOTRequests.length
-      );
       return NextResponse.json(filteredOTRequests);
-    }
-
-    // If employee_id is passed, handle both UUID and code formats
-    else if (employee_id) {
+    } else if (employee_id) {
       let query;
 
       if (isValidUUID(employee_id)) {
-        // employee_id is a UUID
         query = supabase
           .from("overtime_requests")
           .select(
@@ -302,7 +430,6 @@ export async function GET(req: NextRequest) {
           )
           .eq("employee_id", employee_id);
       } else {
-        // employee_id is a code, need to join with employees table
         query = supabase
           .from("overtime_requests")
           .select(
@@ -326,10 +453,7 @@ export async function GET(req: NextRequest) {
       }
 
       return NextResponse.json(data || []);
-    }
-
-    // No filters → return all
-    else {
+    } else {
       const { data, error } = await supabase
         .from("overtime_requests")
         .select(
@@ -358,52 +482,35 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PUT(req: NextRequest) {
+// DELETE - Admin only: Delete OT request
+export async function DELETE(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { id, status, approved_by } = body;
+    const { searchParams } = new URL(req.url);
+    const ot_id = searchParams.get("ot_id");
 
-    if (!id || !status) {
+    if (!ot_id) {
       return NextResponse.json(
-        {
-          error: "Missing required fields",
-          details: "id and status are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate UUID format for approved_by if it's provided
-    if (approved_by && !isValidUUID(approved_by)) {
-      return NextResponse.json(
-        {
-          error: "Invalid approved_by format",
-          details: "approved_by must be a valid UUID",
-        },
+        { error: "Missing ot_id parameter" },
         { status: 400 }
       );
     }
 
     const { error } = await supabase
       .from("overtime_requests")
-      .update({
-        status,
-        approved_by,
-        approved_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+      .delete()
+      .eq("id", ot_id);
 
     if (error) {
       return NextResponse.json(
-        { error: "Failed to update status", details: error.message },
+        { error: "Failed to delete OT request", details: error.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json(
-      { success: true, message: "Status updated successfully" },
-      { status: 200 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: "OT request deleted successfully",
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Internal server error", details: error.message },
