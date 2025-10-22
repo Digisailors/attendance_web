@@ -88,12 +88,35 @@ interface OvertimeData {
   records?: OvertimeRecord[];
 }
 
+interface MonthlySettingsResponse {
+  totalDays: number;
+  month: number;
+  year: number;
+  isDefault?: boolean;
+}
+
+// 🆕 Interface for daily attendance API response
+interface DailyAttendanceEmployee {
+  id: string;
+  name: string;
+  designation: string;
+  workMode: string;
+  attendanceStatus: string;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  totalHours: number;
+  project: string | null;
+  description: string | null;
+}
+
 const getStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     Present: "bg-green-100 text-green-800",
+    Late: "bg-orange-100 text-orange-800",
     Leave: "bg-blue-100 text-blue-800",
     Permission: "bg-yellow-100 text-yellow-800",
     Absent: "bg-red-100 text-red-800",
+    Missed: "bg-purple-100 text-purple-800",
   };
   return colors[status] || "bg-gray-100 text-gray-800";
 };
@@ -178,6 +201,7 @@ export default function EmployeeAttendanceDetail() {
   const [overtimeByDate, setOvertimeByDate] = useState<Map<string, number>>(
     new Map()
   );
+  const [monthlyTotalDays, setMonthlyTotalDays] = useState<number>(28);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
@@ -194,7 +218,35 @@ export default function EmployeeAttendanceDetail() {
     }, 0);
   }, [dailyWorkLog]);
 
-  // ENHANCED: Fetch overtime data with date mapping - RETURNS the map
+  const fetchMonthlySettings = async () => {
+    try {
+      console.log("🔍 Fetching monthly settings for:", {
+        selectedMonth,
+        selectedYear,
+      });
+
+      const paddedMonth = selectedMonth.padStart(2, "0");
+      const response = await fetch(
+        `/api/monthly-settings?month=${paddedMonth}&year=${selectedYear}`
+      );
+
+      if (response.ok) {
+        const data: MonthlySettingsResponse = await response.json();
+        console.log("✅ Monthly settings fetched:", data);
+        setMonthlyTotalDays(data.totalDays);
+        return data.totalDays;
+      } else {
+        console.warn("⚠ Failed to fetch monthly settings, using default 28");
+        setMonthlyTotalDays(28);
+        return 28;
+      }
+    } catch (err) {
+      console.error("❌ Error fetching monthly settings:", err);
+      setMonthlyTotalDays(28);
+      return 28;
+    }
+  };
+
   const fetchOvertimeData = async (): Promise<Map<string, number>> => {
     try {
       console.log("🔍 Fetching overtime for:", {
@@ -221,7 +273,6 @@ export default function EmployeeAttendanceDetail() {
         const totalHours = data.total_hours || 0;
         setOvertimeHours(totalHours);
 
-        // If API provides individual records, create date mapping
         const dateMap = new Map<string, number>();
         if (data.records && Array.isArray(data.records)) {
           data.records.forEach((record) => {
@@ -258,46 +309,31 @@ export default function EmployeeAttendanceDetail() {
     }
   };
 
-  const fetchLeaveCount = async () => {
+  // 🆕 NEW: Fetch attendance status from daily-attendance API
+  const fetchAttendanceStatusForDate = async (
+    dateKey: string
+  ): Promise<string> => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(`/api/daily-attendance?date=${dateKey}`);
 
-      // Get the date range for the selected month
-      const dateRange = generateDateRange(selectedMonth, selectedYear);
-      let totalLeaveDays = 0;
+      if (response.ok) {
+        const data = await response.json();
+        const employee = data.employees?.find(
+          (emp: DailyAttendanceEmployee) => emp.id === employeeId
+        );
 
-      // Fetch attendance for each day in the month
-      for (const { dateKey } of dateRange) {
-        const response = await fetch(`/api/daily-attendance?date=${dateKey}`, {
-          signal: controller.signal,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const employee = data.employees?.find(
-            (emp: any) => emp.id === employeeId
+        if (employee) {
+          console.log(
+            `✅ Attendance for ${dateKey}: ${employee.attendanceStatus}`
           );
-
-          // Count if this employee has Leave status on this date
-          if (employee && employee.attendanceStatus === "Leave") {
-            totalLeaveDays++;
-          }
+          return employee.attendanceStatus;
         }
       }
 
-      clearTimeout(timeoutId);
-
-      console.log(`✓ Total Leave Days for ${employeeId}: ${totalLeaveDays}`);
-      setEmployeeData((prev) =>
-        prev ? { ...prev, leaves: totalLeaveDays } : null
-      );
+      return "Absent"; // Default if not found
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        console.error("Leave count request timed out");
-      } else {
-        console.error("Error fetching leave count:", err);
-      }
+      console.error(`❌ Error fetching attendance for ${dateKey}:`, err);
+      return "Absent";
     }
   };
 
@@ -305,6 +341,9 @@ export default function EmployeeAttendanceDetail() {
     try {
       setLoading(true);
       setError(null);
+
+      // Fetch monthly settings first
+      const totalDaysFromSettings = await fetchMonthlySettings();
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -357,9 +396,23 @@ export default function EmployeeAttendanceDetail() {
         }
       });
 
-      // Fetch overtime data first to get date mapping - USE the returned map directly
       const otDateMap = await fetchOvertimeData();
       console.log("🎯 Using OT map with", otDateMap.size, "entries");
+
+      // 🆕 NEW: Fetch attendance status for all dates
+      console.log("🔍 Fetching attendance status for all dates...");
+      const attendanceStatusMap = new Map<string, string>();
+
+      // Fetch attendance status for each date in parallel
+      const attendancePromises = dateRange
+        .slice(0, 31)
+        .map(async ({ dateKey }) => {
+          const status = await fetchAttendanceStatusForDate(dateKey);
+          attendanceStatusMap.set(dateKey, status);
+        });
+
+      await Promise.all(attendancePromises);
+      console.log("✅ Attendance status fetched for all dates");
 
       const completeWorkLog: DailyWorkLog[] = dateRange
         .slice(0, 31)
@@ -367,31 +420,15 @@ export default function EmployeeAttendanceDetail() {
           if (workLogMap.has(dateKey)) {
             const log = workLogMap.get(dateKey)!;
 
-            // ✅ FIXED: Working day = any day with check-in (regardless of check-out)
-            let finalStatus: string = "Absent";
+            // 🆕 NEW: Use attendance status from daily-attendance API
+            const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
 
-            if (log.checkIn && log.checkIn !== "--" && log.checkIn !== "-") {
-              // Has check-in = counted as Present/Working day
-              finalStatus = "Present";
-            } else if (log.status === "Leave" || log.status === "Permission") {
-              // No check-in but has Leave/Permission status
-              finalStatus = log.status;
-            } else {
-              // No check-in and no Leave/Permission = Absent
-              finalStatus = "Absent";
-            }
-
-            // ENHANCED: Use OT hours from overtime API if available
             let otHoursForDate = log.otHours || "0";
             if (otDateMap.has(dateKey)) {
               const otValue = otDateMap.get(dateKey)!;
               otHoursForDate = otValue.toString();
               console.log(
                 `✅ Applied OT for ${dateKey}: ${otHoursForDate}h (was: ${log.otHours})`
-              );
-            } else {
-              console.log(
-                `ℹ️ No OT found for ${dateKey}, using: ${otHoursForDate}`
               );
             }
 
@@ -401,6 +438,9 @@ export default function EmployeeAttendanceDetail() {
               otHours: otHoursForDate,
             };
           } else {
+            // 🆕 NEW: For days without work log, still check attendance status
+            const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
+
             return {
               date: displayDate,
               checkIn: "--",
@@ -408,15 +448,33 @@ export default function EmployeeAttendanceDetail() {
               hours: "0",
               otHours: "0",
               project: "No Work Assigned",
-              status: "Absent",
+              status: finalStatus,
               description: "No work logged for this date",
             };
           }
         });
 
-      const actualWorkingDays = completeWorkLog.filter(
-        (log) => log.status === "Present"
-      ).length;
+      // ✅ FIXED: Count working days using the SAME logic as dashboard
+      // Working day = has check-in (matches dashboard exactly)
+      let actualWorkingDays = 0;
+
+      completeWorkLog.forEach((log) => {
+        const checkIn = log.checkIn;
+
+        // ✅ Working day = has check-in (same as dashboard)
+        if (checkIn && checkIn !== "--" && checkIn !== "-") {
+          actualWorkingDays++;
+          console.log(`✓ ${log.date}: checked in at ${checkIn}`);
+        } else {
+          console.log(`✗ ${log.date}: no check-in (status: ${log.status})`);
+        }
+      });
+
+      console.log(
+        `${data.employee.name}: ${actualWorkingDays} working days (using dashboard logic)`
+      );
+
+      // Calculate other counts based on attendance status from API
       const actualLeaveCount = completeWorkLog.filter(
         (log) => log.status === "Leave"
       ).length;
@@ -426,19 +484,24 @@ export default function EmployeeAttendanceDetail() {
       const actualAbsentCount = completeWorkLog.filter(
         (log) => log.status === "Absent"
       ).length;
+      const actualMissedCount = completeWorkLog.filter(
+        (log) => log.status === "Missed"
+      ).length;
 
+      // ✅ Use the corrected working days count
       const correctedEmployeeData = {
         ...data.employee,
-        workingDays: actualWorkingDays,
+        totalDays: totalDaysFromSettings,
+        workingDays: actualWorkingDays, // ✅ Now matches dashboard logic
         leaves: actualLeaveCount,
         permissions: actualPermissionCount,
-        missedDays: actualAbsentCount,
+        missedDays: actualAbsentCount + actualMissedCount,
       };
+
+      console.log("✅ Final working days:", actualWorkingDays);
 
       setEmployeeData(correctedEmployeeData);
       setDailyWorkLog(completeWorkLog);
-
-      await fetchLeaveCount();
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An unexpected error occurred";
@@ -620,6 +683,20 @@ export default function EmployeeAttendanceDetail() {
     return months[parseInt(month) - 1] || "Unknown";
   };
 
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar userType="admin" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+            <p className="text-gray-600">Loading employee data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error || !employeeData) {
     return (
       <div className="flex h-screen bg-gray-50">
@@ -729,9 +806,7 @@ export default function EmployeeAttendanceDetail() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 <Card className="bg-blue-500 text-white">
                   <CardContent className="p-6 text-center">
-                    <div className="text-3xl font-bold">
-                      {employeeData.totalDays}
-                    </div>
+                    <div className="text-3xl font-bold">{monthlyTotalDays}</div>
                     <div className="text-sm opacity-90">Total Days</div>
                   </CardContent>
                 </Card>
