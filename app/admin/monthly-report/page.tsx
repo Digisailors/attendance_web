@@ -1,4 +1,5 @@
-"use client"
+"use client";
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Card,
@@ -54,7 +55,6 @@ import {
   UserX,
   Download,
   X,
-  CalendarRange,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import Link from "next/link";
@@ -187,11 +187,6 @@ export default function MonthlyReports() {
     hasPreviousPage: false,
   });
   const [exportLoading, setExportLoading] = useState(false);
-
-  // Date range filter state
-  const [useDateRange, setUseDateRange] = useState(false);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
 
   // Fetch employees list
   const fetchEmployees = useCallback(
@@ -377,34 +372,6 @@ export default function MonthlyReports() {
     }
   };
 
-  // Helper function to filter work logs by date range
-  const filterWorkLogsByDateRange = (
-    workLogs: DailyWorkLog[]
-  ): DailyWorkLog[] => {
-    if (!useDateRange || !startDate || !endDate) {
-      return workLogs;
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    return workLogs.filter((log) => {
-      try {
-        const parts = log.date.split(",");
-        if (parts.length < 2) return false;
-        const monthDay = parts[1].trim();
-        const fullDateStr = `${monthDay} ${selectedYear}`;
-        const logDate = new Date(fullDateStr);
-
-        if (isNaN(logDate.getTime())) return false;
-
-        return logDate >= start && logDate <= end;
-      } catch {
-        return false;
-      }
-    });
-  };
-
   // Fetch monthly data for selected employees with overtime, leaves, and permissions
   const fetchMonthlyData = async (
     employeeIds: string[]
@@ -464,7 +431,6 @@ export default function MonthlyReports() {
             return false;
           }
         };
-
         const isLate = (checkInTime: string): boolean => {
           if (!checkInTime || checkInTime === "-") return false;
           try {
@@ -513,10 +479,7 @@ export default function MonthlyReports() {
           }
         );
 
-        // Filter work logs by date range if enabled
-        const filteredWorkLog = filterWorkLogsByDateRange(dailyWorkLogWithOT);
-
-        const totalHours = filteredWorkLog.reduce(
+        const totalHours = dailyWorkLogWithOT.reduce(
           (sum: number, log: DailyWorkLog) => {
             return (
               sum +
@@ -526,18 +489,12 @@ export default function MonthlyReports() {
           },
           0
         );
+        const overtimeHours = overtimeData.total_hours || 0;
 
-        const overtimeHours = filteredWorkLog.reduce(
-          (sum: number, log: DailyWorkLog) =>
-            sum + (parseFloat(log.otHours || "0") || 0),
-          0
-        );
-
-        const workingDays = filteredWorkLog.filter(
+        const workingDays = dailyWorkLogWithOT.filter(
           (log: DailyWorkLog) =>
             log.status === "Present" || log.status === "Late"
         ).length;
-
         const permissions =
           permissionData.data?.filter((p: any) => p.status === "Approved")
             ?.length || 0;
@@ -545,16 +502,16 @@ export default function MonthlyReports() {
           leaveData.data?.filter((l: any) => l.status === "Approved")?.length ||
           0;
 
-        const lateDays = filteredWorkLog.filter(
+        const lateDays = dailyWorkLogWithOT.filter(
           (log: DailyWorkLog) => log.status === "Late"
         ).length;
 
-        const missedDays = filteredWorkLog.filter(
+        const missedDays = dailyWorkLogWithOT.filter(
           (log: DailyWorkLog) => log.status === "Absent" && !isSunday(log.date)
         ).length;
 
         // Sort logs by date ascending (1 -> 30)
-        const sortedWorkLog = [...filteredWorkLog].sort(
+        const sortedWorkLog = [...dailyWorkLogWithOT].sort(
           (a: DailyWorkLog, b: DailyWorkLog) => {
             // Parse date strings like "Mon, Sep 02"
             const parseDate = (dateStr: string) => {
@@ -591,16 +548,6 @@ export default function MonthlyReports() {
     return results;
   };
 
-  // Get date range string for report title
-  const getDateRangeString = (): string => {
-    if (useDateRange && startDate && endDate) {
-      return `${new Date(startDate).toLocaleDateString()} to ${new Date(
-        endDate
-      ).toLocaleDateString()}`;
-    }
-    return `${getMonthName(selectedMonth)} ${selectedYear}`;
-  };
-
   // Export to PDF
   const exportToPDF = async () => {
     try {
@@ -609,11 +556,6 @@ export default function MonthlyReports() {
 
       if (employeeIds.length === 0) {
         alert("Please select at least one employee");
-        return;
-      }
-
-      if (useDateRange && (!startDate || !endDate)) {
-        alert("Please select both start and end dates");
         return;
       }
 
@@ -634,7 +576,11 @@ export default function MonthlyReports() {
       yPosition += 10;
 
       doc.setFontSize(12);
-      doc.text(`Period: ${getDateRangeString()}`, 14, yPosition);
+      doc.text(
+        `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
+        14,
+        yPosition
+      );
       yPosition += 5;
       doc.text(
         `Report Generated: ${new Date().toLocaleDateString()}`,
@@ -677,9 +623,9 @@ export default function MonthlyReports() {
         margin: { left: 14, right: 14 },
       });
 
-      const summaryFileName = `monthly-summary-${
-        useDateRange ? "custom-range" : getMonthName(selectedMonth)
-      }-${selectedYear}-${employeeIds.length}employees.pdf`;
+      const summaryFileName = `monthly-summary-${getMonthName(
+        selectedMonth
+      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
       doc.save(summaryFileName);
 
       // Detailed Report
@@ -695,7 +641,11 @@ export default function MonthlyReports() {
       yPosition += 10;
 
       detailDoc.setFontSize(12);
-      detailDoc.text(`Period: ${getDateRangeString()}`, 14, yPosition);
+      detailDoc.text(
+        `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
+        14,
+        yPosition
+      );
       yPosition += 5;
       detailDoc.text(
         `Report Generated: ${new Date().toLocaleDateString()}`,
@@ -857,9 +807,9 @@ export default function MonthlyReports() {
         );
       }
 
-      const detailFileName = `monthly-detailed-${
-        useDateRange ? "custom-range" : getMonthName(selectedMonth)
-      }-${selectedYear}-${employeeIds.length}employees.pdf`;
+      const detailFileName = `monthly-detailed-${getMonthName(
+        selectedMonth
+      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
       detailDoc.save(detailFileName);
 
       alert(
@@ -884,11 +834,6 @@ export default function MonthlyReports() {
         return;
       }
 
-      if (useDateRange && (!startDate || !endDate)) {
-        alert("Please select both start and end dates");
-        return;
-      }
-
       const monthlyData = await fetchMonthlyData(employeeIds);
 
       if (monthlyData.length === 0) {
@@ -900,7 +845,7 @@ export default function MonthlyReports() {
 
       const summaryData = [
         ["Monthly Employee Report Summary"],
-        [`Period: ${getDateRangeString()}`],
+        [`Month: ${getMonthName(selectedMonth)} ${selectedYear}`],
         [`Generated: ${new Date().toLocaleDateString()}`],
         [`Total Employees: ${monthlyData.length}`],
         [""],
@@ -948,7 +893,7 @@ export default function MonthlyReports() {
       monthlyData.forEach((employeeData, index) => {
         const employeeSheet = [
           [`${employeeData.employee.name} - Work Log`],
-          [`Period: ${getDateRangeString()}`],
+          [`Month: ${getMonthName(selectedMonth)} ${selectedYear}`],
           [`Designation: ${employeeData.employee.designation}`],
           [`Work Mode: ${employeeData.employee.workMode}`],
           [""],
@@ -963,7 +908,7 @@ export default function MonthlyReports() {
             `OT Hours: ${employeeData.summary.overtimeHours.toFixed(1)}`,
             `Leaves: ${employeeData.summary.leaves}`,
             `Permissions: ${employeeData.summary.permissions}`,
-            `Missed: ${employeeData.summary.missedDays}`,
+            `Late: ${employeeData.summary.lateDays}`,
           ],
           [""],
           [
@@ -1001,9 +946,9 @@ export default function MonthlyReports() {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       });
 
-      const fileName = `monthly-report-${
-        useDateRange ? "custom-range" : getMonthName(selectedMonth)
-      }-${selectedYear}-${employeeIds.length}employees.xlsx`;
+      const fileName = `monthly-report-${getMonthName(
+        selectedMonth
+      )}-${selectedYear}-${employeeIds.length}employees.xlsx`;
       XLSX.writeFile(wb, fileName);
 
       alert(`Excel report generated: ${fileName}`);
@@ -1143,87 +1088,6 @@ export default function MonthlyReports() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Date Range Filter */}
-                  <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <CalendarRange className="w-5 h-5 text-purple-600" />
-                        <h3 className="font-semibold text-purple-800">
-                          Date Range Filter (Optional)
-                        </h3>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="useDateRange"
-                          checked={useDateRange}
-                          onCheckedChange={(checked) =>
-                            setUseDateRange(checked as boolean)
-                          }
-                        />
-                        <Label
-                          htmlFor="useDateRange"
-                          className="text-sm font-medium"
-                        >
-                          Enable Custom Date Range
-                        </Label>
-                      </div>
-                    </div>
-                    {useDateRange && (
-                      <div className="flex items-center space-x-4">
-                        <div className="flex-1">
-                          <Label
-                            htmlFor="startDate"
-                            className="text-sm text-gray-700 mb-1 block"
-                          >
-                            Start Date
-                          </Label>
-                          <Input
-                            id="startDate"
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <Label
-                            htmlFor="endDate"
-                            className="text-sm text-gray-700 mb-1 block"
-                          >
-                            End Date
-                          </Label>
-                          <Input
-                            id="endDate"
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="w-full"
-                          />
-                        </div>
-                        {startDate && endDate && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setStartDate("");
-                              setEndDate("");
-                            }}
-                            className="mt-6"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                    {useDateRange && startDate && endDate && (
-                      <p className="text-sm text-purple-600 mt-2">
-                        Reports will be generated for:{" "}
-                        {new Date(startDate).toLocaleDateString()} to{" "}
-                        {new Date(endDate).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-
                   <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <h3 className="font-semibold text-blue-800 mb-3">
                       Employee Selection
