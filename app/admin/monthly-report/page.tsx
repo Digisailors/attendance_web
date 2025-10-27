@@ -116,7 +116,51 @@ const debounce = (func: Function, delay: number) => {
     timeoutId = setTimeout(() => func.apply(null, args), delay);
   };
 };
+const generateDateRange = (month: string, year: string) => {
+  const currentDate = new Date();
+  const selectedMonth = parseInt(month);
+  const selectedYear = parseInt(year);
 
+  if (
+    selectedMonth < 1 ||
+    selectedMonth > 12 ||
+    selectedYear < 2020 ||
+    selectedYear > 2030
+  ) {
+    console.error("Invalid month or year:", month, year);
+    return [];
+  }
+
+  const isCurrentMonth =
+    selectedMonth === currentDate.getMonth() + 1 &&
+    selectedYear === currentDate.getFullYear();
+  const endDate = isCurrentMonth
+    ? currentDate.getDate()
+    : new Date(selectedYear, selectedMonth, 0).getDate();
+
+  const dates = [];
+  for (let day = 1; day <= endDate; day++) {
+    try {
+      const date = new Date(selectedYear, selectedMonth - 1, day);
+      const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+      const monthName = date.toLocaleDateString("en-US", { month: "short" });
+      const dateString = `${dayName}, ${monthName} ${day
+        .toString()
+        .padStart(2, "0")}`;
+      dates.push({
+        dateKey: `${selectedYear}-${selectedMonth
+          .toString()
+          .padStart(2, "0")}-${day.toString().padStart(2, "0")}`,
+        displayDate: dateString,
+        fullDate: date,
+      });
+    } catch (error) {
+      console.error(`Error creating date for day ${day}:`, error);
+      break;
+    }
+  }
+  return dates;
+};
 const getWorkModeBadge = (mode: string): string => {
   const colors: Record<string, string> = {
     Office: "bg-blue-100 text-blue-800",
@@ -373,6 +417,7 @@ export default function MonthlyReports() {
   };
 
   // Fetch monthly data for selected employees with overtime, leaves, and permissions
+  // NEW: Replace your existing fetchMonthlyData function with this complete version
   const fetchMonthlyData = async (
     employeeIds: string[]
   ): Promise<EmployeeMonthlyData[]> => {
@@ -399,145 +444,176 @@ export default function MonthlyReports() {
           ? await overtimeResponse.json()
           : { records: [], total_hours: 0 };
 
-        // Fetch leave requests
-        const leaveResponse = await fetch(
-          `/api/leave-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-          { method: "GET", headers: { "Content-Type": "application/json" } }
-        );
-        const leaveData = leaveResponse.ok
-          ? await leaveResponse.json()
-          : { data: [] };
+        // Generate COMPLETE date range for the month
+        const dateRange = generateDateRange(selectedMonth, selectedYear);
 
-        // Fetch permission requests
-        const permissionResponse = await fetch(
-          `/api/permission-request?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-          { method: "GET", headers: { "Content-Type": "application/json" } }
-        );
-        const permissionData = permissionResponse.ok
-          ? await permissionResponse.json()
-          : { data: [] };
-
-        // Helper function to check if a date is Sunday
-        const isSunday = (dateStr: string): boolean => {
+        // Create map of existing work logs
+        const workLogMap = new Map<string, DailyWorkLog>();
+        (data.dailyWorkLog || []).forEach((log: DailyWorkLog) => {
           try {
-            const parts = dateStr.split(",");
-            if (parts.length < 2) return false;
-            const monthDay = parts[1].trim();
-            const fullDateStr = `${monthDay} ${selectedYear}`;
-            const date = new Date(fullDateStr);
-            if (isNaN(date.getTime())) return false;
-            return date.getDay() === 0;
-          } catch (error) {
-            return false;
+            const dateParts = log.date.split(" ");
+            const day = dateParts[dateParts.length - 1];
+            const dateKey = `${selectedYear}-${selectedMonth.padStart(
+              2,
+              "0"
+            )}-${day.padStart(2, "0")}`;
+            workLogMap.set(dateKey, {
+              ...log,
+              otHours: log.otHours || "0",
+            });
+          } catch (err) {
+            console.error("Error processing work log:", log, err);
           }
-        };
+        });
+
+        // Create overtime map
+        const overtimeRecords = overtimeData.records || [];
+        const otDateMap = new Map<string, number>();
+        overtimeRecords.forEach((ot: any) => {
+          const otDateObj = new Date(ot.ot_date);
+          const otDateKey = `${otDateObj.getFullYear()}-${String(
+            otDateObj.getMonth() + 1
+          ).padStart(2, "0")}-${String(otDateObj.getDate()).padStart(2, "0")}`;
+          otDateMap.set(otDateKey, ot.total_hours || 0);
+        });
+
+        // Fetch attendance status for ALL dates
+        const attendanceStatusMap = new Map<string, string>();
+        const attendancePromises = dateRange.map(async ({ dateKey }) => {
+          try {
+            const response = await fetch(
+              `/api/daily-attendance?date=${dateKey}`
+            );
+            if (response.ok) {
+              const data = await response.json();
+              const employee = data.employees?.find(
+                (emp: any) => emp.id === employeeId
+              );
+              if (employee) {
+                attendanceStatusMap.set(dateKey, employee.attendanceStatus);
+              }
+            }
+          } catch (err) {
+            console.error(`Error fetching attendance for ${dateKey}:`, err);
+          }
+        });
+        await Promise.all(attendancePromises);
+
+        // Helper functions
+        const isSunday = (date: Date): boolean => date.getDay() === 0;
         const isLate = (checkInTime: string): boolean => {
-          if (!checkInTime || checkInTime === "-") return false;
+          if (!checkInTime || checkInTime === "-" || checkInTime === "--")
+            return false;
           try {
             const [hours, minutes] = checkInTime.split(":").map(Number);
             if (hours > 9) return true;
-            if (hours === 9 && minutes > 1) return true;
+            if (hours === 9 && minutes >= 1) return true;
             return false;
           } catch {
             return false;
           }
         };
 
-        // Merge overtime data into daily work log
-        const overtimeRecords = overtimeData.records || [];
-        const dailyWorkLogWithOT = data.dailyWorkLog.map(
-          (log: DailyWorkLog) => {
-            const otRecord = overtimeRecords.find((ot: any) => {
-              const logDateStr = log.date.split(",")[1]?.trim();
-              const otDateObj = new Date(ot.ot_date);
-              const otDateStr = `${otDateObj.toLocaleString("en", {
-                month: "short",
-              })} ${String(otDateObj.getDate()).padStart(2, "0")}`;
-              return logDateStr === otDateStr;
-            });
+        // Create complete work log for ALL days of the month
+        const completeWorkLog: DailyWorkLog[] = dateRange.map(
+          ({ dateKey, displayDate, fullDate }) => {
+            if (workLogMap.has(dateKey)) {
+              const log = workLogMap.get(dateKey)!;
+              const hasCheckIn =
+                log.checkIn && log.checkIn !== "-" && log.checkIn !== "--";
+              const hasCheckOut =
+                log.checkOut && log.checkOut !== "-" && log.checkOut !== "--";
 
-            // Determine actual status
-            let actualStatus = log.status;
-            if (
-              !log.checkIn ||
-              log.checkIn === "-" ||
-              !log.checkOut ||
-              log.checkOut === "-"
-            ) {
-              actualStatus = "Absent";
-            } else if (log.status === "Present" && isLate(log.checkIn)) {
-              actualStatus = "Late";
+              // Get attendance status from API
+              let actualStatus = attendanceStatusMap.get(dateKey) || "Absent";
+
+              // Override with specific logic if needed
+              if (!hasCheckIn) {
+                actualStatus = isSunday(fullDate) ? "Absent" : actualStatus;
+              } else if (hasCheckIn && isLate(log.checkIn)) {
+                actualStatus = "Late";
+              } else if (hasCheckIn && hasCheckOut) {
+                actualStatus = "Present";
+              }
+
+              // Apply overtime
+              const otHoursForDate = otDateMap.has(dateKey)
+                ? otDateMap.get(dateKey)!.toString()
+                : log.otHours || "0";
+
+              return {
+                ...log,
+                date: displayDate,
+                status: actualStatus,
+                otHours: otHoursForDate,
+              };
+            } else {
+              // No work log exists for this date
+              const status = attendanceStatusMap.get(dateKey) || "Absent";
+              return {
+                date: displayDate,
+                checkIn: "--",
+                checkOut: "--",
+                hours: "0",
+                otHours: "0",
+                project: "No Work Assigned",
+                status: status,
+                description: "No work logged for this date",
+              };
             }
-
-            return {
-              ...log,
-              status: actualStatus,
-              otHours: otRecord
-                ? otRecord.total_hours.toString()
-                : log.otHours || "0",
-            };
           }
         );
 
-        const totalHours = dailyWorkLogWithOT.reduce(
-          (sum: number, log: DailyWorkLog) => {
-            return (
-              sum +
-              (parseFloat(log.hours) || 0) +
-              (parseFloat(log.otHours || "0") || 0)
-            );
-          },
-          0
-        );
-        const overtimeHours = overtimeData.total_hours || 0;
+        // Calculate correct counts (matching detail page logic)
+        const workingDays = completeWorkLog.filter((log) => {
+          const hasCheckIn =
+            log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+          return hasCheckIn;
+        }).length;
 
-        const workingDays = dailyWorkLogWithOT.filter(
-          (log: DailyWorkLog) =>
-            log.status === "Present" || log.status === "Late"
-        ).length;
-        const permissions =
-          permissionData.data?.filter((p: any) => p.status === "Approved")
-            ?.length || 0;
-        const leaves =
-          leaveData.data?.filter((l: any) => l.status === "Approved")?.length ||
-          0;
-
-        const lateDays = dailyWorkLogWithOT.filter(
-          (log: DailyWorkLog) => log.status === "Late"
+        const leaves = completeWorkLog.filter(
+          (log) => log.status === "Leave"
         ).length;
 
-        const missedDays = dailyWorkLogWithOT.filter(
-          (log: DailyWorkLog) => log.status === "Absent" && !isSunday(log.date)
+        const permissions = completeWorkLog.filter(
+          (log) => log.status === "Permission"
         ).length;
 
-        // Sort logs by date ascending (1 -> 30)
-        const sortedWorkLog = [...dailyWorkLogWithOT].sort(
-          (a: DailyWorkLog, b: DailyWorkLog) => {
-            // Parse date strings like "Mon, Sep 02"
-            const parseDate = (dateStr: string) => {
-              const parts = dateStr.split(",");
-              if (parts.length < 2) return new Date(0);
-              const monthDay = parts[1].trim(); // "Sep 02"
-              return new Date(`${monthDay} ${selectedYear}`);
-            };
+        // Get today's date for missed days calculation
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(
+          today.getMonth() + 1
+        ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-            const dateA = parseDate(a.date);
-            const dateB = parseDate(b.date);
-            return dateA.getTime() - dateB.getTime();
-          }
-        );
+        const missedDays = completeWorkLog.filter((log, index) => {
+          const hasCheckIn =
+            log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+          const hasCheckOut =
+            log.checkOut && log.checkOut !== "--" && log.checkOut !== "-";
+          const dateKey = dateRange[index].dateKey;
+          // Count as missed if: has check-in, no check-out, and it's NOT today
+          return hasCheckIn && !hasCheckOut && dateKey !== todayStr;
+        }).length;
+
+        const totalHours = completeWorkLog.reduce((sum, log) => {
+          return (
+            sum +
+            (parseFloat(log.hours) || 0) +
+            (parseFloat(log.otHours || "0") || 0)
+          );
+        }, 0);
 
         results.push({
           employee: data.employee,
-          dailyWorkLog: sortedWorkLog,
+          dailyWorkLog: completeWorkLog, // Now includes ALL days
           summary: {
-            totalDays: sortedWorkLog?.length || 0,
-            workingDays,
+            totalDays: dateRange.length,
+            workingDays, // Days with check-in
             permissions,
             leaves,
-            missedDays,
+            missedDays, // Check-in without check-out (excluding today)
             totalHours,
-            overtimeHours,
+            overtimeHours: overtimeData.total_hours || 0,
           },
         });
       } catch (error) {
@@ -549,279 +625,228 @@ export default function MonthlyReports() {
   };
 
   // Export to PDF
-  const exportToPDF = async () => {
-    try {
-      setExportLoading(true);
-      const employeeIds = await getEmployeeIdsForExport();
+ 
+const exportToPDF = async () => {
+  try {
+    setExportLoading(true);
+    const employeeIds = await getEmployeeIdsForExport();
 
-      if (employeeIds.length === 0) {
-        alert("Please select at least one employee");
-        return;
-      }
+    if (employeeIds.length === 0) {
+      alert("Please select at least one employee");
+      return;
+    }
 
-      const monthlyData = await fetchMonthlyData(employeeIds);
+    const monthlyData = await fetchMonthlyData(employeeIds);
 
-      if (monthlyData.length === 0) {
-        alert("No data found for selected employees");
-        return;
-      }
+    if (monthlyData.length === 0) {
+      alert("No data found for selected employees");
+      return;
+    }
 
-      const doc = new jsPDF();
+    // ---------- SUMMARY REPORT ----------
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+      compress: true,
+    });
 
-      // Summary Report
-      let yPosition = 20;
+    let yPosition = 20;
+    doc.setFontSize(16);
+    doc.text("Monthly Employee Summary Report", 14, yPosition);
+    yPosition += 10;
 
-      doc.setFontSize(18);
-      doc.text("Monthly Employee Summary Report", 14, yPosition);
-      yPosition += 10;
+    doc.setFontSize(10);
+    doc.text(
+      `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
+      14,
+      yPosition
+    );
+    yPosition += 12;
 
-      doc.setFontSize(12);
-      doc.text(
-        `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
-        14,
-        yPosition
-      );
-      yPosition += 5;
-      doc.text(
-        `Report Generated: ${new Date().toLocaleDateString()}`,
-        14,
-        yPosition
-      );
-      yPosition += 5;
-      doc.text(`Number of Employees: ${monthlyData.length}`, 14, yPosition);
-      yPosition += 15;
+    const summaryData = monthlyData.map((data) => {
+      const lateDays = data.dailyWorkLog.filter(
+        (log) => log.status === "Late"
+      ).length;
 
-      const summaryData = monthlyData.map((data) => [
+      return [
         data.employee.name,
         data.employee.designation,
         data.summary.workingDays.toString(),
-        data.summary.totalHours.toFixed(1),
-        data.summary.overtimeHours.toFixed(1),
         data.summary.leaves.toString(),
         data.summary.permissions.toString(),
+        lateDays.toString(),
         data.summary.missedDays.toString(),
-      ]);
+      ];
+    });
 
-      autoTable(doc, {
-        startY: yPosition,
-        head: [
-          [
-            "Employee",
-            "Designation",
-            "Working Days",
-            "Total Hours",
-            "OT Hours",
-            "Leaves",
-            "Permissions",
-            "Missed Days",
-          ],
+    autoTable(doc, {
+      startY: yPosition,
+      head: [
+        [
+          "Employee",
+          "Designation",
+          "Working Days",
+          "Leaves",
+          "Permissions",
+          "Late",
+          "Missed",
         ],
-        body: summaryData,
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [59, 130, 246] },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-        margin: { left: 14, right: 14 },
-      });
+      ],
+      body: summaryData,
+      styles: { fontSize: 7, cellPadding: 1 },
+      headStyles: { fillColor: [59, 130, 246] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 10, right: 10 },
+      tableWidth: "auto",
+    });
 
-      const summaryFileName = `monthly-summary-${getMonthName(
-        selectedMonth
-      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
-      doc.save(summaryFileName);
+    const summaryFileName = `monthly-summary-${getMonthName(
+      selectedMonth
+    )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+    doc.save(summaryFileName);
 
-      // Detailed Report
-      const detailDoc = new jsPDF();
+    // ---------- DETAILED REPORT ----------
+    const detailDoc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+      compress: true,
+    });
+
+    for (let i = 0; i < monthlyData.length; i++) {
+      const employeeData = monthlyData[i];
+      if (i > 0) detailDoc.addPage();
 
       yPosition = 20;
-      detailDoc.setFontSize(18);
+
+      detailDoc.setFontSize(14);
+      detailDoc.setFont("helvetica", "bold");
+      detailDoc.text(employeeData.employee.name, 14, yPosition);
+      yPosition += 7;
+
+      detailDoc.setFontSize(10);
+      detailDoc.setFont("helvetica", "normal");
       detailDoc.text(
-        "Monthly Employee Detailed Work Log Report",
+        `Designation: ${employeeData.employee.designation}`,
         14,
         yPosition
       );
-      yPosition += 10;
-
-      detailDoc.setFontSize(12);
+      yPosition += 4;
+      detailDoc.text(
+        `Work Mode: ${employeeData.employee.workMode}`,
+        14,
+        yPosition
+      );
+      yPosition += 4;
       detailDoc.text(
         `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
         14,
         yPosition
       );
-      yPosition += 5;
-      detailDoc.text(
-        `Report Generated: ${new Date().toLocaleDateString()}`,
-        14,
-        yPosition
-      );
-      yPosition += 5;
-      detailDoc.text(
-        `Number of Employees: ${monthlyData.length}`,
-        14,
-        yPosition
-      );
+      yPosition += 8;
 
-      for (let i = 0; i < monthlyData.length; i++) {
-        const employeeData = monthlyData[i];
+      const lateDays = employeeData.dailyWorkLog.filter(
+        (log) => log.status === "Late"
+      ).length;
+      const summaryText = `Working Days: ${employeeData.summary.workingDays} | Leaves: ${employeeData.summary.leaves} | Permissions: ${employeeData.summary.permissions} | Late: ${lateDays} | Missed: ${employeeData.summary.missedDays}`;
 
-        if (i > 0) {
-          detailDoc.addPage();
-        }
+      // 🔹 Smaller box + tighter spacing
+      detailDoc.setDrawColor(59, 130, 246);
+      detailDoc.setFillColor(243, 244, 246);
+      detailDoc.roundedRect(14, yPosition, 180, 14, 2, 2, "FD");
 
-        yPosition = i === 0 ? 50 : 20;
+      detailDoc.setFontSize(9);
+      detailDoc.setFont("helvetica", "bold");
+      detailDoc.text("Monthly Summary:", 18, yPosition + 5);
+      detailDoc.setFont("helvetica", "normal");
+      detailDoc.text(summaryText, 18, yPosition + 10);
+      yPosition += 20; // tighter gap
 
-        detailDoc.setFontSize(16);
-        detailDoc.setFont("helvetica", "bold");
-        detailDoc.text(`${employeeData.employee.name}`, 14, yPosition);
-        yPosition += 8;
+      if (employeeData.dailyWorkLog?.length) {
+        const workLogData = employeeData.dailyWorkLog.map((log) => [
+          log.date,
+          log.checkIn || "-",
+          log.checkOut || "-",
+          log.hours || "0",
+          log.status,
+          log.project
+            ? log.project.slice(0, 20) + (log.project.length > 20 ? "..." : "")
+            : "-",
+          log.description
+            ? log.description.slice(0, 40) +
+              (log.description.length > 40 ? "..." : "")
+            : "-",
+        ]);
 
-        detailDoc.setFontSize(12);
-        detailDoc.setFont("helvetica", "normal");
-        detailDoc.text(
-          `Designation: ${employeeData.employee.designation}`,
-          14,
-          yPosition
-        );
-        yPosition += 5;
-        detailDoc.text(
-          `Work Mode: ${employeeData.employee.workMode}`,
-          14,
-          yPosition
-        );
-        yPosition += 5;
-        detailDoc.text(
-          `Status: ${employeeData.employee.status}`,
-          14,
-          yPosition
-        );
-        yPosition += 10;
-
-        detailDoc.setDrawColor(59, 130, 246);
-        detailDoc.setFillColor(243, 244, 246);
-        detailDoc.roundedRect(14, yPosition, 180, 25, 3, 3, "FD");
-
-        detailDoc.setFontSize(10);
-        detailDoc.setFont("helvetica", "bold");
-        detailDoc.text("Monthly Summary:", 18, yPosition + 8);
-
-        detailDoc.setFont("helvetica", "normal");
-        const summaryText = `Working Days: ${
-          employeeData.summary.workingDays
-        } | Total Hours: ${employeeData.summary.totalHours.toFixed(
-          1
-        )} | OT Hours: ${employeeData.summary.overtimeHours.toFixed(
-          1
-        )} | Leaves: ${employeeData.summary.leaves} | Permissions: ${
-          employeeData.summary.permissions
-        } | Missed: ${employeeData.summary.missedDays}`;
-        detailDoc.text(summaryText, 18, yPosition + 15);
-        detailDoc.text(
-          `Phone: ${employeeData.employee.phoneNumber || "N/A"} | Email: ${
-            employeeData.employee.emailAddress || "N/A"
-          }`,
-          18,
-          yPosition + 22
-        );
-
-        yPosition += 35;
-
-        if (employeeData.dailyWorkLog && employeeData.dailyWorkLog.length > 0) {
-          const workLogData = employeeData.dailyWorkLog.map((log) => [
-            log.date,
-            log.checkIn || "-",
-            log.checkOut || "-",
-            log.hours || "0",
-            log.otHours || "0",
-            (
-              parseFloat(log.hours || "0") + parseFloat(log.otHours || "0")
-            ).toFixed(1),
-            log.status,
-            log.project
-              ? log.project.length > 30
-                ? log.project.substring(0, 30) + "..."
-                : log.project
-              : "-",
-            log.description
-              ? log.description.length > 35
-                ? log.description.substring(0, 35) + "..."
-                : log.description
-              : "-",
-          ]);
-
-          autoTable(detailDoc, {
-            startY: yPosition,
-            head: [
-              [
-                "Date",
-                "Check-in",
-                "Check-out",
-                "Hours",
-                "OT",
-                "Total",
-                "Status",
-                "Project",
-                "Description",
-              ],
+        // 🔹 Compact, clean table
+        autoTable(detailDoc, {
+          startY: yPosition,
+          head: [
+            [
+              "Date",
+              "Check-in",
+              "Check-out",
+              "Hours",
+              "Status",
+              "Project",
+              "Description",
             ],
-            body: workLogData,
-            styles: {
-              fontSize: 7,
-              cellPadding: 2,
-            },
-            headStyles: {
-              fillColor: [34, 197, 94],
-              textColor: [255, 255, 255],
-              fontStyle: "bold",
-            },
-            alternateRowStyles: { fillColor: [249, 250, 251] },
-            margin: { left: 14, right: 14 },
-            pageBreak: "avoid",
-            tableWidth: "wrap",
-            columnStyles: {
-              0: { cellWidth: 18 },
-              1: { cellWidth: 16 },
-              2: { cellWidth: 16 },
-              3: { cellWidth: 12 },
-              4: { cellWidth: 10 },
-              5: { cellWidth: 12 },
-              6: { cellWidth: 16 },
-              7: { cellWidth: 35 },
-              8: { cellWidth: 45 },
-            },
-          });
-        } else {
-          detailDoc.setFontSize(10);
-          detailDoc.setTextColor(128, 128, 128);
-          detailDoc.text(
-            "No work log entries found for this employee.",
-            14,
-            yPosition
-          );
-        }
-
-        const pageHeight = detailDoc.internal.pageSize.height;
-        detailDoc.setFontSize(8);
-        detailDoc.setTextColor(128, 128, 128);
-        detailDoc.text(
-          `Employee ${i + 1} of ${monthlyData.length} - Page ${i + 1}`,
-          14,
-          pageHeight - 10
-        );
+          ],
+          body: workLogData,
+          styles: {
+            fontSize: 7,
+            cellPadding: 1.2,
+            lineWidth: 0.1,
+          },
+          headStyles: {
+            fillColor: [34, 197, 94],
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+          },
+          alternateRowStyles: { fillColor: [249, 250, 251] },
+          margin: { left: 12, right: 12 },
+          tableWidth: "auto",
+          columnStyles: {
+            0: { cellWidth: 18 }, // Date
+            1: { cellWidth: 16 }, // Check-in
+            2: { cellWidth: 16 }, // Check-out
+            3: { cellWidth: 12 }, // Hours
+            4: { cellWidth: 16 }, // Status
+            5: { cellWidth: 35 }, // Project
+            6: { cellWidth: 70 }, // Description
+          },
+        });
       }
 
-      const detailFileName = `monthly-detailed-${getMonthName(
-        selectedMonth
-      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
-      detailDoc.save(detailFileName);
-
-      alert(
-        `Two PDF reports generated:\n1. ${summaryFileName}\n2. ${detailFileName}`
+      // 🔹 Footer
+      const pageHeight = detailDoc.internal.pageSize.height;
+      detailDoc.setFontSize(7);
+      detailDoc.setTextColor(128, 128, 128);
+      detailDoc.text(
+        `Employee ${i + 1} of ${monthlyData.length} - Page ${i + 1}`,
+        14,
+        pageHeight - 8
       );
-    } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Error generating PDF report");
-    } finally {
-      setExportLoading(false);
     }
-  };
+
+    const detailFileName = `monthly-detailed-${getMonthName(
+      selectedMonth
+    )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+    detailDoc.save(detailFileName);
+
+    alert(
+      `✅ Two optimized PDF reports generated:\n1. ${summaryFileName}\n2. ${detailFileName}`
+    );
+  } catch (error) {
+    console.error("Error generating PDF:", error);
+    alert("❌ Error generating PDF report");
+  } finally {
+    setExportLoading(false);
+  }
+};
+
+
 
   // Export to Excel
   const exportToExcel = async () => {
