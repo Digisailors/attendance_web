@@ -337,180 +337,205 @@ export default function EmployeeAttendanceDetail() {
     }
   };
 
-  const fetchEmployeeData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
 
-      // Fetch monthly settings first
-      const totalDaysFromSettings = await fetchMonthlySettings();
+ const fetchEmployeeData = async () => {
+   try {
+     setLoading(true);
+     setError(null);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+     // Fetch monthly settings first
+     const totalDaysFromSettings = await fetchMonthlySettings();
 
-      const response = await fetch(
-        `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
-        { signal: controller.signal }
-      );
+     const controller = new AbortController();
+     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      clearTimeout(timeoutId);
+     const response = await fetch(
+       `/api/employees/${employeeId}?month=${selectedMonth}&year=${selectedYear}`,
+       { signal: controller.signal }
+     );
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch employee data: ${response.status} ${response.statusText}`
-        );
-      }
+     clearTimeout(timeoutId);
 
-      const data: ApiResponse = await response.json();
+     if (!response.ok) {
+       throw new Error(
+         `Failed to fetch employee data: ${response.status} ${response.statusText}`
+       );
+     }
 
-      if (!data.employee || !Array.isArray(data.dailyWorkLog)) {
-        throw new Error("Invalid data structure received from API");
-      }
+     const data: ApiResponse = await response.json();
 
-      setEmployeeData(data.employee);
+     if (!data.employee || !Array.isArray(data.dailyWorkLog)) {
+       throw new Error("Invalid data structure received from API");
+     }
 
-      const dateRange = generateDateRange(selectedMonth, selectedYear);
+     setEmployeeData(data.employee);
 
-      if (dateRange.length === 0) {
-        throw new Error("Invalid date range generated");
-      }
+     const dateRange = generateDateRange(selectedMonth, selectedYear);
 
-      const maxLogs = Math.min(data.dailyWorkLog.length, 100);
-      const limitedWorkLogs = data.dailyWorkLog.slice(0, maxLogs);
+     if (dateRange.length === 0) {
+       throw new Error("Invalid date range generated");
+     }
 
-      const workLogMap = new Map<string, DailyWorkLog>();
-      limitedWorkLogs.forEach((log) => {
-        try {
-          const dateParts = log.date.split(" ");
-          const day = dateParts[dateParts.length - 1];
-          const dateKey = `${selectedYear}-${selectedMonth.padStart(
-            2,
-            "0"
-          )}-${day.padStart(2, "0")}`;
-          workLogMap.set(dateKey, {
-            ...log,
-            otHours: log.otHours || "0",
-          });
-        } catch (err) {
-          console.error("Error processing work log:", log, err);
-        }
-      });
+     const maxLogs = Math.min(data.dailyWorkLog.length, 100);
+     const limitedWorkLogs = data.dailyWorkLog.slice(0, maxLogs);
 
-      const otDateMap = await fetchOvertimeData();
-      console.log("🎯 Using OT map with", otDateMap.size, "entries");
+     const workLogMap = new Map<string, DailyWorkLog>();
+     limitedWorkLogs.forEach((log) => {
+       try {
+         const dateParts = log.date.split(" ");
+         const day = dateParts[dateParts.length - 1];
+         const dateKey = `${selectedYear}-${selectedMonth.padStart(
+           2,
+           "0"
+         )}-${day.padStart(2, "0")}`;
+         workLogMap.set(dateKey, {
+           ...log,
+           otHours: log.otHours || "0",
+         });
+       } catch (err) {
+         console.error("Error processing work log:", log, err);
+       }
+     });
 
-      // 🆕 NEW: Fetch attendance status for all dates
-      console.log("🔍 Fetching attendance status for all dates...");
-      const attendanceStatusMap = new Map<string, string>();
+     const otDateMap = await fetchOvertimeData();
+     console.log("🎯 Using OT map with", otDateMap.size, "entries");
 
-      // Fetch attendance status for each date in parallel
-      const attendancePromises = dateRange
-        .slice(0, 31)
-        .map(async ({ dateKey }) => {
-          const status = await fetchAttendanceStatusForDate(dateKey);
-          attendanceStatusMap.set(dateKey, status);
-        });
+     // Fetch attendance status for all dates
+     console.log("🔍 Fetching attendance status for all dates...");
+     const attendanceStatusMap = new Map<string, string>();
 
-      await Promise.all(attendancePromises);
-      console.log("✅ Attendance status fetched for all dates");
+     const attendancePromises = dateRange
+       .slice(0, 31)
+       .map(async ({ dateKey }) => {
+         const status = await fetchAttendanceStatusForDate(dateKey);
+         attendanceStatusMap.set(dateKey, status);
+       });
 
-      const completeWorkLog: DailyWorkLog[] = dateRange
-        .slice(0, 31)
-        .map(({ dateKey, displayDate }) => {
-          if (workLogMap.has(dateKey)) {
-            const log = workLogMap.get(dateKey)!;
+     await Promise.all(attendancePromises);
+     console.log("✅ Attendance status fetched for all dates");
 
-            // 🆕 NEW: Use attendance status from daily-attendance API
-            const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
+     const completeWorkLog: DailyWorkLog[] = dateRange
+       .slice(0, 31)
+       .map(({ dateKey, displayDate }) => {
+         if (workLogMap.has(dateKey)) {
+           const log = workLogMap.get(dateKey)!;
 
-            let otHoursForDate = log.otHours || "0";
-            if (otDateMap.has(dateKey)) {
-              const otValue = otDateMap.get(dateKey)!;
-              otHoursForDate = otValue.toString();
-              console.log(
-                `✅ Applied OT for ${dateKey}: ${otHoursForDate}h (was: ${log.otHours})`
-              );
-            }
+           // Use attendance status from daily-attendance API
+           const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
 
-            return {
-              ...log,
-              status: finalStatus,
-              otHours: otHoursForDate,
-            };
-          } else {
-            // 🆕 NEW: For days without work log, still check attendance status
-            const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
+           let otHoursForDate = log.otHours || "0";
+           if (otDateMap.has(dateKey)) {
+             const otValue = otDateMap.get(dateKey)!;
+             otHoursForDate = otValue.toString();
+             console.log(
+               `✅ Applied OT for ${dateKey}: ${otHoursForDate}h (was: ${log.otHours})`
+             );
+           }
 
-            return {
-              date: displayDate,
-              checkIn: "--",
-              checkOut: "--",
-              hours: "0",
-              otHours: "0",
-              project: "No Work Assigned",
-              status: finalStatus,
-              description: "No work logged for this date",
-            };
-          }
-        });
+           return {
+             ...log,
+             status: finalStatus,
+             otHours: otHoursForDate,
+           };
+         } else {
+           // For days without work log, still check attendance status
+           const finalStatus = attendanceStatusMap.get(dateKey) || "Absent";
 
-      // ✅ FIXED: Count working days using the SAME logic as dashboard
-      // Working day = has check-in (matches dashboard exactly)
-      let actualWorkingDays = 0;
+           return {
+             date: displayDate,
+             checkIn: "--",
+             checkOut: "--",
+             hours: "0",
+             otHours: "0",
+             project: "No Work Assigned",
+             status: finalStatus,
+             description: "No work logged for this date",
+           };
+         }
+       });
 
-      completeWorkLog.forEach((log) => {
-        const checkIn = log.checkIn;
+     // ✅ FIXED: Calculate counts using the same logic as employee profile
+     // WORKING DAYS: Count days with check-in (regardless of check-out status)
+     let actualWorkingDays = 0;
 
-        // ✅ Working day = has check-in (same as dashboard)
-        if (checkIn && checkIn !== "--" && checkIn !== "-") {
-          actualWorkingDays++;
-          console.log(`✓ ${log.date}: checked in at ${checkIn}`);
-        } else {
-          console.log(`✗ ${log.date}: no check-in (status: ${log.status})`);
-        }
-      });
+     completeWorkLog.forEach((log) => {
+       const hasCheckIn =
+         log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+       if (hasCheckIn) {
+         actualWorkingDays++;
+         console.log(`✓ ${log.date}: checked in at ${log.checkIn}`);
+       } else {
+         console.log(`✗ ${log.date}: no check-in (status: ${log.status})`);
+       }
+     });
 
-      console.log(
-        `${data.employee.name}: ${actualWorkingDays} working days (using dashboard logic)`
-      );
+     console.log(`${data.employee.name}: ${actualWorkingDays} working days`);
 
-      // Calculate other counts based on attendance status from API
-      const actualLeaveCount = completeWorkLog.filter(
-        (log) => log.status === "Leave"
-      ).length;
-      const actualPermissionCount = completeWorkLog.filter(
-        (log) => log.status === "Permission"
-      ).length;
-      const actualAbsentCount = completeWorkLog.filter(
-        (log) => log.status === "Absent"
-      ).length;
-      const actualMissedCount = completeWorkLog.filter(
-        (log) => log.status === "Missed"
-      ).length;
+     // Count other statuses
+     const actualLeaveCount = completeWorkLog.filter(
+       (log) => log.status === "Leave"
+     ).length;
 
-      // ✅ Use the corrected working days count
-      const correctedEmployeeData = {
-        ...data.employee,
-        totalDays: totalDaysFromSettings,
-        workingDays: actualWorkingDays, // ✅ Now matches dashboard logic
-        leaves: actualLeaveCount,
-        permissions: actualPermissionCount,
-        missedDays: actualAbsentCount + actualMissedCount,
-      };
+     const actualPermissionCount = completeWorkLog.filter(
+       (log) => log.status === "Permission"
+     ).length;
 
-      console.log("✅ Final working days:", actualWorkingDays);
+     // ✅ MISSED DAYS: Only count days where check-in exists but check-out is missing
+     const actualMissedDays = completeWorkLog.filter((log) => {
+       const hasCheckIn =
+         log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+       const hasCheckOut =
+         log.checkOut && log.checkOut !== "--" && log.checkOut !== "-";
 
-      setEmployeeData(correctedEmployeeData);
-      setDailyWorkLog(completeWorkLog);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred";
-      setError(errorMessage);
-      console.error("Error fetching employee data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+       // Get today's date in YYYY-MM-DD format
+       const today = new Date();
+       const todayStr =
+         today.getFullYear() +
+         "-" +
+         String(today.getMonth() + 1).padStart(2, "0") +
+         "-" +
+         String(today.getDate()).padStart(2, "0");
+
+       // Get the date key for this log entry
+       const dateParts = log.date.split(" ");
+       const day = dateParts[dateParts.length - 1];
+       const logDateKey = `${selectedYear}-${selectedMonth.padStart(
+         2,
+         "0"
+       )}-${day.padStart(2, "0")}`;
+
+       // Count as missed if: has check-in, no check-out, and it's NOT today
+       return hasCheckIn && !hasCheckOut && logDateKey !== todayStr;
+     }).length;
+
+     // ✅ Update employee data with corrected counts
+     const correctedEmployeeData = {
+       ...data.employee,
+       totalDays: totalDaysFromSettings,
+       workingDays: actualWorkingDays, // ✅ Days with check-in
+       leaves: actualLeaveCount,
+       permissions: actualPermissionCount,
+       missedDays: actualMissedDays, // ✅ Days with check-in but no check-out (excluding today)
+     };
+
+     console.log("✅ Final counts:", {
+       workingDays: actualWorkingDays,
+       leaves: actualLeaveCount,
+       permissions: actualPermissionCount,
+       missedDays: actualMissedDays,
+     });
+
+     setEmployeeData(correctedEmployeeData);
+     setDailyWorkLog(completeWorkLog);
+   } catch (err) {
+     const errorMessage =
+       err instanceof Error ? err.message : "An unexpected error occurred";
+     setError(errorMessage);
+     console.error("Error fetching employee data:", err);
+   } finally {
+     setLoading(false);
+   }
+ };
 
   useEffect(() => {
     if (employeeId && selectedMonth && selectedYear) {
@@ -821,9 +846,9 @@ export default function EmployeeAttendanceDetail() {
                 <Card className="bg-orange-500 text-white">
                   <CardContent className="p-6 text-center">
                     <div className="text-3xl font-bold">
-                      {employeeData.permissions}
+                      {employeeData.missedDays}
                     </div>
-                    <div className="text-sm opacity-90">Permissions</div>
+                    <div className="text-sm opacity-90">Missed Days</div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-500 text-white">
