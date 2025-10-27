@@ -43,7 +43,7 @@ interface LeaveRequest {
   end_date: string;
   reason: string;
   status: string;
-  created_at: string; // Using created_at as applied_date
+  created_at: string;
   team_lead_comments?: string | null;
   manager_comments?: string | null;
   employee: {
@@ -66,7 +66,7 @@ interface PermissionRequest {
   end_time: string;
   reason: string;
   status: string;
-  created_at: string; // Using created_at as applied_date
+  created_at: string;
   team_lead_comments?: string | null;
   manager_comments?: string | null;
   employee: {
@@ -110,7 +110,7 @@ export default function EmployeeHistoryPage() {
           const { data: employeeInfo, error } = await supabase
             .from("employees")
             .select(
-              "id, name, email_address, designation, phone_number, address"
+              "employee_id, name, email_address, designation, phone_number, address"
             )
             .eq("email_address", parsedUser.email)
             .single();
@@ -131,21 +131,32 @@ export default function EmployeeHistoryPage() {
   }, []);
 
   useEffect(() => {
-    if (employeeData?.id) {
+    if (employeeData?.employee_id) {
       fetchLeaveRequests();
       fetchPermissionRequests();
     }
-  }, [employeeData?.id, statusFilter]); // Refetch when employeeId or statusFilter changes
+  }, [employeeData?.employee_id, statusFilter]);
 
   const fetchLeaveRequests = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/leave-request?employeeId=${employeeData.id}&status=${statusFilter}`
-      );
+
+      // Build URL - fetch ALL leave requests
+      let url = `/api/leave-request?employeeId=${employeeData.employee_id}`;
+
+      // Only add status filter if it's not "All"
+      if (statusFilter !== "All") {
+        url += `&status=${statusFilter}`;
+      }
+
+      console.log("Fetching leave requests from:", url);
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
+        console.log("Leave requests received:", data);
         setLeaveRequests(data.data || []);
+      } else {
+        console.error("Failed to fetch leave requests:", response.status);
       }
     } catch (error) {
       console.error("Error fetching leave requests:", error);
@@ -157,9 +168,16 @@ export default function EmployeeHistoryPage() {
   const fetchPermissionRequests = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/permission-request?employeeId=${employeeData.id}&status=${statusFilter}`
-      );
+
+      // Build URL with conditional status parameter
+      let url = `/api/permission-request?employeeId=${employeeData.employee_id}`;
+
+      // Only add status filter if it's not "All"
+      if (statusFilter !== "All") {
+        url += `&status=${statusFilter}`;
+      }
+
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setPermissionRequests(data.data || []);
@@ -236,15 +254,13 @@ export default function EmployeeHistoryPage() {
     }
   };
 
-  // Filter functions
+  // Filter functions - only apply search filter, status is handled by API
   const filterLeaveRequests = (requests: LeaveRequest[]) => {
     return requests.filter((request) => {
       const matchesSearch =
         request.leave_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.reason.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "All" || request.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
   };
 
@@ -255,31 +271,12 @@ export default function EmployeeHistoryPage() {
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
         request.reason.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "All" || request.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
   };
 
   const displayName =
     employeeData?.name || user?.email?.split("@")[0] || "Employee";
-
-  // if (loading) {
-  //   return (
-  //     <div className="flex h-screen bg-gray-50">
-  //       <Sidebar userType="employee" />
-  //       <div className="flex-1 flex flex-col">
-  //         <Header title="Employee Portal" subtitle="Loading..." userType="employee" />
-  //         <div className="flex-1 flex items-center justify-center">
-  //           <div className="text-center">
-  //             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-  //             <p className="mt-4 text-gray-600">Loading your history...</p>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
 
   return (
     <ProtectedRoute allowedRoles={["team-lead"]}>
@@ -304,7 +301,8 @@ export default function EmployeeHistoryPage() {
                           "Employee"}
                       </CardTitle>
                       <CardDescription className="text-blue-700">
-                        {employeeData?.designation || "Employee"}
+                        {employeeData?.designation || "Team Lead"} • ID:{" "}
+                        {employeeData?.employee_id || "N/A"}
                       </CardDescription>
                     </div>
                     <Badge className="bg-blue-600 text-white">team-lead</Badge>
@@ -441,10 +439,6 @@ export default function EmployeeHistoryPage() {
                                         {request.employee_name}
                                       </CardTitle>
                                       <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                        <span>
-                                          {request.employee?.designation ||
-                                            "N/A"}
-                                        </span>
                                         <span className="flex items-center space-x-1">
                                           <Calendar className="h-3 w-3" />
                                           <span>
@@ -631,10 +625,6 @@ export default function EmployeeHistoryPage() {
                                           {request.employee_name}
                                         </CardTitle>
                                         <div className="text-sm text-gray-500 flex items-center space-x-4 mt-1">
-                                          <span>
-                                            {request.employee?.designation ||
-                                              "N/A"}
-                                          </span>
                                           <span className="flex items-center space-x-1">
                                             <Calendar className="h-3 w-3" />
                                             <span>
@@ -677,7 +667,7 @@ export default function EmployeeHistoryPage() {
                                       </div>
                                       <div>
                                         <p className="text-sm font-medium text-gray-700">
-                                          From Time
+                                          Start Time
                                         </p>
                                         <p className="text-sm text-gray-600">
                                           {formatTime(request.start_time)}
@@ -685,7 +675,7 @@ export default function EmployeeHistoryPage() {
                                       </div>
                                       <div>
                                         <p className="text-sm font-medium text-gray-700">
-                                          To Time
+                                          End Time
                                         </p>
                                         <p className="text-sm text-gray-600">
                                           {formatTime(request.end_time)}

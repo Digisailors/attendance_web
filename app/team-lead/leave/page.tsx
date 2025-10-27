@@ -84,17 +84,17 @@ export default function LeaveApplicationTeamLead() {
 
       const teamLeadId = teamMember?.team_lead_id || "DEFAULT_LEAD";
 
-      const leaveRequestData = {
-        employee_id: employee.id,
-        employee_name: employee.name || user.email.split("@")[0],
-        employee_email: employee.email_address,
-        team_lead_id: teamLeadId,
-        leave_type: leaveType,
-        start_date: startDate.toISOString().split("T")[0],
-        end_date: endDate.toISOString().split("T")[0],
-        reason: reason,
-        status: "Pending",
-      };
+         const leaveRequestData = {
+           employee_id: employee.id,
+           employee_name: employee.name || user.email.split("@")[0],
+           employee_email: employee.email_address,
+           team_lead_id: teamLeadId,
+           leave_type: leaveType,
+           start_date: format(startDate, "yyyy-MM-dd"),
+           end_date: format(endDate, "yyyy-MM-dd"),
+           reason: reason,
+           status: "Pending Manager Approval",
+         };
 
       const { data: leaveRequest, error: insertError } = await supabase
         .from("leave_requests")
