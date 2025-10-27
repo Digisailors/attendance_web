@@ -397,8 +397,6 @@ export default function EmployeeProfile() {
     }
   }, [selectedMonth, selectedYear]);
 
-  
-
   // Memoize total calculated hours to prevent unnecessary recalculations
   const totalCalculatedHours = useMemo(() => {
     return dailyWorkLog.reduce((total, log) => {
@@ -426,364 +424,323 @@ export default function EmployeeProfile() {
       productiveDays: totalWorkDays,
     };
   }, [dailyWorkLog, employeeData, totalCalculatedHours]);
+// FIXED EMPLOYEE DATA FETCHING - Shows Missed Days instead of Permissions
+const fetchEmployeeData = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError(null);
 
-  // (fetchOvertimeData and fetchLeaveCount are inlined inside fetchEmployeeData to keep hooks stable)
+    if (!loggedInUser?.email) {
+      throw new Error("No logged-in user email found");
+    }
 
-  // FIXED EMPLOYEE DATA FETCHING - Now uses totalMonthDays from API
-  const fetchEmployeeData = useCallback(async () => {
+    console.log("Fetching employee data for email:", loggedInUser.email);
+
+    // First, get the employee data directly from Supabase
+    const { data: employeeRecord, error: empError } = await supabase
+      .from("employees")
+      .select("*")
+      .eq("email_address", loggedInUser.email)
+      .eq("is_active", true)
+      .single();
+
+    if (empError || !employeeRecord) {
+      console.error("Error fetching employee from Supabase:", empError);
+      throw new Error(
+        `Employee profile not found for email: ${loggedInUser.email}`
+      );
+    }
+
+    console.log("Found employee record:", employeeRecord);
+
+    // Map the employee data
+    const mappedEmployeeData: EmployeeData = {
+      id: employeeRecord.id,
+      name: employeeRecord.name,
+      designation: employeeRecord.designation,
+      workMode: employeeRecord.work_mode,
+      status: employeeRecord.status,
+      totalDays: totalMonthDays,
+      workingDays: 0,
+      permissions: 0, // Will be calculated from daily attendance
+      leaves: 0,
+      missedDays: 0,
+      phoneNumber: employeeRecord.phone_number,
+      emailAddress: employeeRecord.email_address,
+      address: employeeRecord.address,
+      dateOfJoining: employeeRecord.date_of_joining,
+      experience: employeeRecord.experience,
+    };
+
+    const actualEmployeeId = employeeRecord.employee_id || employeeRecord.id;
+    console.log("Using employee ID for work log:", actualEmployeeId);
+
+    // Fetch daily work log
+    let dailyWorkLogData: DailyWorkLog[] = [];
     try {
-      setLoading(true);
-      setError(null);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      if (!loggedInUser?.email) {
-        throw new Error("No logged-in user email found");
+      const response = await fetch(
+        `/api/employees/${actualEmployeeId}?month=${selectedMonth}&year=${selectedYear}`,
+        { signal: controller.signal }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const apiData: ApiResponse = await response.json();
+        dailyWorkLogData = apiData.dailyWorkLog || [];
+      } else {
+        console.warn("API call failed, using empty work log");
       }
+    } catch (apiError) {
+      console.warn("API not available, using empty work log:", apiError);
+    }
 
-      console.log("Fetching employee data for email:", loggedInUser.email);
+    // Generate date range
+    const dateRange = generateDateRange(selectedMonth, selectedYear);
+    if (dateRange.length === 0) {
+      throw new Error("Invalid date range generated");
+    }
 
-      // First, get the employee data directly from Supabase using the logged-in user's email
-      const { data: employeeRecord, error: empError } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("email_address", loggedInUser.email)
-        .eq("is_active", true)
-        .single();
+    const maxLogs = Math.min(dailyWorkLogData.length, 100);
+    const limitedWorkLogs = dailyWorkLogData.slice(0, maxLogs);
 
-      if (empError || !employeeRecord) {
-        console.error("Error fetching employee from Supabase:", empError);
-        throw new Error(
-          `Employee profile not found for email: ${loggedInUser.email}`
-        );
+    // Create work log map
+    const workLogMap = new Map<string, DailyWorkLog>();
+    limitedWorkLogs.forEach((log) => {
+      try {
+        const dateParts = log.date.split(" ");
+        const day = dateParts[dateParts.length - 1];
+        const dateKey = `${selectedYear}-${selectedMonth.padStart(
+          2,
+          "0"
+        )}-${day.padStart(2, "0")}`;
+        workLogMap.set(dateKey, {
+          ...log,
+          otHours: log.otHours || "0",
+        });
+      } catch (err) {
+        console.error("Error processing work log:", log, err);
       }
+    });
 
-      console.log("Found employee record:", employeeRecord);
+    // Create complete work log
+    const completeWorkLog: DailyWorkLog[] = dateRange
+      .slice(0, 31)
+      .map(({ dateKey, displayDate }) => {
+        if (workLogMap.has(dateKey)) {
+          const log = workLogMap.get(dateKey)!;
+          const today = new Date();
+          const todayStr =
+            today.getFullYear() +
+            "-" +
+            String(today.getMonth() + 1).padStart(2, "0") +
+            "-" +
+            String(today.getDate()).padStart(2, "0");
 
-      // Map the employee data from Supabase to our interface
-      const mappedEmployeeData: EmployeeData = {
-        id: employeeRecord.id,
-        name: employeeRecord.name,
-        designation: employeeRecord.designation,
-        workMode: employeeRecord.work_mode,
-        status: employeeRecord.status,
-        totalDays: totalMonthDays, // UPDATED: Use totalMonthDays from API
-        workingDays: 0, // Will be calculated below
-        permissions: 0, // Will be calculated below
-        leaves: 0, // Will be calculated below
-        missedDays: 0, // Will be calculated below
-        phoneNumber: employeeRecord.phone_number,
-        emailAddress: employeeRecord.email_address,
-        address: employeeRecord.address,
-        dateOfJoining: employeeRecord.date_of_joining,
-        experience: employeeRecord.experience,
-      };
+          let finalStatus: string = "Absent";
 
-      // Now fetch the daily work log using the employee ID we found
-      const actualEmployeeId = employeeRecord.employee_id || employeeRecord.id;
+          if (
+            log.checkIn &&
+            log.checkIn !== "--" &&
+            log.checkIn !== "-" &&
+            log.checkOut &&
+            log.checkOut !== "--" &&
+            log.checkOut !== "-"
+          ) {
+            finalStatus = "Present";
+          } else if (
+            log.checkIn &&
+            log.checkIn !== "--" &&
+            log.checkIn !== "-" &&
+            (!log.checkOut || log.checkOut === "--" || log.checkOut === "-")
+          ) {
+            if (dateKey === todayStr) {
+              finalStatus = "Present";
+            } else {
+              finalStatus = "Absent";
+            }
+          } else if (log.status === "Leave" || log.status === "Permission") {
+            finalStatus = log.status;
+          } else {
+            finalStatus = "Absent";
+          }
 
-      console.log("Using employee ID for work log:", actualEmployeeId);
+          return {
+            ...log,
+            status: finalStatus,
+          };
+        } else {
+          return {
+            date: displayDate,
+            checkIn: "--",
+            checkOut: "--",
+            hours: "0",
+            otHours: "0",
+            project: "No Work Assigned",
+            status: "Absent",
+            description: "No work logged for this date",
+          };
+        }
+      });
 
-      // Try to fetch from existing API if available, otherwise fallback to direct query
-      let dailyWorkLogData: DailyWorkLog[] = [];
+    // Fetch daily attendance statuses
+    const dateKeys = dateRange.slice(0, 31).map((d) => d.dateKey);
+    const statusByDate = new Map<string, string>();
 
+    try {
+      const statusFetches = dateKeys.map(async (dateKey) => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+          const resp = await fetch(`/api/daily-attendance?date=${dateKey}`, {
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!resp.ok) return;
+
+          const json = await resp.json();
+          const employeesForDate = json.employees || [];
+
+          const matched = employeesForDate.find(
+            (e: any) => String(e.id) === String(actualEmployeeId)
+          );
+
+          if (matched && matched.attendanceStatus) {
+            statusByDate.set(dateKey, matched.attendanceStatus);
+          }
+        } catch (e) {
+          console.warn("daily-attendance fetch failed for", dateKey, e);
+        }
+      });
+
+      await Promise.allSettled(statusFetches);
+    } catch (e) {
+      console.warn("Failed to fetch daily-attendance statuses:", e);
+    }
+
+    // Merge API statuses
+    const mergedWorkLog = completeWorkLog.map((logObj, idx) => {
+      const dateKey = dateKeys[idx];
+      const apiStatus = statusByDate.get(dateKey);
+
+      if (apiStatus) {
+        return {
+          ...logObj,
+          status: apiStatus,
+        };
+      }
+      return logObj;
+    });
+
+    // ✅ FIXED: Calculate counts correctly
+    // WORKING DAYS: Count days with check-in (regardless of check-out status)
+    const actualWorkingDays = mergedWorkLog.filter((log) => {
+      const hasCheckIn = log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+      return hasCheckIn;
+    }).length;
+
+    const actualLeaveCount = mergedWorkLog.filter(
+      (log) => log.status === "Leave"
+    ).length;
+
+    const actualPermissionCount = mergedWorkLog.filter(
+      (log) => log.status === "Permission"
+    ).length;
+
+    // ✅ MISSED DAYS: Only count days where check-in exists but check-out is missing
+    const actualMissedDays = mergedWorkLog.filter((log) => {
+      const hasCheckIn = log.checkIn && log.checkIn !== "--" && log.checkIn !== "-";
+      const hasCheckOut = log.checkOut && log.checkOut !== "--" && log.checkOut !== "-";
+      
+      // Get today's date in YYYY-MM-DD format
+      const today = new Date();
+      const todayStr = today.getFullYear() + "-" + 
+                       String(today.getMonth() + 1).padStart(2, "0") + "-" + 
+                       String(today.getDate()).padStart(2, "0");
+      
+      // Get the date key for this log entry
+      const dateParts = log.date.split(" ");
+      const day = dateParts[dateParts.length - 1];
+      const logDateKey = `${selectedYear}-${selectedMonth.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      
+      // Count as missed if: has check-in, no check-out, and it's NOT today
+      return hasCheckIn && !hasCheckOut && logDateKey !== todayStr;
+    }).length;
+
+    // Update employee data with correct counts
+    const correctedEmployeeData = {
+      ...mappedEmployeeData,
+      totalDays: totalMonthDays,
+      workingDays: actualWorkingDays,
+      leaves: actualLeaveCount,
+      permissions: actualPermissionCount,
+      missedDays: actualMissedDays, // ✅ Only days with check-in but no check-out
+    };
+
+    console.log("Final employee data:", correctedEmployeeData);
+
+    setEmployeeData(correctedEmployeeData);
+    setDailyWorkLog(mergedWorkLog);
+
+    // Fetch overtime and leave count
+    const fetchOvertimeDataLocal = async () => {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const response = await fetch(
-          `/api/employees/${actualEmployeeId}?month=${selectedMonth}&year=${selectedYear}`,
+          `/api/overtime-summary?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
           { signal: controller.signal }
         );
 
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          const apiData: ApiResponse = await response.json();
-          dailyWorkLogData = apiData.dailyWorkLog || [];
-        } else {
-          console.warn("API call failed, using empty work log");
+          const data: OvertimeData = await response.json();
+          setOvertimeHours(data.total_hours || 0);
         }
-      } catch (apiError) {
-        console.warn("API not available, using empty work log:", apiError);
+      } catch (err) {
+        console.error("Error fetching overtime data:", err);
+        setOvertimeHours(0);
       }
+    };
 
-      // Generate date range with safety checks
-      const dateRange = generateDateRange(selectedMonth, selectedYear);
+    await fetchOvertimeDataLocal();
 
-      if (dateRange.length === 0) {
-        throw new Error("Invalid date range generated");
-      }
-
-      // Limit the number of work logs to prevent memory issues
-      const maxLogs = Math.min(dailyWorkLogData.length, 100);
-      const limitedWorkLogs = dailyWorkLogData.slice(0, maxLogs);
-
-      // Create a map of existing work logs by date
-      const workLogMap = new Map<string, DailyWorkLog>();
-      limitedWorkLogs.forEach((log) => {
-        try {
-          const dateParts = log.date.split(" ");
-          const day = dateParts[dateParts.length - 1];
-          const dateKey = `${selectedYear}-${selectedMonth.padStart(
-            2,
-            "0"
-          )}-${day.padStart(2, "0")}`;
-          workLogMap.set(dateKey, {
-            ...log,
-            otHours: log.otHours || "0",
-          });
-        } catch (err) {
-          console.error("Error processing work log:", log, err);
-        }
-      });
-
-      // Create complete work log with all dates (limited to prevent memory issues)
-      const completeWorkLog: DailyWorkLog[] = dateRange
-        .slice(0, 31)
-        .map(({ dateKey, displayDate }) => {
-          if (workLogMap.has(dateKey)) {
-            const log = workLogMap.get(dateKey)!;
-
-            // Get today's date in YYYY-MM-DD format
-            const today = new Date();
-            const todayStr =
-              today.getFullYear() +
-              "-" +
-              String(today.getMonth() + 1).padStart(2, "0") +
-              "-" +
-              String(today.getDate()).padStart(2, "0");
-
-            let finalStatus: string = "Absent";
-
-            // Both check-in & check-out present → Present
-            if (
-              log.checkIn &&
-              log.checkIn !== "--" &&
-              log.checkIn !== "-" &&
-              log.checkOut &&
-              log.checkOut !== "--" &&
-              log.checkOut !== "-"
-            ) {
-              finalStatus = "Present";
-            }
-            // Only check-in present
-            else if (
-              log.checkIn &&
-              log.checkIn !== "--" &&
-              log.checkIn !== "-" &&
-              (!log.checkOut || log.checkOut === "--" || log.checkOut === "-")
-            ) {
-              // If it's today's date, show as Present (ongoing work)
-              if (dateKey === todayStr) {
-                finalStatus = "Present";
-              } else {
-                // Past dates with only check-in → Absent (incomplete attendance)
-                finalStatus = "Absent";
-              }
-            }
-            // Explicit Leave/Permission status
-            else if (log.status === "Leave" || log.status === "Permission") {
-              finalStatus = log.status;
-            }
-            // No check-in at all → Absent (unless explicitly Leave/Permission)
-            else {
-              finalStatus = "Absent";
-            }
-
-            return {
-              ...log,
-              status: finalStatus,
-            };
-          } else {
-            // No log entry exists for this date → default to Absent
-            return {
-              date: displayDate,
-              checkIn: "--",
-              checkOut: "--",
-              hours: "0",
-              otHours: "0",
-              project: "No Work Assigned",
-              status: "Absent",
-              description: "No work logged for this date",
-            };
-          }
-        });
-
-      // --- NEW: Use daily-attendance API to override status per date for this employee ---
-      // Build list of date keys we need statuses for (YYYY-MM-DD)
-      const dateKeys = dateRange.slice(0, 31).map((d) => d.dateKey);
-
-      const statusByDate = new Map<string, string>();
-
-      try {
-        // Fetch statuses for all dates in parallel but catch failures per-day
-        const statusFetches = dateKeys.map(async (dateKey) => {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-            const resp = await fetch(`/api/daily-attendance?date=${dateKey}`, {
-              signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!resp.ok) return; // leave absent if missing
-
-            const json = await resp.json();
-            const employeesForDate = json.employees || [];
-
-            // daily-attendance returns entries with id = employee_id (see route.tsx)
-            const matched = employeesForDate.find(
-              (e: any) => String(e.id) === String(actualEmployeeId)
-            );
-
-            if (matched && matched.attendanceStatus) {
-              statusByDate.set(dateKey, matched.attendanceStatus);
-            }
-          } catch (e) {
-            // ignore per-day failures, keep existing logic
-            console.warn("daily-attendance fetch failed for", dateKey, e);
-          }
-        });
-
-        await Promise.allSettled(statusFetches);
-      } catch (e) {
-        console.warn("Failed to fetch daily-attendance statuses:", e);
-      }
-
-      // Merge API statuses into completeWorkLog (override only when API provided one)
-      const mergedWorkLog = completeWorkLog.map((logObj, idx) => {
-        // Recreate the dateKey for this row based on dateRange
-        const dateKey = dateKeys[idx];
-        const apiStatus = statusByDate.get(dateKey);
-
-        if (apiStatus) {
-          return {
-            ...logObj,
-            status: apiStatus,
-          };
-        }
-        return logObj;
-      });
-
-      // Calculate actual counts from the processed (and possibly overridden) work log
-      const actualWorkingDays = mergedWorkLog.filter(
-        (log) => log.checkIn && log.checkIn !== "--" && log.checkIn !== "-"
-      ).length;
-
-      const actualLeaveCount = mergedWorkLog.filter(
-        (log) => log.status === "Leave"
-      ).length;
-      const actualPermissionCount = mergedWorkLog.filter(
-        (log) => log.status === "Permission"
-      ).length;
-      const actualAbsentCount = mergedWorkLog.filter(
-        (log) => log.status === "Absent"
-      ).length;
-
-      // Update employee data with correct counts
-      const correctedEmployeeData = {
-        ...mappedEmployeeData,
-        totalDays: totalMonthDays, // UPDATED: Ensure we use totalMonthDays from API
-        workingDays: actualWorkingDays,
-        leaves: actualLeaveCount,
-        permissions: actualPermissionCount,
-        missedDays: actualAbsentCount,
-      };
-
-      console.log(
-        "Final employee data with API total days:",
-        correctedEmployeeData
-      );
-
-      setEmployeeData(correctedEmployeeData);
-      setDailyWorkLog(mergedWorkLog);
-
-      // Fetch additional data (overtime summary and leave count) - inlined helpers
-      const fetchOvertimeDataLocal = async () => {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-          const response = await fetch(
-            `/api/overtime-summary?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`,
-            { signal: controller.signal }
-          );
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const data: OvertimeData = await response.json();
-            setOvertimeHours(data.total_hours || 0);
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") {
-            console.error("Overtime data request timed out");
-          } else {
-            console.error("Error fetching overtime data:", err);
-          }
-          setOvertimeHours(0);
-        }
-      };
-
-      const fetchLeaveCountLocal = async () => {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-          const response = await fetch(
-            `/api/leave-request?employeeId=${employeeId}&count=true&month=${selectedMonth.padStart(
-              2,
-              "0"
-            )}&year=${selectedYear}`,
-            { signal: controller.signal }
-          );
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const data = await response.json();
-            const leaveCount = data.count || 0;
-
-            setEmployeeData((prev) =>
-              prev ? { ...prev, leaves: leaveCount } : null
-            );
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") {
-            console.error("Leave count request timed out");
-          } else {
-            console.error("Error fetching leave count:", err);
-          }
-        }
-      };
-
-      await Promise.allSettled([
-        fetchOvertimeDataLocal(),
-        fetchLeaveCountLocal(),
-      ]);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred";
-      setError(errorMessage);
-      console.error("Error fetching employee data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    loggedInUser?.email,
-    employeeId,
-    selectedMonth,
-    selectedYear,
-    totalMonthDays,
-  ]);
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error ? err.message : "An unexpected error occurred";
+    setError(errorMessage);
+    console.error("Error fetching employee data:", err);
+  } finally {
+    setLoading(false);
+  }
+}, [
+  loggedInUser?.email,
+  employeeId,
+  selectedMonth,
+  selectedYear,
+  totalMonthDays,
+]);
 
   // Trigger data fetch when we have the employeeId and month/year available
   useEffect(() => {
     if (employeeId && selectedMonth && selectedYear && totalMonthDays) {
       fetchEmployeeData();
     }
-  }, [employeeId, selectedMonth, selectedYear, totalMonthDays, fetchEmployeeData]);
+  }, [
+    employeeId,
+    selectedMonth,
+    selectedYear,
+    totalMonthDays,
+    fetchEmployeeData,
+  ]);
 
   const handleNavigate = () => {
     router.push("/employee/dashboard");
@@ -1195,12 +1152,12 @@ export default function EmployeeProfile() {
                     <div className="text-sm opacity-90">Working Days</div>
                   </CardContent>
                 </Card>
-                <Card className="bg-orange-500 text-white">
+                <Card className="bg-red-500 text-white">
                   <CardContent className="p-6 text-center">
                     <div className="text-3xl font-bold">
-                      {employeeData.permissions}
+                      {employeeData.missedDays}
                     </div>
-                    <div className="text-sm opacity-90">Permissions</div>
+                    <div className="text-sm opacity-90">Missed Days</div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-500 text-white">
