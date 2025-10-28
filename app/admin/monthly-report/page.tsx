@@ -96,6 +96,7 @@ interface EmployeeMonthlyData {
     missedDays: number;
     totalHours: number;
     overtimeHours: number;
+    lateDays: number;
   };
 }
 
@@ -477,7 +478,7 @@ export default function MonthlyReports() {
           otDateMap.set(otDateKey, ot.total_hours || 0);
         });
 
-        // Fetch attendance status for ALL dates
+        // 🆕 Fetch attendance status for ALL dates (includes Permission status from API)
         const attendanceStatusMap = new Map<string, string>();
         const attendancePromises = dateRange.map(async ({ dateKey }) => {
           try {
@@ -490,6 +491,7 @@ export default function MonthlyReports() {
                 (emp: any) => emp.id === employeeId
               );
               if (employee) {
+                // The daily-attendance API now returns "Permission" status
                 attendanceStatusMap.set(dateKey, employee.attendanceStatus);
               }
             }
@@ -524,11 +526,13 @@ export default function MonthlyReports() {
               const hasCheckOut =
                 log.checkOut && log.checkOut !== "-" && log.checkOut !== "--";
 
-              // Get attendance status from API
+              // 🆕 Get attendance status from API (includes Permission)
               let actualStatus = attendanceStatusMap.get(dateKey) || "Absent";
 
-              // Override with specific logic if needed
-              if (!hasCheckIn) {
+              // ⚠️ Important: Don't override if status is already "Permission" or "Leave"
+              if (actualStatus === "Permission" || actualStatus === "Leave") {
+                // Keep the status from API as-is
+              } else if (!hasCheckIn) {
                 actualStatus = isSunday(fullDate) ? "Absent" : actualStatus;
               } else if (hasCheckIn && isLate(log.checkIn)) {
                 actualStatus = "Late";
@@ -549,6 +553,7 @@ export default function MonthlyReports() {
               };
             } else {
               // No work log exists for this date
+              // 🆕 Check if status is Permission or Leave from API
               const status = attendanceStatusMap.get(dateKey) || "Absent";
               return {
                 date: displayDate,
@@ -557,7 +562,7 @@ export default function MonthlyReports() {
                 hours: "0",
                 otHours: "0",
                 project: "No Work Assigned",
-                status: status,
+                status: status, // Will show "Permission" if approved permission exists
                 description: "No work logged for this date",
               };
             }
@@ -575,8 +580,14 @@ export default function MonthlyReports() {
           (log) => log.status === "Leave"
         ).length;
 
+        // 🆕 Count permissions
         const permissions = completeWorkLog.filter(
           (log) => log.status === "Permission"
+        ).length;
+
+        // Count late days for summary
+        const lateDays = completeWorkLog.filter(
+          (log) => log.status === "Late"
         ).length;
 
         // Get today's date for missed days calculation
@@ -605,15 +616,16 @@ export default function MonthlyReports() {
 
         results.push({
           employee: data.employee,
-          dailyWorkLog: completeWorkLog, // Now includes ALL days
+          dailyWorkLog: completeWorkLog, // Now includes ALL days with correct Permission status
           summary: {
             totalDays: dateRange.length,
             workingDays, // Days with check-in
-            permissions,
+            permissions, // 🆕 Permissions count
             leaves,
             missedDays, // Check-in without check-out (excluding today)
             totalHours,
             overtimeHours: overtimeData.total_hours || 0,
+            lateDays, // 🆕 Late days for PDF report
           },
         });
       } catch (error) {

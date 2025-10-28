@@ -96,7 +96,7 @@ export default function TeamLeadPermissionPage() {
         start_time: startTime,
         end_time: endTime,
         reason: reason,
-        status: "Pending",
+        status: "Pending Manager Approval",
       };
 
       console.log("Inserting permission request:", permissionRequestData);
@@ -285,7 +285,11 @@ export default function TeamLeadPermissionPage() {
                         selected={date}
                         onSelect={setDate}
                         initialFocus
-                        disabled={(date) => date < new Date()}
+                        disabled={(date) => {
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0); // clear time
+                          return date < today;
+                        }}
                       />
                     </PopoverContent>
                   </Popover>

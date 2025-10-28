@@ -46,52 +46,76 @@ export async function GET(req: Request) {
 
     if (logError) throw logError;
 
-    // 🆕 3️⃣ Fetch leave requests (Pending Team Lead status) for this date
-    // Check if selectedDate falls between start_date and end_date
-   const { data: leaveRequests, error: leaveError } = await supabase
-     .from("leave_requests")
-     .select("employee_id, leave_type, status, start_date, end_date")
-     .lte("start_date", selectedDate) // start_date <= selectedDate
-     .gte("end_date", selectedDate); // end_date >= selectedDate
+    // 3️⃣ Fetch leave requests for this date
+    const { data: leaveRequests, error: leaveError } = await supabase
+      .from("leave_requests")
+      .select("employee_id, leave_type, status, start_date, end_date")
+      .lte("start_date", selectedDate)
+      .gte("end_date", selectedDate);
 
-   if (leaveError) {
-     console.error("Error fetching leave requests:", leaveError);
-   }
+    if (leaveError) {
+      console.error("Error fetching leave requests:", leaveError);
+    }
+
+    // 🆕 4️⃣ Fetch permission requests for this date
+    const { data: permissionRequests, error: permError } = await supabase
+      .from("permission_requests")
+      .select(
+        "employee_id, permission_type, status, date, start_time, end_time"
+      )
+      .eq("date", selectedDate)
+      .in("status", ["Approved", "Pending Manager Approval"]);
+
+    if (permError) {
+      console.error("Error fetching permission requests:", permError);
+    }
+
     // Log for debugging
     console.log(`Checking leaves for date: ${selectedDate}`);
+    console.log(`Found ${leaveRequests?.length || 0} leaves:`, leaveRequests);
     console.log(
-      `Found ${leaveRequests?.length || 0} pending leaves:`,
-      leaveRequests
+      `Found ${permissionRequests?.length || 0} permissions:`,
+      permissionRequests
     );
 
-    // Create a Set of employee IDs who are on leave
+    // Create Sets of employee IDs
     const employeesOnLeave = new Set(
       leaveRequests?.map((leave) => leave.employee_id) || []
     );
 
-    console.log(`Employees on leave:`, Array.from(employeesOnLeave));
+    const employeesOnPermission = new Set(
+      permissionRequests?.map((perm) => perm.employee_id) || []
+    );
 
-    // 4️⃣ Merge
+    console.log(`Employees on leave:`, Array.from(employeesOnLeave));
+    console.log(`Employees on permission:`, Array.from(employeesOnPermission));
+
+    // 5️⃣ Merge
     let merged = employees.map((emp) => {
       const log = logs.find((l) => l.employee_id === emp.id);
 
       let attendanceStatus = "Absent"; // default
 
-      // 🆕 Check if employee is on approved leave first
-      if (employeesOnLeave.has(emp.id)) {
+      // 🆕 Priority 1: Check if employee has approved permission
+      if (employeesOnPermission.has(emp.id)) {
+        attendanceStatus = "Permission";
+      }
+      // Priority 2: Check if employee is on approved leave
+      else if (employeesOnLeave.has(emp.id)) {
         attendanceStatus = "Leave";
-      } else if (log) {
-        // Original logic for determining status from work log
+      }
+      // Priority 3: Check work log
+      else if (log) {
         const checkIn = log.check_in ? new Date(log.check_in) : null;
         const checkOut = log.check_out ? new Date(log.check_out) : null;
 
         if (!checkIn && !checkOut) {
-          attendanceStatus = "Absent"; // Changed: if no check-in/out, it's absent (not leave)
+          attendanceStatus = "Absent";
         } else if (checkIn && !checkOut) {
-          attendanceStatus = "Missed"; // checked in but didn't check out
+          attendanceStatus = "Missed";
         } else if (checkIn && checkOut) {
           const nineAM = new Date(checkIn);
-          nineAM.setHours(9, 0, 0, 0); // 9:00 AM cutoff
+          nineAM.setHours(9, 0, 0, 0);
 
           if (checkIn > nineAM) {
             attendanceStatus = "Late";
@@ -115,7 +139,7 @@ export async function GET(req: Request) {
       };
     });
 
-    // 5️⃣ Apply filters independently
+    // 6️⃣ Apply filters independently
     if (searchQuery) {
       merged = merged.filter(
         (emp) =>
@@ -135,7 +159,7 @@ export async function GET(req: Request) {
       );
     }
 
-    // 6️⃣ Summary
+    // 7️⃣ Summary
     const presentCount = merged.filter(
       (m) => m.attendanceStatus === "Present"
     ).length;
@@ -147,6 +171,9 @@ export async function GET(req: Request) {
     ).length;
     const leaveCount = merged.filter(
       (m) => m.attendanceStatus === "Leave"
+    ).length;
+    const permissionCount = merged.filter(
+      (m) => m.attendanceStatus === "Permission"
     ).length;
     const absentCount = merged.filter(
       (m) => m.attendanceStatus === "Absent"
@@ -161,6 +188,7 @@ export async function GET(req: Request) {
         lateCount,
         missedCount,
         leaveCount,
+        permissionCount, // 🆕 Added permission count to summary
         absentCount,
         date: selectedDate,
       },
