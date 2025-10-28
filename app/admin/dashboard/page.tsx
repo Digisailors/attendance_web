@@ -95,6 +95,7 @@ interface DashboardEmployee {
   totalDays: number;
   workingDays: number;
   otHours: number;
+  permissionHours: number; // 🆕 Added permission hours
   missedDays: number;
   status: Status;
   phoneNumber?: string;
@@ -102,10 +103,8 @@ interface DashboardEmployee {
   address?: string;
   dateOfJoining?: string;
   experience?: string;
-  // Request counts
   leaveRequestCount?: number;
   permissionRequestCount?: number;
-  // For modal compatibility
   permissions?: number;
   leaves?: number;
 }
@@ -203,6 +202,7 @@ const convertModalToDashboard = (
     totalDays: employee.totalDays,
     workingDays: employee.workingDays,
     otHours: 0, // Will be fetched separately
+    permissionHours: 0, // Will be fetched separately
     missedDays: employee.missedDays,
     status: employee.status,
     phoneNumber: employee.phoneNumber,
@@ -291,8 +291,132 @@ export default function AttendanceOverview() {
   const [isAllSelected, setIsAllSelected] = useState(false);
 
   const router = useRouter();
+  const fetchPermissionHours = async (
+    employees: DashboardEmployee[],
+    month: string,
+    year: string
+  ): Promise<DashboardEmployee[]> => {
+    try {
+      console.log(
+        `Fetching permission hours for ${employees.length} employees for ${month}/${year}`
+      );
 
-  // Fetch overtime hours for selected month/year
+      const updatedEmployees = await Promise.all(
+        employees.map(async (employee) => {
+          try {
+            const paddedMonth = month.padStart(2, "0");
+
+            // Fetch all approved permissions for this employee in the selected month
+            const response = await fetch(
+              `/api/permission-request?employeeId=${encodeURIComponent(
+                employee.id
+              )}&month=${paddedMonth}&year=${year}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+              }
+            );
+
+            if (response.ok) {
+              const permissionData = await response.json();
+              console.log(
+                `Permission response for ${employee.name}:`,
+                permissionData
+              );
+
+              let totalPermissionHours = 0;
+
+              // Calculate hours from each approved permission
+              if (permissionData.data && Array.isArray(permissionData.data)) {
+                permissionData.data.forEach((permission: any) => {
+                  // Only count approved permissions
+                  if (permission.status === "Approved") {
+                    const startTime = permission.start_time;
+                    const endTime = permission.end_time;
+
+                    if (startTime && endTime) {
+                      // Calculate hours between start and end time
+                      const [startHours, startMinutes] = startTime
+                        .split(":")
+                        .map(Number);
+                      const [endHours, endMinutes] = endTime
+                        .split(":")
+                        .map(Number);
+
+                      const startTotalMinutes = startHours * 60 + startMinutes;
+                      const endTotalMinutes = endHours * 60 + endMinutes;
+
+                      const durationMinutes =
+                        endTotalMinutes - startTotalMinutes;
+                      const durationHours = durationMinutes / 60;
+
+                      totalPermissionHours += durationHours;
+
+                      console.log(
+                        `  Permission on ${
+                          permission.date
+                        }: ${startTime} to ${endTime} = ${durationHours.toFixed(
+                          2
+                        )}h`
+                      );
+                    }
+                  }
+                });
+              }
+
+              const roundedPermissionHours =
+                Math.round(totalPermissionHours * 100) / 100;
+
+              console.log(
+                `✓ Total permission hours for ${employee.name}: ${roundedPermissionHours}h`
+              );
+
+              return {
+                ...employee,
+                permissionHours: roundedPermissionHours,
+              };
+            } else {
+              console.warn(
+                `⚠ Failed to fetch permissions for ${employee.name}: ${response.status}`
+              );
+              return {
+                ...employee,
+                permissionHours: 0,
+              };
+            }
+          } catch (err) {
+            console.error(
+              `❌ Error fetching permissions for ${employee.name}:`,
+              err
+            );
+            return {
+              ...employee,
+              permissionHours: 0,
+            };
+          }
+        })
+      );
+
+      console.log(
+        "✓ Final employees with permission hours:",
+        updatedEmployees.map((emp) => ({
+          name: emp.name,
+          id: emp.id,
+          permissionHours: emp.permissionHours,
+        }))
+      );
+
+      return updatedEmployees;
+    } catch (err) {
+      console.error("❌ Error in fetchPermissionHours:", err);
+      return employees.map((emp) => ({
+        ...emp,
+        permissionHours: 0,
+      }));
+    }
+  };
+
   // Fetch overtime hours for selected month/year
   const fetchOvertimeHours = async (
     employees: DashboardEmployee[],
@@ -406,6 +530,7 @@ export default function AttendanceOverview() {
       }));
     }
   };
+
   const fetchAttendanceSummary = async (
     employees: DashboardEmployee[],
     totalDaysToUse: number,
@@ -701,7 +826,9 @@ export default function AttendanceOverview() {
           // Process all employees and add to selection
           const processedEmployees = await fetchAttendanceSummary(
             data.employees,
-            currentMonthTotalDays
+            currentMonthTotalDays,
+            selectedMonth,
+            selectedYear
           );
           const employeesWithOT = await fetchOvertimeHours(
             processedEmployees,
@@ -709,8 +836,13 @@ export default function AttendanceOverview() {
             selectedMonth,
             selectedYear
           );
-          const employeesWithCounts = await fetchRequestCounts(
+          const employeesWithPermissionHours = await fetchPermissionHours(
             employeesWithOT,
+            selectedMonth,
+            selectedYear
+          );
+          const employeesWithCounts = await fetchRequestCounts(
+            employeesWithPermissionHours,
             currentMonthTotalDays,
             selectedMonth,
             selectedYear
@@ -949,7 +1081,7 @@ export default function AttendanceOverview() {
         const employeesWithAttendance = await fetchAttendanceSummary(
           data.employees,
           totalDaysToUse,
-          selectedMonth, // Added
+          selectedMonth,
           selectedYear
         );
 
@@ -964,10 +1096,18 @@ export default function AttendanceOverview() {
         );
 
         console.log(
+          `Adding permission hours for ${selectedMonth}/${selectedYear}...`
+        );
+        const employeesWithPermissionHours = await fetchPermissionHours(
+          employeesWithOT,
+          selectedMonth,
+          selectedYear
+        );
+        console.log(
           `Adding request counts for ${selectedMonth}/${selectedYear}...`
         );
         const employeesWithCounts = await fetchRequestCounts(
-          employeesWithOT,
+          employeesWithPermissionHours,
           totalDaysToUse,
           selectedMonth,
           selectedYear
@@ -980,12 +1120,13 @@ export default function AttendanceOverview() {
           console.log(
             `  ${idx + 1}. ${emp.name}: workingDays=${
               emp.workingDays
-            }, totalDays=${emp.totalDays}, otHours=${emp.otHours}`
+            }, totalDays=${emp.totalDays}, otHours=${
+              emp.otHours
+            }, permissionHours=${emp.permissionHours || 0}`
           );
         });
 
         setAttendanceData(employeesWithCounts);
-
         // Reset selections when data changes
         setSelectedEmployees(new Set());
         setIsAllSelected(false);
@@ -1380,7 +1521,7 @@ export default function AttendanceOverview() {
         "Working Days",
         "OT Hours",
         "Leave Requests",
-        "Permission Requests",
+        "Permission Hours",
       ],
       ...selectedData.map((emp) => [
         emp.id,
@@ -1391,7 +1532,7 @@ export default function AttendanceOverview() {
         emp.workingDays,
         emp.otHours || 0,
         emp.leaveRequestCount || 0,
-        emp.permissionRequestCount || 0,
+        emp.permissionHours || 0,
       ]),
     ]
       .map((row) => row.join(","))
@@ -1455,7 +1596,7 @@ export default function AttendanceOverview() {
         emp.workingDays,
         emp.otHours || 0,
         emp.leaveRequestCount || 0,
-        emp.permissionRequestCount || 0,
+        emp.permissionHours || 0,
       ]);
 
       // Add table
@@ -1470,7 +1611,7 @@ export default function AttendanceOverview() {
             "Working Days",
             "OT Hours",
             "Leaves",
-            "Permissions",
+            "Permission Hours",
           ],
         ],
         body: tableData,
@@ -1932,7 +2073,7 @@ export default function AttendanceOverview() {
                               ref={(el) => {
                                 if (el) {
                                   // Show indeterminate state when some (but not all) employees on current page are selected
-                                  el.indeterminate =
+                                  (el as HTMLInputElement).indeterminate =
                                     currentPageSelectedCount > 0 &&
                                     currentPageSelectedCount <
                                       attendanceData.length;
@@ -2090,7 +2231,7 @@ export default function AttendanceOverview() {
                               <TableCell className="text-center">
                                 <div className="flex items-center justify-center">
                                   <Badge className="bg-green-100 text-green-800">
-                                    {employee.permissionRequestCount || 0}
+                                    {employee.permissionHours || 0}h
                                   </Badge>
                                 </div>
                               </TableCell>

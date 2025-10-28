@@ -110,6 +110,10 @@ export default function PermissionRequestPage() {
           : Math.random().toString(36).substring(2);
 
       // ✅ Direct insert to Supabase (same as leave - NO API)
+      const selectedDate = date ? new Date(date) : null;
+      const month = selectedDate ? selectedDate.getMonth() + 1 : null;
+      const year = selectedDate ? selectedDate.getFullYear() : null;
+
       const { data: permissionRequestData, error: insertError } = await supabase
         .from("permission_requests")
         .insert({
@@ -121,6 +125,8 @@ export default function PermissionRequestPage() {
           manager_id: employee.manager_id,
           permission_type: permissionType,
           date: date ? format(date, "yyyy-MM-dd") : null,
+          month: month, // ensure admin dashboard month filter works
+          year: year,   // ensure admin dashboard year filter works
           start_time: startTime,
           end_time: endTime,
           reason: reason,

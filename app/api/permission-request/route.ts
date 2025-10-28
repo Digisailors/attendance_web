@@ -96,18 +96,38 @@ export async function GET(req: NextRequest) {
       .select("*", { count: countOnly ? "exact" : undefined })
       .eq("employee_id", uuid);
 
-    if (month && year) {
-      query = query.eq("month", parseInt(month)).eq("year", parseInt(year));
-    }
+    const monthInt = month ? parseInt(month) : undefined;
+    const yearInt = year ? parseInt(year) : undefined;
 
+    // Do NOT DB-filter by month/year to avoid excluding legacy rows.
     if (status) query = query.eq("status", status);
     query = query.order("created_at", { ascending: false });
 
     const { data, error, count } = await query;
     if (error) throw error;
 
+    let finalData = data || [];
+    // Apply month/year filtering in-memory so we can include rows missing month/year by using date
+    if (!countOnly && monthInt && yearInt) {
+      finalData = finalData.filter((r: any) => {
+        const hasMonthYear = r.month != null && r.year != null;
+        if (hasMonthYear) {
+          return r.month === monthInt && r.year === yearInt;
+        }
+        if (!r.date) return false;
+        try {
+          const d = typeof r.date === "string" ? new Date(r.date) : new Date(r.date);
+          const dMonth = d.getMonth() + 1;
+          const dYear = d.getFullYear();
+          return dMonth === monthInt && dYear === yearInt;
+        } catch {
+          return false;
+        }
+      });
+    }
+
     if (countOnly) return NextResponse.json({ count }, { status: 200 });
-    return NextResponse.json({ data, count }, { status: 200 });
+    return NextResponse.json({ data: finalData, count }, { status: 200 });
   } catch (err: any) {
     console.error("GET error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
