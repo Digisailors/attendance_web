@@ -164,8 +164,73 @@ export async function POST(req: NextRequest) {
 }
 
 // PUT - STEP 2: Submit work details (updates reason and images)
+// PUT - Handle BOTH work submission (FormData) AND status updates (JSON)
 export async function PUT(req: NextRequest) {
   try {
+    const contentType = req.headers.get("content-type") || "";
+
+    // ✅ CASE 1: Status Update (JSON from Team Lead/Manager)
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      const { id, status, approved_by } = body;
+
+      console.log("📥 PUT Request - Status Update:", { id, status, approved_by });
+
+      if (!id || !status) {
+        return NextResponse.json(
+          { error: "Missing required fields: id, status" },
+          { status: 400 }
+        );
+      }
+
+      // Verify OT session exists
+      const { data: otSession, error: otError } = await supabase
+        .from("overtime_requests")
+        .select("id, employee_id")
+        .eq("id", id)
+        .single();
+
+      if (otError || !otSession) {
+        return NextResponse.json(
+          { error: "OT session not found", details: otError?.message },
+          { status: 404 }
+        );
+      }
+
+      // Update status
+      const updateData: any = {
+        status,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (approved_by) {
+        updateData.approved_by = approved_by;
+      }
+
+      const { error: updateError } = await supabase
+        .from("overtime_requests")
+        .update(updateData)
+        .eq("id", id);
+
+      if (updateError) {
+        console.log("❌ Status update failed:", updateError.message);
+        return NextResponse.json(
+          { error: "Failed to update status", details: updateError.message },
+          { status: 500 }
+        );
+      }
+
+      console.log("✅ OT status updated successfully:", id, "->", status);
+
+      return NextResponse.json({
+        success: true,
+        id,
+        status,
+        message: "OT status updated successfully",
+      });
+    }
+
+    // ✅ CASE 2: Work Submission (FormData from Employee)
     const formData = await req.formData();
 
     const ot_id = formData.get("ot_id") as string;
@@ -245,7 +310,6 @@ export async function PUT(req: NextRequest) {
     );
   }
 }
-
 // PATCH - STEP 3: End OT (updates end_time)
 export async function PATCH(req: NextRequest) {
   try {
@@ -405,7 +469,7 @@ export async function GET(req: NextRequest) {
           ? employee.team_members
           : [employee.team_members];
 
-        return teamMemberRecords.some((tm) => {
+        return teamMemberRecords.some((tm:any) => {
           if (!tm || !tm.is_active) return false;
           return (
             tm.team_lead_id === team_lead_code ||
