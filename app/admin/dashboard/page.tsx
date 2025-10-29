@@ -80,6 +80,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AddEmployeeModal from "@/components/AddEmployeeModal";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AddInternModal from "@/components/AddInternModal";
 // import jsPDF from "jspdf";
 // import autoTable from "jspdf-autotable";
 
@@ -530,7 +531,19 @@ export default function AttendanceOverview() {
       }));
     }
   };
-
+const handleAddIntern = async (internData: any) => {
+  try {
+    console.log("Intern data to be saved:", internData);
+    toast({
+      title: "Success",
+      description: "Intern added successfully",
+      variant: "default",
+    });
+  } catch (error) {
+    console.error("Error adding intern:", error);
+    throw error;
+  }
+};
   const fetchAttendanceSummary = async (
     employees: DashboardEmployee[],
     totalDaysToUse: number,
@@ -1942,6 +1955,14 @@ export default function AttendanceOverview() {
                           `(${allSelectedEmployees.size})`}
                       </Button> */}
                       <AddEmployeeModal onAddEmployee={handleAddEmployee} />
+                      <div className="flex items-center space-x-2">
+                        
+
+                        {/* NEW: Add Intern Button */}
+                        <AddInternModal onAddIntern={handleAddIntern} />
+
+                       
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
