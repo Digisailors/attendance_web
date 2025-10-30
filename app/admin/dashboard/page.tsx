@@ -1959,7 +1959,7 @@ const handleAddIntern = async (internData: any) => {
                         
 
                         {/* NEW: Add Intern Button */}
-                        <AddInternModal onAddIntern={handleAddIntern} />
+                        {/* <AddInternModal onAddIntern={handleAddIntern} /> */}
 
                        
                       </div>

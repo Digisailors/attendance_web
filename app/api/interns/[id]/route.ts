@@ -13,61 +13,31 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
+    const internId = params.id;
 
-    const { data: intern, error } = await supabase
+    console.log("Fetching intern:", internId);
+
+    const { data, error } = await supabase
       .from("interns")
       .select("*")
-      .eq("id", id)
+      .eq("id", internId)
       .single();
 
-    if (error || !intern) {
+    if (error) {
+      console.error("Error fetching intern:", error);
       return NextResponse.json({ error: "Intern not found" }, { status: 404 });
     }
 
-    // Generate signed URLs for documents if they exist
-    const documentUrls: any = {};
-
-    if (intern.aadhar_path) {
-      const { data } = await supabase.storage
-        .from("intern-documents")
-        .createSignedUrl(intern.aadhar_path, 3600); // 1 hour expiry
-      documentUrls.aadharUrl = data?.signedUrl;
-    }
-
-    if (intern.photo_path) {
-      const { data } = await supabase.storage
-        .from("intern-documents")
-        .createSignedUrl(intern.photo_path, 3600);
-      documentUrls.photoUrl = data?.signedUrl;
-    }
-
-    if (intern.marksheet_path) {
-      const { data } = await supabase.storage
-        .from("intern-documents")
-        .createSignedUrl(intern.marksheet_path, 3600);
-      documentUrls.marksheetUrl = data?.signedUrl;
-    }
-
-    if (intern.resume_path) {
-      const { data } = await supabase.storage
-        .from("intern-documents")
-        .createSignedUrl(intern.resume_path, 3600);
-      documentUrls.resumeUrl = data?.signedUrl;
-    }
-
-    return NextResponse.json({
-      intern,
-      documentUrls,
-    });
+    return NextResponse.json(data);
   } catch (error) {
-    console.error("Error in GET /api/interns/[id]:", error);
+    console.error("Error in GET intern:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
     );
   }
 }
+
 
 // PUT - Update intern
 export async function PUT(
@@ -169,57 +139,26 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
+    const internId = params.id;
 
-    // Fetch intern to get document paths
-    const { data: intern, error: fetchError } = await supabase
-      .from("interns")
-      .select("*")
-      .eq("id", id)
-      .single();
+    console.log("Deleting intern:", internId);
 
-    if (fetchError || !intern) {
-      return NextResponse.json({ error: "Intern not found" }, { status: 404 });
-    }
-
-    // Delete documents from storage
-    const filesToDelete: string[] = [];
-    if (intern.aadhar_path) filesToDelete.push(intern.aadhar_path);
-    if (intern.photo_path) filesToDelete.push(intern.photo_path);
-    if (intern.marksheet_path) filesToDelete.push(intern.marksheet_path);
-    if (intern.resume_path) filesToDelete.push(intern.resume_path);
-
-    if (filesToDelete.length > 0) {
-      const { error: storageError } = await supabase.storage
-        .from("intern-documents")
-        .remove(filesToDelete);
-
-      if (storageError) {
-        console.error("Error deleting documents:", storageError);
-        // Continue with intern deletion even if file deletion fails
-      }
-    }
-
-    // Delete intern record
-    const { error: deleteError } = await supabase
+    const { error } = await supabase
       .from("interns")
       .delete()
-      .eq("id", id);
+      .eq("id", internId);
 
-    if (deleteError) {
-      console.error("Error deleting intern:", deleteError);
+    if (error) {
+      console.error("Error deleting intern:", error);
       return NextResponse.json(
         { error: "Failed to delete intern" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: "Intern deleted successfully",
-      id,
-    });
+    return NextResponse.json({ message: "Intern deleted successfully" });
   } catch (error) {
-    console.error("Error in DELETE /api/interns/[id]:", error);
+    console.error("Error in DELETE intern:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

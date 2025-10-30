@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 interface SidebarProps {
-  userType: "admin" | "employee" | "team-lead" | "manager";
+  userType: "admin" | "employee" | "team-lead" | "manager" |"intern";
   className?: string;
 }
 
@@ -115,6 +115,12 @@ export function Sidebar({ userType, className }: SidebarProps) {
             icon: Home,
             label: "Dashboard",
             href: "/admin/dashboard",
+            type: "link",
+          },
+          {
+            icon: Home,
+            label: "Intern-Dashboard",
+            href: "/admin/intern-dashboard",
             type: "link",
           },
           {
@@ -243,6 +249,15 @@ export function Sidebar({ userType, className }: SidebarProps) {
             icon: CheckCircle,
             label: "Leave and Permission",
             href: "/manager/lap",
+            type: "link",
+          },
+        ];
+      case "intern":
+        return [
+          {
+            icon: Home,
+            label: "Dashboard",
+            href: "/intern/dashboard",
             type: "link",
           },
         ];

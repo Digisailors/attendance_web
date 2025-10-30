@@ -291,21 +291,28 @@ export async function POST(request: NextRequest) {
 }
 
 // GET - Fetch all interns with optional filtering
+// GET - Fetch all interns with optional filtering and pagination
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get("status");
-    const paidOrUnpaid = searchParams.get("paidOrUnpaid");
+    const paidOrUnpaid = searchParams.get("paid_or_unpaid");
     const search = searchParams.get("search");
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "10");
 
-    let query = supabase.from("interns").select("*");
+    // Calculate offset
+    const offset = (page - 1) * limit;
+
+    // Build query
+    let query = supabase.from("interns").select("*", { count: "exact" });
 
     // Apply filters
-    if (status) {
+    if (status && status !== "All Status") {
       query = query.eq("status", status);
     }
 
-    if (paidOrUnpaid) {
+    if (paidOrUnpaid && paidOrUnpaid !== "All") {
       query = query.eq("paid_or_unpaid", paidOrUnpaid);
     }
 
@@ -318,7 +325,10 @@ export async function GET(request: NextRequest) {
     // Order by created date (newest first)
     query = query.order("created_at", { ascending: false });
 
-    const { data: interns, error } = await query;
+    // Apply pagination
+    query = query.range(offset, offset + limit - 1);
+
+    const { data: interns, error, count } = await query;
 
     if (error) {
       console.error("Error fetching interns:", error);
@@ -328,7 +338,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ interns, count: interns?.length || 0 });
+    // Calculate pagination info
+    const totalCount = count || 0;
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return NextResponse.json({
+      interns: interns || [],
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalCount: totalCount,
+        limit: limit,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    });
   } catch (error) {
     console.error("Error in GET /api/interns:", error);
     return NextResponse.json(

@@ -1,281 +1,362 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Users, Building2, Eye, EyeOff } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
-import { toast } from '@/hooks/use-toast'
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Users, Building2, Eye, EyeOff } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+import { toast } from "@/hooks/use-toast";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+);
 
 const simpleHash = async (password: string): Promise<string> => {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-}
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+};
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [userType, setUserType] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [isSignup, setIsSignup] = useState(false)
+  const router = useRouter();
+  const [userType, setUserType] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [isSignup, setIsSignup] = useState(false);
 
-  const [showForgotPassword, setShowForgotPassword] = useState(false)
-  const [forgotEmail, setForgotEmail] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [forgotError, setForgotError] = useState('')
-  const [forgotSuccess, setForgotSuccess] = useState('')
-  const [showNewPass, setShowNewPass] = useState(false)
-  const [showConfirmPass, setShowConfirmPass] = useState(false)
-
-  // Function to validate if employee exists in employee database
-  const validateEmployeeExists = async (email: string, userType: string) => {
-    try {
-     const { data, error } = await supabase
-  .from("employees") // table name correct ah iruku
-  .select("*")
-  .eq("email_address", email) // <-- column name update
-
-  .eq("is_active", true);
-
-      console.log('Employee validation result:', { data, error, email, userType })
-
-      // If no data found or error occurred
-      if (error && error.code === 'PGRST116') {
-        // No rows found
-        return { exists: false, employeeData: null }
-      }
-      
-      if (error || !data || data.length === 0) {
-        return { exists: false, employeeData: null }
-      }
-
-      return { exists: true, employeeData: data[0] }
-    } catch (err) {
-      console.log('Employee validation error:', err)
-      return { exists: false, employeeData: null }
-    }
-  }
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [forgotError, setForgotError] = useState("");
+  const [forgotSuccess, setForgotSuccess] = useState("");
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError('')
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
 
     try {
       if (isSignup) {
         // Validate required fields
         if (!email || !password || !userType) {
-          setError('All fields are required')
+          setError("All fields are required");
           toast({
-            title: 'Error',
-            description: 'All fields are required',
-            variant: 'destructive'
-          })
-          return
+            title: "Error",
+            description: "All fields are required",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
 
-        // First, validate if the employee exists in the employee database
-        const { exists, employeeData } = await validateEmployeeExists(email, userType)
-        
-        console.log('Employee validation:', { exists, email, userType })
-        
-        if (!exists) {
-          setError('You are not authorized to create an account.')
+        // Validate password length
+        if (password.length < 6) {
+          setError("Password must be at least 6 characters");
           toast({
-            title: 'Access Denied',
-            description: 'You are not authorized to create an account.',
-            variant: 'destructive'
-          })
-          setIsLoading(false)
-          return
+            title: "Error",
+            description: "Password must be at least 6 characters",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
+
+        // Validate based on user type through API
+        console.log("Validating user:", { email, userType });
+
+        const validateResponse = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            userType,
+            action: "validate",
+          }),
+        });
+
+        const validateResult = await validateResponse.json();
+        console.log("Validation result:", validateResult);
+
+        if (!validateResponse.ok || !validateResult.authorized) {
+          const errorMsg =
+            userType === "intern"
+              ? "You are not registered as an active intern. Please contact admin."
+              : "You are not registered as an active employee. Please contact admin.";
+
+          setError(errorMsg);
+          toast({
+            title: "Access Denied",
+            description: errorMsg,
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        console.log("User validation successful:", { email, userType });
 
         // Check if user already has an account
         const { data: existingUser } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
+          .from("users")
+          .select("*")
+          .eq("email", email);
 
         if (existingUser && existingUser.length > 0) {
-          setError('Account already exists for this email. Please sign in instead.')
+          setError(
+            "Account already exists for this email. Please sign in instead."
+          );
           toast({
-            title: 'Account Exists',
-            description: 'Account already exists for this email. Please sign in instead.',
-            variant: 'destructive'
-          })
-          setIsLoading(false)
-          return
+            title: "Account Exists",
+            description:
+              "Account already exists for this email. Please sign in instead.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
 
-        // Create user account with employee data
-        const hashedPassword = await simpleHash(password)
-        const { error } = await supabase
-          .from('users')
-          .insert([{ 
-            email, 
-            password: hashedPassword, 
+        // Create user account
+        const hashedPassword = await simpleHash(password);
+        const { error } = await supabase.from("users").insert([
+          {
+            email,
+            password: hashedPassword,
             user_type: userType,
-       
-          
-          
-          }])
+          },
+        ]);
 
         if (error) {
-          console.log('User creation error:', error)
-          setError(error.code === '23505' ? 'Email already exists' : error.message)
+          console.log("User creation error:", error);
+          setError(
+            error.code === "23505" ? "Email already exists" : error.message
+          );
           toast({
-            title: 'Error',
+            title: "Error",
             description: error.message,
-            variant: 'destructive'
-          })
-          return
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
 
         toast({
-          title: 'Account Created Successfully',
-          description: 'Your account has been created. Please sign in.',
-          variant: 'default'
-        })
-        setIsSignup(false)
-        setPassword('')
-        setEmail('')
-        setUserType('')
+          title: "Account Created Successfully",
+          description: "Your account has been created. Please sign in.",
+          variant: "default",
+        });
+        setIsSignup(false);
+        setPassword("");
+        setEmail("");
+        setUserType("");
       } else {
+        // Sign in logic
         const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
-          .eq('is_active', true)
-          .single()
+          .from("users")
+          .select("*")
+          .eq("email", email)
+          .eq("is_active", true)
+          .single();
 
         if (error || !data) {
-          setError('Invalid email or password')
+          setError("Invalid email or password");
           toast({
-            title: 'Login Failed',
-            description: 'Invalid email or password',
-            variant: 'destructive'
-          })
-          return
+            title: "Login Failed",
+            description: "Invalid email or password",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
 
-        const hashedInputPassword = await simpleHash(password)
+        const hashedInputPassword = await simpleHash(password);
         if (hashedInputPassword !== data.password) {
-          setError('Invalid email or password')
+          setError("Invalid email or password");
           toast({
-            title: 'Login Failed',
-            description: 'Invalid email or password',
-            variant: 'destructive'
-          })
-          return
+            title: "Login Failed",
+            description: "Invalid email or password",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
 
-        localStorage.setItem('user', JSON.stringify({
-          id: data.id,
-          email: data.email,
-          userType: data.user_type,
-          fullName: data.full_name,
-          department: data.department
-        }))
+        // Additional check: Verify the user still exists in their respective table
+        let isStillAuthorized = true;
+
+        if (data.user_type === "intern") {
+          const { data: internData } = await supabase
+            .from("interns")
+            .select("status")
+            .eq("email", email)
+            .single();
+
+          if (!internData || internData.status !== "Active") {
+            isStillAuthorized = false;
+          }
+        } else if (data.user_type !== "admin") {
+          const { data: employeeData } = await supabase
+            .from("employees")
+            .select("is_active")
+            .eq("email_address", email)
+            .single();
+
+          if (!employeeData || !employeeData.is_active) {
+            isStillAuthorized = false;
+          }
+        }
+
+        if (!isStillAuthorized) {
+          setError("Your account has been deactivated. Please contact admin.");
+          toast({
+            title: "Access Denied",
+            description:
+              "Your account has been deactivated. Please contact admin.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            id: data.id,
+            email: data.email,
+            userType: data.user_type,
+            fullName: data.full_name,
+            department: data.department,
+          })
+        );
 
         toast({
-          title: 'Login Successful',
+          title: "Login Successful",
           description: `Welcome back, ${data.full_name || data.user_type}!`,
-          variant: 'default'
-        })
+          variant: "default",
+        });
 
         switch (data.user_type) {
-          case 'admin':
-            router.push('/admin/dashboard'); break
-          case 'employee':
-          case 'intern':
-            router.push('/employee/dashboard'); break
-          case 'team-lead':
-            router.push('/team-lead/dashboard'); break
-          case 'manager':
-            router.push('/manager/finalapprovel'); break
+          case "admin":
+            router.push("/admin/dashboard");
+            break;
+          case "employee":
+            router.push("/employee/dashboard");
+            break;
+          case "intern":
+            router.push("/intern/dashboard");
+            break;
+          case "team-lead":
+            router.push("/team-lead/dashboard");
+            break;
+          case "manager":
+            router.push("/manager/finalapprovel");
+            break;
           default:
-            router.push('/')
+            router.push("/");
         }
       }
     } catch (err) {
-      setError('Something went wrong')
+      console.error("Login error:", err);
+      setError("Something went wrong");
       toast({
-        title: 'Error',
-        description: 'Something went wrong',
-        variant: 'destructive'
-      })
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleResetPassword = async () => {
-    setForgotError('')
-    setForgotSuccess('')
+    setForgotError("");
+    setForgotSuccess("");
 
     if (!forgotEmail || !newPassword || !confirmPassword) {
-      setForgotError('All fields are required')
+      setForgotError("All fields are required");
       toast({
-        title: 'Error',
-        description: 'All fields are required',
-        variant: 'destructive'
-      })
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setForgotError('Passwords do not match')
-      toast({
-        title: 'Error',
-        description: 'Passwords do not match',
-        variant: 'destructive'
-      })
-      return
+        title: "Error",
+        description: "All fields are required",
+        variant: "destructive",
+      });
+      return;
     }
 
-    const res = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    if (newPassword.length < 6) {
+      setForgotError("Password must be at least 6 characters");
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setForgotError("Passwords do not match");
+      toast({
+        title: "Error",
+        description: "Passwords do not match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: forgotEmail,
         newPassword,
-        action: 'reset'
-      })
-    })
+        action: "reset",
+      }),
+    });
 
-    const result = await res.json()
+    const result = await res.json();
     if (!res.ok) {
-      setForgotError(result.error || 'Reset failed')
+      setForgotError(result.error || "Reset failed");
       toast({
-        title: 'Reset Failed',
-        description: result.error || 'Reset failed',
-        variant: 'destructive'
-      })
+        title: "Reset Failed",
+        description: result.error || "Reset failed",
+        variant: "destructive",
+      });
     } else {
-      setForgotSuccess('Password updated!')
+      setForgotSuccess("Password updated!");
       toast({
-        title: 'Success',
-        description: 'Password updated successfully',
-        variant: 'default'
-      })
-      setTimeout(() => setShowForgotPassword(false), 1500)
+        title: "Success",
+        description: "Password updated successfully",
+        variant: "default",
+      });
+      setForgotEmail("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setShowForgotPassword(false), 1500);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -284,9 +365,13 @@ export default function LoginPage() {
           <div className="mx-auto w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
             <Building2 className="w-6 h-6 text-white" />
           </div>
-          <CardTitle className="text-2xl font-bold text-gray-900">Employee Management System</CardTitle>
+          <CardTitle className="text-2xl font-bold text-gray-900">
+            Employee Management System
+          </CardTitle>
           <CardDescription className="text-gray-600">
-            {isSignup ? 'Create your account' : 'Sign in to access your dashboard'}
+            {isSignup
+              ? "Create your account"
+              : "Sign in to access your dashboard"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -312,6 +397,12 @@ export default function LoginPage() {
                         Employee
                       </div>
                     </SelectItem>
+                    <SelectItem value="intern">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                        Intern
+                      </div>
+                    </SelectItem>
                     <SelectItem value="team-lead">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -334,7 +425,7 @@ export default function LoginPage() {
               <Input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
                 required
               />
@@ -344,9 +435,9 @@ export default function LoginPage() {
               <Label>Password</Label>
               <div className="relative">
                 <Input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
                   minLength={6}
@@ -373,10 +464,24 @@ export default function LoginPage() {
               )}
             </div>
 
-            {error && <div className="text-red-500 text-sm text-center">{error}</div>}
+            {error && (
+              <div className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-md border border-red-200">
+                {error}
+              </div>
+            )}
 
-            <Button type="submit" className="w-full bg-blue-600 text-white" disabled={isLoading}>
-              {isLoading ? (isSignup ? 'Creating...' : 'Signing in...') : (isSignup ? 'Sign Up' : 'Sign In')}
+            <Button
+              type="submit"
+              className="w-full bg-blue-600 text-white hover:bg-blue-700"
+              disabled={isLoading}
+            >
+              {isLoading
+                ? isSignup
+                  ? "Creating Account..."
+                  : "Signing In..."
+                : isSignup
+                ? "Sign Up"
+                : "Sign In"}
             </Button>
 
             <div className="text-center">
@@ -384,12 +489,15 @@ export default function LoginPage() {
                 type="button"
                 className="text-blue-500 hover:underline text-sm"
                 onClick={() => {
-                  setIsSignup(!isSignup)
-                  setError('')
-                  setPassword('')
+                  setIsSignup(!isSignup);
+                  setError("");
+                  setPassword("");
+                  setUserType("");
                 }}
               >
-                {isSignup ? 'Already have an account? Sign in' : 'No account? Sign Up'}
+                {isSignup
+                  ? "Already have an account? Sign in"
+                  : "No account? Sign Up"}
               </button>
             </div>
           </form>
@@ -398,8 +506,9 @@ export default function LoginPage() {
           {isSignup && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
               <p className="text-sm text-blue-800">
-                <strong>Note:</strong> Only authorized employees can create accounts. 
-                If you encounter issues, please contact your administrator.
+                <strong>Note:</strong> Only authorized employees and active
+                interns can create accounts. Your email must be registered in
+                the system by an administrator first.
               </p>
             </div>
           )}
@@ -407,66 +516,89 @@ export default function LoginPage() {
       </Card>
 
       {/* Forgot Password Modal */}
-     {showForgotPassword && (
-  <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
-    <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-md relative">
-      <button
-        onClick={() => setShowForgotPassword(false)}
-        className="absolute top-2 right-3 text-gray-500 text-xl"
-      >
-        ×
-      </button>
-      <h2 className="text-lg font-semibold text-center mb-4">Reset Password</h2>
+      {showForgotPassword && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-md relative">
+            <button
+              onClick={() => {
+                setShowForgotPassword(false);
+                setForgotEmail("");
+                setNewPassword("");
+                setConfirmPassword("");
+                setForgotError("");
+                setForgotSuccess("");
+              }}
+              className="absolute top-2 right-3 text-gray-500 text-xl hover:text-gray-700"
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-semibold text-center mb-4">
+              Reset Password
+            </h2>
 
-      <Input
-        type="email"
-        value={forgotEmail}
-        onChange={e => setForgotEmail(e.target.value)}
-        placeholder="Enter your email"
-      />
+            <div className="space-y-3">
+              <Input
+                type="email"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                placeholder="Enter your email"
+              />
 
-      <div className="relative mt-3">
-        <Input
-          type={showNewPass ? 'text' : 'password'}
-          value={newPassword}
-          onChange={e => setNewPassword(e.target.value)}
-          placeholder="Create a new password (min 6 characters)"
-        />
-        <button
-          type="button"
-          onClick={() => setShowNewPass(!showNewPass)}
-          className="absolute top-1/2 right-3 transform -translate-y-1/2"
-        >
-          {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
+              <div className="relative">
+                <Input
+                  type={showNewPass ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password (min 6 characters)"
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPass(!showNewPass)}
+                  className="absolute top-1/2 right-3 transform -translate-y-1/2 text-gray-500"
+                >
+                  {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
 
-      <div className="relative mt-3">
-        <Input
-          type={showConfirmPass ? 'text' : 'password'}
-          value={confirmPassword}
-          onChange={e => setConfirmPassword(e.target.value)}
-          placeholder="Confirm your new password"
-        />
-        <button
-          type="button"
-          onClick={() => setShowConfirmPass(!showConfirmPass)}
-          className="absolute top-1/2 right-3 transform -translate-y-1/2"
-        >
-          {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
+              <div className="relative">
+                <Input
+                  type={showConfirmPass ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPass(!showConfirmPass)}
+                  className="absolute top-1/2 right-3 transform -translate-y-1/2 text-gray-500"
+                >
+                  {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
 
-      {forgotError && <p className="text-red-500 text-sm mt-2">{forgotError}</p>}
-      {forgotSuccess && <p className="text-green-600 text-sm mt-2">{forgotSuccess}</p>}
+            {forgotError && (
+              <p className="text-red-500 text-sm mt-2 bg-red-50 p-2 rounded border border-red-200">
+                {forgotError}
+              </p>
+            )}
+            {forgotSuccess && (
+              <p className="text-green-600 text-sm mt-2 bg-green-50 p-2 rounded border border-green-200">
+                {forgotSuccess}
+              </p>
+            )}
 
-      <Button onClick={handleResetPassword} className="w-full mt-4 bg-blue-600 text-white">
-        Reset Password
-      </Button>
+            <Button
+              onClick={handleResetPassword}
+              className="w-full mt-4 bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Reset Password
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-)}
-
-    </div>
-  )
+  );
 }
