@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,12 +37,40 @@ interface InternData {
   };
 }
 
-interface AddInternModalProps {
-  onAddIntern?: (internData: InternData) => Promise<void>;
+interface ExistingIntern {
+  id: string;
+  name: string;
+  email: string;
+  phone_number: string;
+  college: string;
+  year_or_passed_out: string;
+  department: string;
+  domain_in_office: string;
+  paid_or_unpaid: string;
+  aadhar_path?: string;
+  photo_path?: string;
+  marksheet_path?: string;
+  resume_path?: string;
 }
 
-export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
-  const [open, setOpen] = useState(false);
+interface AddInternModalProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  editMode?: boolean;
+  existingIntern?: ExistingIntern;
+  onAddIntern?: (internData: InternData) => Promise<void>;
+  onUpdateIntern?: () => Promise<void>;
+}
+
+export default function AddInternModal({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  editMode = false,
+  existingIntern,
+  onAddIntern,
+  onUpdateIntern,
+}: AddInternModalProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [internData, setInternData] = useState<InternData>({
     name: "",
@@ -63,9 +91,37 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Determine if controlled or uncontrolled
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? controlledOnOpenChange || (() => {})
+    : setInternalOpen;
+
+  // Populate form when editing
+  useEffect(() => {
+    if (editMode && existingIntern && open) {
+      setInternData({
+        name: existingIntern.name,
+        college: existingIntern.college,
+        yearOrPassedOut: existingIntern.year_or_passed_out,
+        department: existingIntern.department,
+        phoneNumber: existingIntern.phone_number,
+        domainInOffice: existingIntern.domain_in_office,
+        email: existingIntern.email,
+        paidOrUnpaid: existingIntern.paid_or_unpaid as "Paid" | "Unpaid",
+        documents: {
+          aadhar: null,
+          photo: null,
+          marksheet: null,
+          resume: null,
+        },
+      });
+    }
+  }, [editMode, existingIntern, open]);
+
   const handleInputChange = (field: keyof InternData, value: string) => {
     setInternData((prev) => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -86,7 +142,6 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
         [documentType]: file,
       },
     }));
-    // Clear error when user uploads a file
     if (errors[`documents.${documentType}`]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -127,13 +182,15 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
       newErrors.email = "Please enter a valid email address";
     }
 
-    // Document validation (all required except resume)
-    if (!internData.documents.aadhar)
-      newErrors["documents.aadhar"] = "Aadhar document is required";
-    if (!internData.documents.photo)
-      newErrors["documents.photo"] = "Photo is required";
-    if (!internData.documents.marksheet)
-      newErrors["documents.marksheet"] = "Marksheet is required";
+    // Document validation (only required for new interns)
+    if (!editMode) {
+      if (!internData.documents.aadhar)
+        newErrors["documents.aadhar"] = "Aadhar document is required";
+      if (!internData.documents.photo)
+        newErrors["documents.photo"] = "Photo is required";
+      if (!internData.documents.marksheet)
+        newErrors["documents.marksheet"] = "Marksheet is required";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -152,65 +209,111 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
     try {
       setLoading(true);
 
-      // Create FormData for file uploads
-      const formData = new FormData();
-      formData.append("name", internData.name);
-      formData.append("college", internData.college);
-      formData.append("yearOrPassedOut", internData.yearOrPassedOut);
-      formData.append("department", internData.department);
-      formData.append("phoneNumber", internData.phoneNumber);
-      formData.append("domainInOffice", internData.domainInOffice);
-      formData.append("email", internData.email);
-      formData.append("paidOrUnpaid", internData.paidOrUnpaid);
+      if (editMode && existingIntern) {
+        // Update existing intern
+        const formData = new FormData();
+        formData.append("name", internData.name);
+        formData.append("college", internData.college);
+        formData.append("yearOrPassedOut", internData.yearOrPassedOut);
+        formData.append("department", internData.department);
+        formData.append("phoneNumber", internData.phoneNumber);
+        formData.append("domainInOffice", internData.domainInOffice);
+        formData.append("email", internData.email);
+        formData.append("paidOrUnpaid", internData.paidOrUnpaid);
 
-      // Append files
-      if (internData.documents.aadhar) {
-        formData.append("aadhar", internData.documents.aadhar);
-      }
-      if (internData.documents.photo) {
-        formData.append("photo", internData.documents.photo);
-      }
-      if (internData.documents.marksheet) {
-        formData.append("marksheet", internData.documents.marksheet);
-      }
-      if (internData.documents.resume) {
-        formData.append("resume", internData.documents.resume);
-      }
+        // Append files only if they are provided
+        if (internData.documents.aadhar) {
+          formData.append("aadhar", internData.documents.aadhar);
+        }
+        if (internData.documents.photo) {
+          formData.append("photo", internData.documents.photo);
+        }
+        if (internData.documents.marksheet) {
+          formData.append("marksheet", internData.documents.marksheet);
+        }
+        if (internData.documents.resume) {
+          formData.append("resume", internData.documents.resume);
+        }
 
-      const response = await fetch("/api/interns", {
-        method: "POST",
-        body: formData,
-      });
+        const response = await fetch(`/api/interns/${existingIntern.id}`, {
+          method: "PUT",
+          body: formData,
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to add intern");
-      }
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to update intern");
+        }
 
-      const result = await response.json();
+        toast({
+          title: "Success",
+          description: `Intern ${internData.name} has been updated successfully`,
+          variant: "default",
+        });
 
-      toast({
-        title: "Success",
-        description: `Intern ${internData.name} has been added successfully`,
-        variant: "default",
-      });
+        if (onUpdateIntern) {
+          await onUpdateIntern();
+        }
+      } else {
+        // Create new intern
+        const formData = new FormData();
+        formData.append("name", internData.name);
+        formData.append("college", internData.college);
+        formData.append("yearOrPassedOut", internData.yearOrPassedOut);
+        formData.append("department", internData.department);
+        formData.append("phoneNumber", internData.phoneNumber);
+        formData.append("domainInOffice", internData.domainInOffice);
+        formData.append("email", internData.email);
+        formData.append("paidOrUnpaid", internData.paidOrUnpaid);
 
-      // Call optional callback
-      if (onAddIntern) {
-        await onAddIntern(internData);
+        // Append files
+        if (internData.documents.aadhar) {
+          formData.append("aadhar", internData.documents.aadhar);
+        }
+        if (internData.documents.photo) {
+          formData.append("photo", internData.documents.photo);
+        }
+        if (internData.documents.marksheet) {
+          formData.append("marksheet", internData.documents.marksheet);
+        }
+        if (internData.documents.resume) {
+          formData.append("resume", internData.documents.resume);
+        }
+
+        const response = await fetch("/api/interns", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to add intern");
+        }
+
+        toast({
+          title: "Success",
+          description: `Intern ${internData.name} has been added successfully`,
+          variant: "default",
+        });
+
+        if (onAddIntern) {
+          await onAddIntern(internData);
+        }
       }
 
       // Reset form and close modal
       resetForm();
       setOpen(false);
     } catch (error) {
-      console.error("Error adding intern:", error);
+      console.error("Error saving intern:", error);
       toast({
         title: "Error",
         description:
           error instanceof Error
             ? error.message
-            : "Failed to add intern. Please try again.",
+            : `Failed to ${
+                editMode ? "update" : "add"
+              } intern. Please try again.`,
         variant: "destructive",
       });
     } finally {
@@ -258,11 +361,19 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
   }) => {
     const file = internData.documents[documentType];
     const errorKey = `documents.${documentType}`;
+    const hasExistingFile =
+      editMode &&
+      existingIntern &&
+      existingIntern[`${documentType}_path` as keyof ExistingIntern];
 
     return (
       <div className="space-y-2">
         <Label htmlFor={documentType}>
-          {label} {required && <span className="text-red-500">*</span>}
+          {label}{" "}
+          {required && !editMode && <span className="text-red-500">*</span>}
+          {editMode && !required && (
+            <span className="text-gray-500 text-xs"> (Optional)</span>
+          )}
         </Label>
         <div className="flex items-center space-x-2">
           <Input
@@ -293,6 +404,11 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
             {file.name}
           </p>
         )}
+        {editMode && hasExistingFile && !file && (
+          <p className="text-sm text-blue-600">
+            Current file exists (upload new file to replace)
+          </p>
+        )}
         {errors[errorKey] && (
           <p className="text-sm text-red-500">{errors[errorKey]}</p>
         )}
@@ -302,21 +418,27 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          variant="default"
-          size="sm"
-          className="bg-green-600 hover:bg-green-700"
-        >
-          <UserPlus className="w-4 h-4 mr-2" />
-          Add Intern
-        </Button>
-      </DialogTrigger>
+      {!editMode && (
+        <DialogTrigger asChild>
+          <Button
+            variant="default"
+            size="sm"
+            className="bg-green-600 hover:bg-green-700"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Add Intern
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Intern</DialogTitle>
+          <DialogTitle>
+            {editMode ? "Edit Intern" : "Add New Intern"}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the interns information. Fields marked with * are required.
+            {editMode
+              ? "Update the intern's information. Only upload new documents if you want to replace existing ones."
+              : "Fill in the intern's information. Fields marked with * are required."}
           </DialogDescription>
         </DialogHeader>
 
@@ -505,18 +627,18 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
               <FileUploadField
                 label="Aadhar Card"
                 documentType="aadhar"
-                required={true}
+                required={!editMode}
               />
               <FileUploadField
                 label="Passport-size Photo"
                 documentType="photo"
-                required={true}
+                required={!editMode}
                 accept=".jpg,.jpeg,.png"
               />
               <FileUploadField
                 label="Marksheet"
                 documentType="marksheet"
-                required={true}
+                required={!editMode}
               />
               <FileUploadField
                 label="Resume (Optional)"
@@ -539,12 +661,12 @@ export default function AddInternModal({ onAddIntern }: AddInternModalProps) {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Adding Intern...
+                {editMode ? "Updating..." : "Adding Intern..."}
               </>
             ) : (
               <>
                 <UserPlus className="w-4 h-4 mr-2" />
-                Add Intern
+                {editMode ? "Update Intern" : "Add Intern"}
               </>
             )}
           </Button>

@@ -144,6 +144,10 @@ export default function InternsOverview() {
   );
   const [isAllSelected, setIsAllSelected] = useState(false);
 
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [internToEdit, setInternToEdit] = useState<Intern | null>(null);
+
   const router = useRouter();
 
   // Fetch interns from API
@@ -205,8 +209,20 @@ export default function InternsOverview() {
 
   // Handle adding intern - refresh the list
   const handleAddIntern = async () => {
-    // Reset to first page and refresh
     await fetchInterns(1);
+  };
+
+  // Handle editing intern
+  const handleEditIntern = (intern: Intern) => {
+    setInternToEdit(intern);
+    setShowEditModal(true);
+  };
+
+  // Handle update intern - refresh the list
+  const handleUpdateIntern = async () => {
+    setShowEditModal(false);
+    setInternToEdit(null);
+    await fetchInterns(currentPage);
   };
 
   // Handle search with debounce
@@ -613,14 +629,10 @@ export default function InternsOverview() {
                                       }
                                     >
                                       <Eye className="w-4 h-4 mr-2" />
-                                      View
+                                      View Details
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                      onClick={() =>
-                                        router.push(
-                                          `/admin/interns/${intern.id}/edit`
-                                        )
-                                      }
+                                      onClick={() => handleEditIntern(intern)}
                                     >
                                       <Edit className="w-4 h-4 mr-2" />
                                       Edit
@@ -680,6 +692,17 @@ export default function InternsOverview() {
             </div>
           </main>
         </div>
+
+        {/* Edit Modal */}
+        {showEditModal && internToEdit && (
+          <AddInternModal
+            open={showEditModal}
+            onOpenChange={setShowEditModal}
+            editMode={true}
+            existingIntern={internToEdit}
+            onUpdateIntern={handleUpdateIntern}
+          />
+        )}
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

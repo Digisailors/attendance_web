@@ -74,7 +74,6 @@ interface WorkLog {
   work_type: string | null;
   description: string | null;
   total_hours: number | null;
-  // overtime_hours: number | null;
   department: string | null;
   created_at: string;
 }
@@ -167,7 +166,6 @@ export default function InternDetailPage() {
         throw new Error("Failed to update status");
       }
 
-      // Update local state
       setIntern({ ...intern, status: newStatus });
 
       toast({
@@ -316,7 +314,7 @@ export default function InternDetailPage() {
                       <User className="w-5 h-5 text-blue-600" />
                       <CardTitle>Personal Information</CardTitle>
                     </div>
-                    
+
                     {/* Status Dropdown Toggle */}
                     <div className="flex items-center space-x-3">
                       <span className="text-sm text-gray-600 font-medium">
@@ -348,12 +346,12 @@ export default function InternDetailPage() {
                               <span>Inactive</span>
                             </div>
                           </SelectItem>
-                          <SelectItem value="Completed">
-                            {/* <div className="flex items-center space-x-2">
+                          {/* <SelectItem value="Completed">
+                            <div className="flex items-center space-x-2">
                               <CheckCircle className="w-4 h-4 text-blue-600" />
                               <span>Completed</span>
-                            </div> */}
-                          </SelectItem>
+                            </div>
+                          </SelectItem> */}
                         </SelectContent>
                       </Select>
                     </div>
@@ -509,7 +507,6 @@ export default function InternDetailPage() {
                             <TableHead>Check Out</TableHead>
                             <TableHead>Work Type</TableHead>
                             <TableHead>Total Hours</TableHead>
-                            {/* <TableHead>Overtime</TableHead> */}
                             <TableHead>Description</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -555,16 +552,6 @@ export default function InternDetailPage() {
                               <TableCell>
                                 {formatHours(log.total_hours)}
                               </TableCell>
-                              {/* <TableCell>
-                                {log.overtime_hours &&
-                                log.overtime_hours > 0 ? (
-                                  <span className="text-amber-600 font-medium">
-                                    +{formatHours(log.overtime_hours)}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </TableCell> */}
                               <TableCell className="max-w-xs">
                                 {log.description ? (
                                   <p className="text-sm text-gray-600 truncate">
