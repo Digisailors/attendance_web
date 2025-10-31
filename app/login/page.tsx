@@ -221,11 +221,15 @@ export default function LoginPage() {
         } else if (data.user_type !== "admin") {
           const { data: employeeData } = await supabase
             .from("employees")
-            .select("is_active")
+            .select("is_active, status")
             .eq("email_address", email)
             .single();
 
-          if (!employeeData || !employeeData.is_active) {
+          if (
+            !employeeData ||
+            !employeeData.is_active ||
+            employeeData.status !== "Active"
+          ) {
             isStillAuthorized = false;
           }
         }

@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
           .select("*")
           .eq("email_address", email)
           .eq("is_active", true)
+          .eq("status", "Active")
           .single();
 
         if (error || !data) {

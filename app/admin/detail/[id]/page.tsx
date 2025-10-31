@@ -25,6 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   ArrowLeft,
   FileText,
@@ -133,6 +135,7 @@ const getWorkModeBadge = (mode: string) => {
 const getEmployeeStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     Active: "bg-green-100 text-green-800",
+    Inactive: "bg-gray-200 text-gray-700",
     Warning: "bg-yellow-100 text-yellow-800",
     "On Leave": "bg-red-100 text-red-800",
   };
@@ -196,6 +199,8 @@ export default function EmployeeAttendanceDetail() {
   };
 
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
+  const [employeeStatus, setEmployeeStatus] = useState<string>("Active");
+  const [savingStatus, setSavingStatus] = useState<boolean>(false);
   const [dailyWorkLog, setDailyWorkLog] = useState<DailyWorkLog[]>([]);
   const [overtimeHours, setOvertimeHours] = useState<number>(0);
   const [overtimeByDate, setOvertimeByDate] = useState<Map<string, number>>(
@@ -526,6 +531,7 @@ export default function EmployeeAttendanceDetail() {
      });
 
      setEmployeeData(correctedEmployeeData);
+     setEmployeeStatus(correctedEmployeeData.status || "Active");
      setDailyWorkLog(completeWorkLog);
    } catch (err) {
      const errorMessage =
@@ -545,6 +551,34 @@ export default function EmployeeAttendanceDetail() {
 
   const handleNavigate = () => {
     router.push("/admin/dashboard");
+  };
+
+  const handleToggleStatus = async (checked: boolean) => {
+    if (!employeeData) return;
+    const newStatus = checked ? "Active" : "Inactive";
+    const prevStatus = employeeStatus;
+    try {
+      setSavingStatus(true);
+      // Optimistic update
+      setEmployeeStatus(newStatus);
+
+      const res = await fetch(`/api/employees/${employeeData.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to update status: ${res.status}`);
+      }
+    } catch (e) {
+      // Rollback on error
+      setEmployeeStatus(prevStatus);
+      console.error(e);
+      alert("Failed to update status. Please try again.");
+    } finally {
+      setSavingStatus(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -811,11 +845,22 @@ export default function EmployeeAttendanceDetail() {
                         </Badge>
                         <Badge
                           className={getEmployeeStatusBadge(
-                            employeeData.status
+                            employeeStatus
                           )}
                         >
-                          {employeeData.status}
+                          {employeeStatus}
                         </Badge>
+                        <div className="flex items-center gap-2 ml-4">
+                          <Label htmlFor="status-toggle" className="text-sm text-gray-600">
+                            {savingStatus ? "Saving..." : "Active"}
+                          </Label>
+                          <Switch
+                            id="status-toggle"
+                            checked={employeeStatus === "Active"}
+                            onCheckedChange={handleToggleStatus}
+                            disabled={savingStatus}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
