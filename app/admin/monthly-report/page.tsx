@@ -375,6 +375,24 @@ export default function MonthlyReports() {
     }
   };
 
+  // Fetch all employee IDs when mode changes to "all"
+  useEffect(() => {
+    const selectAllEmployees = async () => {
+      if (selectionMode === "all") {
+        setLoading(true);
+        try {
+          const allEmployees = await fetchAllEmployees();
+          setSelectedEmployeeIds(new Set(allEmployees.map((emp) => emp.id)));
+        } catch (error) {
+          console.error("Error fetching all employees:", error);
+        }
+        setLoading(false);
+      }
+    };
+
+    selectAllEmployees();
+  }, [selectionMode]);
+
   // Initial data fetch
   useEffect(() => {
     fetchEmployees(1, "", "All Modes", "All Status");
@@ -391,11 +409,20 @@ export default function MonthlyReports() {
     setSelectedEmployeeIds(newSelected);
   };
 
-  const toggleSelectAll = () => {
-    if (selectedEmployeeIds.size === employees.length) {
+  const toggleSelectAll = async () => {
+    if (selectedEmployeeIds.size === pagination.totalCount) {
+      // If all are selected, clear selection
       setSelectedEmployeeIds(new Set());
     } else {
-      setSelectedEmployeeIds(new Set(employees.map((emp) => emp.id)));
+      // Select all employees across all pages
+      setLoading(true);
+      try {
+        const allEmployees = await fetchAllEmployees();
+        setSelectedEmployeeIds(new Set(allEmployees.map((emp) => emp.id)));
+      } catch (error) {
+        console.error("Error fetching all employees:", error);
+      }
+      setLoading(false);
     }
   };
 
@@ -407,14 +434,9 @@ export default function MonthlyReports() {
     fetchEmployees(1, "", "All Modes", "All Status");
   };
 
-  // Get employee IDs for export based on selection mode
+  // Get employee IDs for export based on selected IDs only
   const getEmployeeIdsForExport = async (): Promise<string[]> => {
-    if (selectionMode === "all") {
-      const allEmployees = await fetchAllEmployees();
-      return allEmployees.map((emp) => emp.id);
-    } else {
-      return Array.from(selectedEmployeeIds);
-    }
+    return Array.from(selectedEmployeeIds);
   };
 
   // Fetch monthly data for selected employees with overtime, leaves, and permissions
@@ -637,228 +659,227 @@ export default function MonthlyReports() {
   };
 
   // Export to PDF
- 
-const exportToPDF = async () => {
-  try {
-    setExportLoading(true);
-    const employeeIds = await getEmployeeIdsForExport();
 
-    if (employeeIds.length === 0) {
-      alert("Please select at least one employee");
-      return;
-    }
+  const exportToPDF = async () => {
+    try {
+      setExportLoading(true);
+      const employeeIds = await getEmployeeIdsForExport();
 
-    const monthlyData = await fetchMonthlyData(employeeIds);
+      if (employeeIds.length === 0) {
+        alert("Please select at least one employee");
+        return;
+      }
 
-    if (monthlyData.length === 0) {
-      alert("No data found for selected employees");
-      return;
-    }
+      const monthlyData = await fetchMonthlyData(employeeIds);
 
-    // ---------- SUMMARY REPORT ----------
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-      compress: true,
-    });
+      if (monthlyData.length === 0) {
+        alert("No data found for selected employees");
+        return;
+      }
 
-    let yPosition = 20;
-    doc.setFontSize(16);
-    doc.text("Monthly Employee Summary Report", 14, yPosition);
-    yPosition += 10;
+      // ---------- SUMMARY REPORT ----------
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: true,
+      });
 
-    doc.setFontSize(10);
-    doc.text(
-      `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
-      14,
-      yPosition
-    );
-    yPosition += 12;
+      let yPosition = 20;
+      doc.setFontSize(16);
+      doc.text("Monthly Employee Summary Report", 14, yPosition);
+      yPosition += 10;
 
-    const summaryData = monthlyData.map((data) => {
-      const lateDays = data.dailyWorkLog.filter(
-        (log) => log.status === "Late"
-      ).length;
-
-      return [
-        data.employee.name,
-        data.employee.designation,
-        data.summary.workingDays.toString(),
-        data.summary.leaves.toString(),
-        data.summary.permissions.toString(),
-        lateDays.toString(),
-        data.summary.missedDays.toString(),
-      ];
-    });
-
-    autoTable(doc, {
-      startY: yPosition,
-      head: [
-        [
-          "Employee",
-          "Designation",
-          "Working Days",
-          "Leaves",
-          "Permissions",
-          "Late",
-          "Missed",
-        ],
-      ],
-      body: summaryData,
-      styles: { fontSize: 7, cellPadding: 1 },
-      headStyles: { fillColor: [59, 130, 246] },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      margin: { left: 10, right: 10 },
-      tableWidth: "auto",
-    });
-
-    const summaryFileName = `monthly-summary-${getMonthName(
-      selectedMonth
-    )}-${selectedYear}-${employeeIds.length}employees.pdf`;
-    doc.save(summaryFileName);
-
-    // ---------- DETAILED REPORT ----------
-    const detailDoc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-      compress: true,
-    });
-
-    for (let i = 0; i < monthlyData.length; i++) {
-      const employeeData = monthlyData[i];
-      if (i > 0) detailDoc.addPage();
-
-      yPosition = 20;
-
-      detailDoc.setFontSize(14);
-      detailDoc.setFont("helvetica", "bold");
-      detailDoc.text(employeeData.employee.name, 14, yPosition);
-      yPosition += 7;
-
-      detailDoc.setFontSize(10);
-      detailDoc.setFont("helvetica", "normal");
-      detailDoc.text(
-        `Designation: ${employeeData.employee.designation}`,
-        14,
-        yPosition
-      );
-      yPosition += 4;
-      detailDoc.text(
-        `Work Mode: ${employeeData.employee.workMode}`,
-        14,
-        yPosition
-      );
-      yPosition += 4;
-      detailDoc.text(
+      doc.setFontSize(10);
+      doc.text(
         `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
         14,
         yPosition
       );
-      yPosition += 8;
+      yPosition += 12;
 
-      const lateDays = employeeData.dailyWorkLog.filter(
-        (log) => log.status === "Late"
-      ).length;
-      const summaryText = `Working Days: ${employeeData.summary.workingDays} | Leaves: ${employeeData.summary.leaves} | Permissions: ${employeeData.summary.permissions} | Late: ${lateDays} | Missed: ${employeeData.summary.missedDays}`;
+      const summaryData = monthlyData.map((data) => {
+        const lateDays = data.dailyWorkLog.filter(
+          (log) => log.status === "Late"
+        ).length;
 
-      // 🔹 Smaller box + tighter spacing
-      detailDoc.setDrawColor(59, 130, 246);
-      detailDoc.setFillColor(243, 244, 246);
-      detailDoc.roundedRect(14, yPosition, 180, 14, 2, 2, "FD");
+        return [
+          data.employee.name,
+          data.employee.designation,
+          data.summary.workingDays.toString(),
+          data.summary.leaves.toString(),
+          data.summary.permissions.toString(),
+          lateDays.toString(),
+          data.summary.missedDays.toString(),
+        ];
+      });
 
-      detailDoc.setFontSize(9);
-      detailDoc.setFont("helvetica", "bold");
-      detailDoc.text("Monthly Summary:", 18, yPosition + 5);
-      detailDoc.setFont("helvetica", "normal");
-      detailDoc.text(summaryText, 18, yPosition + 10);
-      yPosition += 20; // tighter gap
-
-      if (employeeData.dailyWorkLog?.length) {
-        const workLogData = employeeData.dailyWorkLog.map((log) => [
-          log.date,
-          log.checkIn || "-",
-          log.checkOut || "-",
-          log.hours || "0",
-          log.status,
-          log.project
-            ? log.project.slice(0, 20) + (log.project.length > 20 ? "..." : "")
-            : "-",
-          log.description
-            ? log.description.slice(0, 40) +
-              (log.description.length > 40 ? "..." : "")
-            : "-",
-        ]);
-
-        // 🔹 Compact, clean table
-        autoTable(detailDoc, {
-          startY: yPosition,
-          head: [
-            [
-              "Date",
-              "Check-in",
-              "Check-out",
-              "Hours",
-              "Status",
-              "Project",
-              "Description",
-            ],
+      autoTable(doc, {
+        startY: yPosition,
+        head: [
+          [
+            "Employee",
+            "Designation",
+            "Working Days",
+            "Leaves",
+            "Permissions",
+            "Late",
+            "Missed",
           ],
-          body: workLogData,
-          styles: {
-            fontSize: 7,
-            cellPadding: 1.2,
-            lineWidth: 0.1,
-          },
-          headStyles: {
-            fillColor: [34, 197, 94],
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-          },
-          alternateRowStyles: { fillColor: [249, 250, 251] },
-          margin: { left: 12, right: 12 },
-          tableWidth: "auto",
-          columnStyles: {
-            0: { cellWidth: 18 }, // Date
-            1: { cellWidth: 16 }, // Check-in
-            2: { cellWidth: 16 }, // Check-out
-            3: { cellWidth: 12 }, // Hours
-            4: { cellWidth: 16 }, // Status
-            5: { cellWidth: 35 }, // Project
-            6: { cellWidth: 70 }, // Description
-          },
-        });
+        ],
+        body: summaryData,
+        styles: { fontSize: 7, cellPadding: 1 },
+        headStyles: { fillColor: [59, 130, 246] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 10, right: 10 },
+        tableWidth: "auto",
+      });
+
+      const summaryFileName = `monthly-summary-${getMonthName(
+        selectedMonth
+      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+      doc.save(summaryFileName);
+
+      // ---------- DETAILED REPORT ----------
+      const detailDoc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: true,
+      });
+
+      for (let i = 0; i < monthlyData.length; i++) {
+        const employeeData = monthlyData[i];
+        if (i > 0) detailDoc.addPage();
+
+        yPosition = 20;
+
+        detailDoc.setFontSize(14);
+        detailDoc.setFont("helvetica", "bold");
+        detailDoc.text(employeeData.employee.name, 14, yPosition);
+        yPosition += 7;
+
+        detailDoc.setFontSize(10);
+        detailDoc.setFont("helvetica", "normal");
+        detailDoc.text(
+          `Designation: ${employeeData.employee.designation}`,
+          14,
+          yPosition
+        );
+        yPosition += 4;
+        detailDoc.text(
+          `Work Mode: ${employeeData.employee.workMode}`,
+          14,
+          yPosition
+        );
+        yPosition += 4;
+        detailDoc.text(
+          `Month: ${getMonthName(selectedMonth)} ${selectedYear}`,
+          14,
+          yPosition
+        );
+        yPosition += 8;
+
+        const lateDays = employeeData.dailyWorkLog.filter(
+          (log) => log.status === "Late"
+        ).length;
+        const summaryText = `Working Days: ${employeeData.summary.workingDays} | Leaves: ${employeeData.summary.leaves} | Permissions: ${employeeData.summary.permissions} | Late: ${lateDays} | Missed: ${employeeData.summary.missedDays}`;
+
+        // 🔹 Smaller box + tighter spacing
+        detailDoc.setDrawColor(59, 130, 246);
+        detailDoc.setFillColor(243, 244, 246);
+        detailDoc.roundedRect(14, yPosition, 180, 14, 2, 2, "FD");
+
+        detailDoc.setFontSize(9);
+        detailDoc.setFont("helvetica", "bold");
+        detailDoc.text("Monthly Summary:", 18, yPosition + 5);
+        detailDoc.setFont("helvetica", "normal");
+        detailDoc.text(summaryText, 18, yPosition + 10);
+        yPosition += 20; // tighter gap
+
+        if (employeeData.dailyWorkLog?.length) {
+          const workLogData = employeeData.dailyWorkLog.map((log) => [
+            log.date,
+            log.checkIn || "-",
+            log.checkOut || "-",
+            log.hours || "0",
+            log.status,
+            log.project
+              ? log.project.slice(0, 20) +
+                (log.project.length > 20 ? "..." : "")
+              : "-",
+            log.description
+              ? log.description.slice(0, 40) +
+                (log.description.length > 40 ? "..." : "")
+              : "-",
+          ]);
+
+          // 🔹 Compact, clean table
+          autoTable(detailDoc, {
+            startY: yPosition,
+            head: [
+              [
+                "Date",
+                "Check-in",
+                "Check-out",
+                "Hours",
+                "Status",
+                "Project",
+                "Description",
+              ],
+            ],
+            body: workLogData,
+            styles: {
+              fontSize: 7,
+              cellPadding: 1.2,
+              lineWidth: 0.1,
+            },
+            headStyles: {
+              fillColor: [34, 197, 94],
+              textColor: [255, 255, 255],
+              fontStyle: "bold",
+            },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { left: 12, right: 12 },
+            tableWidth: "auto",
+            columnStyles: {
+              0: { cellWidth: 18 }, // Date
+              1: { cellWidth: 16 }, // Check-in
+              2: { cellWidth: 16 }, // Check-out
+              3: { cellWidth: 12 }, // Hours
+              4: { cellWidth: 16 }, // Status
+              5: { cellWidth: 35 }, // Project
+              6: { cellWidth: 70 }, // Description
+            },
+          });
+        }
+
+        // 🔹 Footer
+        const pageHeight = detailDoc.internal.pageSize.height;
+        detailDoc.setFontSize(7);
+        detailDoc.setTextColor(128, 128, 128);
+        detailDoc.text(
+          `Employee ${i + 1} of ${monthlyData.length} - Page ${i + 1}`,
+          14,
+          pageHeight - 8
+        );
       }
 
-      // 🔹 Footer
-      const pageHeight = detailDoc.internal.pageSize.height;
-      detailDoc.setFontSize(7);
-      detailDoc.setTextColor(128, 128, 128);
-      detailDoc.text(
-        `Employee ${i + 1} of ${monthlyData.length} - Page ${i + 1}`,
-        14,
-        pageHeight - 8
+      const detailFileName = `monthly-detailed-${getMonthName(
+        selectedMonth
+      )}-${selectedYear}-${employeeIds.length}employees.pdf`;
+      detailDoc.save(detailFileName);
+
+      alert(
+        `✅ Two optimized PDF reports generated:\n1. ${summaryFileName}\n2. ${detailFileName}`
       );
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("❌ Error generating PDF report");
+    } finally {
+      setExportLoading(false);
     }
-
-    const detailFileName = `monthly-detailed-${getMonthName(
-      selectedMonth
-    )}-${selectedYear}-${employeeIds.length}employees.pdf`;
-    detailDoc.save(detailFileName);
-
-    alert(
-      `✅ Two optimized PDF reports generated:\n1. ${summaryFileName}\n2. ${detailFileName}`
-    );
-  } catch (error) {
-    console.error("Error generating PDF:", error);
-    alert("❌ Error generating PDF report");
-  } finally {
-    setExportLoading(false);
-  }
-};
-
-
+  };
 
   // Export to Excel
   const exportToExcel = async () => {
@@ -1131,9 +1152,9 @@ const exportToPDF = async () => {
                     </h3>
                     <RadioGroup
                       value={selectionMode}
-                      onValueChange={(value: "all" | "few") =>
-                        setSelectionMode(value)
-                      }
+                      onValueChange={(value: "all" | "few") => {
+                        setSelectionMode(value);
+                      }}
                       className="flex space-x-6"
                     >
                       <div className="flex items-center space-x-2">
@@ -1142,16 +1163,16 @@ const exportToPDF = async () => {
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="few" id="few" />
-                        <Label htmlFor="few">Few Employees</Label>
+                        <Label htmlFor="few">Select Manually</Label>
                       </div>
                     </RadioGroup>
-                    {selectionMode === "few" && (
+                    {
                       <p className="text-sm text-blue-600 mt-2">
                         {selectedEmployeeIds.size > 0
                           ? `${selectedEmployeeIds.size} employees selected`
                           : "Select employees from the list below"}
                       </p>
-                    )}
+                    }
                   </div>
 
                   <div className="flex items-center space-x-4 mb-6">
@@ -1218,26 +1239,28 @@ const exportToPDF = async () => {
                     )}
                   </div>
 
+                  {/* Only show select all checkbox section when in "few" mode */}
                   {selectionMode === "few" && (
                     <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
                       <div className="flex items-center space-x-4">
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             checked={
-                              selectedEmployeeIds.size === employees.length &&
-                              employees.length > 0
+                              selectedEmployeeIds.size ===
+                                pagination.totalCount &&
+                              pagination.totalCount > 0
                             }
                             onCheckedChange={toggleSelectAll}
                           />
                           <span className="text-sm font-medium">
-                            {selectedEmployeeIds.size === employees.length &&
-                            employees.length > 0
+                            {selectedEmployeeIds.size ===
+                              pagination.totalCount && pagination.totalCount > 0
                               ? "Deselect All"
                               : "Select All"}
                           </span>
                         </div>
                         <span className="text-sm text-gray-600">
-                          {selectedEmployeeIds.size} of {employees.length}{" "}
+                          {selectedEmployeeIds.size} of {pagination.totalCount}{" "}
                           employees selected
                         </span>
                       </div>
@@ -1248,17 +1271,16 @@ const exportToPDF = async () => {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">
-                          {selectionMode === "few" && (
-                            <TableHead className="w-[50px] text-center">
-                              <Checkbox
-                                checked={
-                                  selectedEmployeeIds.size ===
-                                    employees.length && employees.length > 0
-                                }
-                                onCheckedChange={toggleSelectAll}
-                              />
-                            </TableHead>
-                          )}
+                          <TableHead className="w-[50px] text-center">
+                            <Checkbox
+                              checked={
+                                selectedEmployeeIds.size ===
+                                  pagination.totalCount &&
+                                pagination.totalCount > 0
+                              }
+                              onCheckedChange={toggleSelectAll}
+                            />
+                          </TableHead>
                           <TableHead className="w-[80px] text-center">
                             ID
                           </TableHead>
@@ -1306,18 +1328,14 @@ const exportToPDF = async () => {
                               key={employee.id}
                               className="hover:bg-gray-50"
                             >
-                              {selectionMode === "few" && (
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedEmployeeIds.has(
-                                      employee.id
-                                    )}
-                                    onCheckedChange={() =>
-                                      toggleEmployeeSelection(employee.id)
-                                    }
-                                  />
-                                </TableCell>
-                              )}
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedEmployeeIds.has(employee.id)}
+                                  onCheckedChange={() =>
+                                    toggleEmployeeSelection(employee.id)
+                                  }
+                                />
+                              </TableCell>
                               <TableCell>
                                 <div className="px-1.5 py-0.5 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-xs leading-tight">
                                   {employee.id.slice(-8)}
