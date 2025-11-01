@@ -1,83 +1,46 @@
--- Create interns table
-CREATE TABLE interns (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  phone_number TEXT NOT NULL,
-  college TEXT NOT NULL,
-  year_or_passed_out TEXT NOT NULL,
-  department TEXT NOT NULL,
-  domain_in_office TEXT NOT NULL,
-  paid_or_unpaid TEXT NOT NULL CHECK (paid_or_unpaid IN ('Paid', 'Unpaid')),
-  
-  -- Document file paths in Supabase Storage
-  aadhar_path TEXT,
-  photo_path TEXT,
-  marksheet_path TEXT,
-  resume_path TEXT,
-  
-  -- Metadata
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Completed'))
-);
+create table public.interns (
+  id uuid not null default gen_random_uuid (),
+  name text not null,
+  email text not null,
+  phone_number text not null,
+  college text not null,
+  year_or_passed_out text not null,
+  department text not null,
+  domain_in_office text not null,
+  paid_or_unpaid text not null,
+  aadhar_path text null,
+  photo_path text null,
+  marksheet_path text null,
+  resume_path text null,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  status text null default 'Active'::text,
+  constraint interns_pkey primary key (id),
+  constraint interns_email_key unique (email),
+  constraint interns_paid_or_unpaid_check check (
+    (
+      paid_or_unpaid = any (array['Paid'::text, 'Unpaid'::text])
+    )
+  ),
+  constraint interns_status_check check (
+    (
+      status = any (
+        array[
+          'Active'::text,
+          'Inactive'::text,
+          'Completed'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
 
--- Create index for faster queries
-CREATE INDEX idx_interns_email ON interns(email);
-CREATE INDEX idx_interns_status ON interns(status);
-CREATE INDEX idx_interns_created_at ON interns(created_at DESC);
+create index IF not exists idx_interns_email on public.interns using btree (email) TABLESPACE pg_default;
 
--- Enable Row Level Security (RLS)
-ALTER TABLE interns ENABLE ROW LEVEL SECURITY;
+create index IF not exists idx_interns_status on public.interns using btree (status) TABLESPACE pg_default;
 
--- Create policy for authenticated users (adjust based on your needs)
-CREATE POLICY "Allow authenticated users to view interns"
-  ON interns FOR SELECT
-  TO authenticated
-  USING (true);
+create index IF not exists idx_interns_created_at on public.interns using btree (created_at desc) TABLESPACE pg_default;
 
-CREATE POLICY "Allow authenticated users to insert interns"
-  ON interns FOR INSERT
-  TO authenticated
-  WITH CHECK (true);
-
-CREATE POLICY "Allow authenticated users to update interns"
-  ON interns FOR UPDATE
-  TO authenticated
-  USING (true);
-
-CREATE POLICY "Allow authenticated users to delete interns"
-  ON interns FOR DELETE
-  TO authenticated
-  USING (true);
-
--- Create updated_at trigger
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER update_interns_updated_at
-  BEFORE UPDATE ON interns
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-  -- Allow authenticated users to upload files
-CREATE POLICY "Allow authenticated uploads"
-  ON storage.objects FOR INSERT
-  TO authenticated
-  WITH CHECK (bucket_id = 'intern-documents');
-
--- Allow authenticated users to read files
-CREATE POLICY "Allow authenticated reads"
-  ON storage.objects FOR SELECT
-  TO authenticated
-  USING (bucket_id = 'intern-documents');
-
--- Allow authenticated users to delete files
-CREATE POLICY "Allow authenticated deletes"
-  ON storage.objects FOR DELETE
-  TO authenticated
-  USING (bucket_id = 'intern-documents');
+create trigger update_interns_updated_at BEFORE
+update on interns for EACH row
+execute FUNCTION update_updated_at_column ();

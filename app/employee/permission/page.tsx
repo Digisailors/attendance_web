@@ -103,20 +103,17 @@ export default function PermissionRequestPage() {
         return;
       }
 
-      // ✅ Generate a unique group id (optional, if you want to track related permissions)
-      const permissionGroupId =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : Math.random().toString(36).substring(2);
-
-      // ✅ Direct insert to Supabase (same as leave - NO API)
+      // ✅ Use API endpoint instead of direct insert
       const selectedDate = date ? new Date(date) : null;
       const month = selectedDate ? selectedDate.getMonth() + 1 : null;
       const year = selectedDate ? selectedDate.getFullYear() : null;
 
-      const { data: permissionRequestData, error: insertError } = await supabase
-        .from("permission_requests")
-        .insert({
+      const response = await fetch("/api/permission-request", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           employee_id: employee.id,
           employee_name: employee.name || user.email.split("@")[0],
           employee_email: employee.email_address,
@@ -126,24 +123,23 @@ export default function PermissionRequestPage() {
           permission_type: permissionType,
           date: date ? format(date, "yyyy-MM-dd") : null,
           month: month, // ensure admin dashboard month filter works
-          year: year,   // ensure admin dashboard year filter works
+          year: year, // ensure admin dashboard year filter works
           start_time: startTime,
           end_time: endTime,
           reason: reason,
-          status: "Pending Team Lead",
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (insertError) {
-        console.error("Error inserting permission request:", insertError);
-        toast({
-          title: "Error",
-          description: `Failed to submit permission request: ${insertError.message}`,
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to submit permission request");
+      }
+
+      const responseData = await response.json();
+      const permissionRequestId = responseData.id || responseData.data?.id;
+
+      if (!permissionRequestId) {
+        throw new Error("Failed to get permission request ID from response");
       }
 
       // ✅ Send notification to ALL eligible team leads (same as leave)
@@ -155,7 +151,7 @@ export default function PermissionRequestPage() {
           employee.name || user.email.split("@")[0]
         } has submitted a permission request for ${permissionType}`,
         type: "permission_request",
-        reference_id: permissionRequestData.id,
+        reference_id: permissionRequestId,
       }));
 
       const { error: notificationError } = await supabase
@@ -178,11 +174,12 @@ export default function PermissionRequestPage() {
       setStartTime("");
       setEndTime("");
       setReason("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting permission request:", error);
       toast({
         title: "Error",
-        description: `An error occurred: ${JSON.stringify(error)}`,
+        description:
+          error.message || "An error occurred while submitting your request",
         variant: "destructive",
       });
     } finally {

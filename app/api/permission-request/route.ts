@@ -3,8 +3,6 @@ import { v4 as uuidv4 } from "uuid";
 import { parseISO } from "date-fns";
 import { createServerSupabaseClient } from "@/lib/supabase";
 
-// Create the server client instance at the top
-const supabase = createServerSupabaseClient();
 // 🔹 Resolve UUID from employee code
 async function resolveEmployeeId(
   supabase: any,
@@ -17,7 +15,7 @@ async function resolveEmployeeId(
     .from("employees")
     .select("id")
     .eq("employee_id", rawId)
-    .single(); // ✅ This is OK because employee_id should be unique
+    .single();
 
   if (error || !data) {
     console.error("Failed to resolve employee ID:", error);
@@ -26,6 +24,7 @@ async function resolveEmployeeId(
 
   return data.id;
 }
+
 // 🟩 GET — Fetch permission requests
 export async function GET(req: NextRequest) {
   try {
@@ -99,7 +98,6 @@ export async function GET(req: NextRequest) {
     const monthInt = month ? parseInt(month) : undefined;
     const yearInt = year ? parseInt(year) : undefined;
 
-    // Do NOT DB-filter by month/year to avoid excluding legacy rows.
     if (status) query = query.eq("status", status);
     query = query.order("created_at", { ascending: false });
 
@@ -107,7 +105,7 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     let finalData = data || [];
-    // Apply month/year filtering in-memory so we can include rows missing month/year by using date
+    // Apply month/year filtering in-memory
     if (!countOnly && monthInt && yearInt) {
       finalData = finalData.filter((r: any) => {
         const hasMonthYear = r.month != null && r.year != null;
@@ -116,7 +114,8 @@ export async function GET(req: NextRequest) {
         }
         if (!r.date) return false;
         try {
-          const d = typeof r.date === "string" ? new Date(r.date) : new Date(r.date);
+          const d =
+            typeof r.date === "string" ? new Date(r.date) : new Date(r.date);
           const dMonth = d.getMonth() + 1;
           const dYear = d.getFullYear();
           return dMonth === monthInt && dYear === yearInt;
@@ -135,104 +134,114 @@ export async function GET(req: NextRequest) {
 }
 
 // 🟩 POST — Apply for permission
-// Replace your POST function in api/permission-request/route.ts
-
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
-  const body = await request.json();
 
-  const {
-    employee_id: rawEmployeeId,
-    employee_name,
-    employee_email,
-    permission_type,
-    date,
-    start_time,
-    end_time,
-    reason,
-  } = body;
+  try {
+    const body = await request.json();
 
-  const employee_id = await resolveEmployeeId(supabase, rawEmployeeId);
-  if (!employee_id)
-    return NextResponse.json({ error: "Invalid employee ID" }, { status: 404 });
+    const {
+      employee_id,
+      employee_name,
+      employee_email,
+      team_lead_id,
+      team_lead_ids,
+      manager_id,
+      permission_type,
+      date,
+      month,
+      year,
+      start_time,
+      end_time,
+      reason,
+    } = body;
 
-  // ✅ Fetch team_lead_ids from employees table
-  const { data: empData, error: empErr } = await supabase
-    .from("employees")
-    .select("team_lead_ids, manager_id")
-    .eq("id", employee_id)
-    .single();
+    // Validate required fields
+    if (
+      !employee_id ||
+      !employee_name ||
+      !employee_email ||
+      !permission_type ||
+      !date ||
+      !start_time ||
+      !end_time ||
+      !reason
+    ) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
 
-  if (empErr || !empData) {
-    console.error("❌ Could not fetch employee data:", empErr);
-    return NextResponse.json(
-      { error: "Could not find employee data" },
-      { status: 400 }
+    // Validate team_lead_ids
+    if (!team_lead_ids || team_lead_ids.length === 0) {
+      return NextResponse.json(
+        { error: "No team leads found" },
+        { status: 400 }
+      );
+    }
+
+    // Parse date for month/year
+    const parsedDate = parseISO(date);
+    const calculatedMonth = month || parsedDate.getMonth() + 1;
+    const calculatedYear = year || parsedDate.getFullYear();
+
+    const id = uuidv4();
+
+    console.log(
+      `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(
+        team_lead_ids
+      )}, manager: ${manager_id}`
     );
-  }
 
-  const { team_lead_ids, manager_id } = empData;
-
-  // ✅ Fallback if no team leads assigned
-  const finalTeamLeadIds =
-    team_lead_ids && team_lead_ids.length > 0
-      ? team_lead_ids
-      : ["DEFAULT_LEAD"];
-
-  const parsedDate = parseISO(date);
-  const month = parsedDate.getMonth() + 1;
-  const year = parsedDate.getFullYear();
-
-  const id = uuidv4();
-
-  console.log(
-    `📝 Creating permission for ${employee_name}, team leads: ${JSON.stringify(
-      finalTeamLeadIds
-    )}, manager: ${manager_id}`
-  );
-
-  // ✅ Insert and return the created record
-  const { data: createdRecord, error } = await supabase
-    .from("permission_requests")
-    .insert([
-      {
+    // Insert permission request directly
+    const { data: permissionRequest, error: insertError } = await supabase
+      .from("permission_requests")
+      .insert({
         id,
         employee_id,
         employee_name,
         employee_email,
+        team_lead_id: null, // Will be set when someone approves
+        team_lead_ids,
+        manager_id,
         permission_type,
         date: parsedDate,
+        month: calculatedMonth,
+        year: calculatedYear,
         start_time,
         end_time,
         reason,
         status: "Pending Team Lead",
-        team_lead_ids: finalTeamLeadIds,
-        team_lead_id: null,
-        manager_id,
-        month,
-        year,
-      },
-    ])
-    .select() // ✅ Return the inserted record
-    .single();
+      })
+      .select()
+      .single();
 
-  if (error) {
-    console.error("Insert failed:", error);
+    if (insertError) {
+      console.error("Insert error:", insertError);
+      return NextResponse.json(
+        {
+          error: `Failed to create permission request: ${insertError.message}`,
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Failed to apply for permission" },
+      {
+        message: "Permission request created successfully",
+        id: permissionRequest.id,
+        data: permissionRequest,
+      },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error("API error:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
       { status: 500 }
     );
   }
-
-  // ✅ Return the created record with ID
-  return NextResponse.json(
-    {
-      message: "Permission applied successfully",
-      id: createdRecord.id, // Return the ID for notifications
-      data: createdRecord,
-    },
-    { status: 200 }
-  );
 }
 
 // 🟩 PATCH — Update approval or rejection
@@ -258,7 +267,6 @@ export async function PATCH(request: NextRequest) {
 
   // 🧩 Team Lead Action
   if (team_lead_id && reqData.status === "Pending Team Lead") {
-    // ✅ Store the specific team lead ID who is approving/rejecting
     updateData.team_lead_id = team_lead_id;
     updateData.team_lead_comments = comments || null;
 
