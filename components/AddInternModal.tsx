@@ -29,6 +29,7 @@ interface InternData {
   domainInOffice: string;
   email: string;
   paidOrUnpaid: "Paid" | "Unpaid" | "";
+  mentorName?: string;
   documents: {
     aadhar: File | null;
     photo: File | null;
@@ -47,6 +48,7 @@ interface ExistingIntern {
   department: string;
   domain_in_office: string;
   paid_or_unpaid: string;
+  mentor_name?: string;
   aadhar_path?: string;
   photo_path?: string;
   marksheet_path?: string;
@@ -81,6 +83,7 @@ export default function AddInternModal({
     domainInOffice: "",
     email: "",
     paidOrUnpaid: "",
+    mentorName: "",
     documents: {
       aadhar: null,
       photo: null,
@@ -110,6 +113,7 @@ export default function AddInternModal({
         domainInOffice: existingIntern.domain_in_office,
         email: existingIntern.email,
         paidOrUnpaid: existingIntern.paid_or_unpaid as "Paid" | "Unpaid",
+        mentorName: existingIntern.mentor_name || "",
         documents: {
           aadhar: null,
           photo: null,
@@ -220,6 +224,11 @@ export default function AddInternModal({
         formData.append("domainInOffice", internData.domainInOffice);
         formData.append("email", internData.email);
         formData.append("paidOrUnpaid", internData.paidOrUnpaid);
+        
+        // Append mentor name (can be empty string)
+        if (internData.mentorName) {
+          formData.append("mentorName", internData.mentorName);
+        }
 
         // Append files only if they are provided
         if (internData.documents.aadhar) {
@@ -265,6 +274,11 @@ export default function AddInternModal({
         formData.append("domainInOffice", internData.domainInOffice);
         formData.append("email", internData.email);
         formData.append("paidOrUnpaid", internData.paidOrUnpaid);
+        
+        // Append mentor name (can be empty string)
+        if (internData.mentorName) {
+          formData.append("mentorName", internData.mentorName);
+        }
 
         // Append files
         if (internData.documents.aadhar) {
@@ -331,6 +345,7 @@ export default function AddInternModal({
       domainInOffice: "",
       email: "",
       paidOrUnpaid: "",
+      mentorName: "",
       documents: {
         aadhar: null,
         photo: null,
@@ -614,6 +629,16 @@ export default function AddInternModal({
                 {errors.paidOrUnpaid && (
                   <p className="text-sm text-red-500">{errors.paidOrUnpaid}</p>
                 )}
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="mentorName">Mentor Name (Optional)</Label>
+                <Input
+                  id="mentorName"
+                  value={internData.mentorName || ""}
+                  onChange={(e) => handleInputChange("mentorName", e.target.value)}
+                  placeholder="Enter mentor's name"
+                />
               </div>
             </div>
           </div>

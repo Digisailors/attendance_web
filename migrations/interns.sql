@@ -44,3 +44,5 @@ create index IF not exists idx_interns_created_at on public.interns using btree 
 create trigger update_interns_updated_at BEFORE
 update on interns for EACH row
 execute FUNCTION update_updated_at_column ();
+ALTER TABLE public.interns
+ADD COLUMN IF NOT EXISTS mentor_name text NULL;

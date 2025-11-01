@@ -102,6 +102,7 @@ export async function PUT(
     const department = formData.get("department") as string;
     const domainInOffice = formData.get("domainInOffice") as string;
     const paidOrUnpaid = formData.get("paidOrUnpaid") as string;
+    const mentorName = formData.get("mentorName") as string | null;
 
     // Extract files
     const aadhar = formData.get("aadhar") as File | null;
@@ -164,6 +165,7 @@ export async function PUT(
       department,
       domain_in_office: domainInOffice,
       paid_or_unpaid: paidOrUnpaid,
+      mentor_name: mentorName || null,
       updated_at: new Date().toISOString(),
     };
 

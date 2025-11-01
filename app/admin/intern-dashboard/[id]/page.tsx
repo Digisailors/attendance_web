@@ -42,6 +42,7 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
+  Users,
 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -57,6 +58,7 @@ interface Intern {
   department: string;
   domain_in_office: string;
   paid_or_unpaid: string;
+  mentor_name?: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -424,6 +426,16 @@ export default function InternDetailPage() {
                       </div>
                       <p className="font-medium text-gray-900">
                         {intern.domain_in_office}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2 text-sm text-gray-500">
+                        <Users className="w-4 h-4" />
+                        <span>Mentor</span>
+                      </div>
+                      <p className="font-medium text-gray-900">
+                        {intern.mentor_name || "Not Assigned"}
                       </p>
                     </div>
 

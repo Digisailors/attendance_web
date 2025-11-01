@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
     const department = formData.get("department") as string;
     const domainInOffice = formData.get("domainInOffice") as string;
     const paidOrUnpaid = formData.get("paidOrUnpaid") as string;
+    const mentorName = formData.get("mentorName") as string | null;
 
     console.log("Extracted data:", {
       name,
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
       department,
       domainInOffice,
       paidOrUnpaid,
+      mentorName,
     });
 
     // Extract files
@@ -169,6 +171,7 @@ export async function POST(request: NextRequest) {
       department,
       domain_in_office: domainInOffice,
       paid_or_unpaid: paidOrUnpaid,
+      mentor_name: mentorName || null,
     };
     console.log("Insert data:", insertData);
 
