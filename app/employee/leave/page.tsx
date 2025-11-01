@@ -34,16 +34,24 @@ export default function LeaveApplicationPage() {
   const [employeeData, setEmployeeData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+const [halfDaySession, setHalfDaySession] = useState("");
 
   const handleSubmit = async () => {
-    if (!leaveType || !startDate || !endDate || !reason) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
+   if (
+     !leaveType ||
+     !startDate ||
+     !endDate ||
+     !reason ||
+     (leaveType === "Half-day Leave" && !halfDaySession)
+   ) {
+     toast({
+       title: "Error",
+       description: "Please fill in all required fields",
+       variant: "destructive",
+     });
+     return;
+   }
+
 
     if (!user) {
       toast({
@@ -111,18 +119,21 @@ export default function LeaveApplicationPage() {
           employee_id: employee.id,
           employee_name: employee.name || user.email.split("@")[0],
           employee_email: employee.email_address,
-          team_lead_id: null, // Will be set when someone approves
-          team_lead_ids: teamLeadIds, // Store all eligible team leads
+          team_lead_id: null,
+          team_lead_ids: teamLeadIds,
           manager_id: employee.manager_id,
           leave_type: leaveType,
           start_date: startDate ? format(startDate, "yyyy-MM-dd") : null,
           end_date: endDate ? format(endDate, "yyyy-MM-dd") : null,
           reason: reason,
+          half_day_session:
+            leaveType === "Half-day Leave" ? halfDaySession : null, // 👈 added
           status: "Pending Team Lead",
           leave_group_id: leaveGroupId,
         })
         .select()
         .single();
+
 
       if (insertError) {
         console.error("Error inserting leave request:", insertError);
@@ -262,6 +273,24 @@ export default function LeaveApplicationPage() {
                   ))}
                 </RadioGroup>
               </div>
+              {/* Half-Day Session (Visible only if "Half-day Leave" is selected) */}
+              {leaveType === "Half-day Leave" && (
+                <div className="border p-4 rounded mb-6">
+                  <h2 className="font-medium mb-2">Select Session</h2>
+                  <label className="block text-sm mb-1">
+                    Choose your session
+                  </label>
+                  <select
+                    className="border rounded px-3 py-2 w-full text-sm"
+                    value={halfDaySession}
+                    onChange={(e) => setHalfDaySession(e.target.value)}
+                  >
+                    <option value="">Select session</option>
+                    <option value="Morning">Morning</option>
+                    <option value="Afternoon">Afternoon</option>
+                  </select>
+                </div>
+              )}
 
               {/* Date Range */}
               <div className="border p-4 rounded mb-6">

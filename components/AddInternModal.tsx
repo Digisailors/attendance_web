@@ -28,7 +28,7 @@ interface InternData {
   phoneNumber: string;
   domainInOffice: string;
   email: string;
-  paidOrUnpaid: "Paid" | "Unpaid" | "";
+  paidOrUnpaid: "Paid" | "Pending" | "";
   mentorName?: string;
   documents: {
     aadhar: File | null;
@@ -82,7 +82,7 @@ export default function AddInternModal({
     phoneNumber: "",
     domainInOffice: "",
     email: "",
-    paidOrUnpaid: "",
+    paidOrUnpaid: "Pending",
     mentorName: "",
     documents: {
       aadhar: null,
@@ -112,7 +112,7 @@ export default function AddInternModal({
         phoneNumber: existingIntern.phone_number,
         domainInOffice: existingIntern.domain_in_office,
         email: existingIntern.email,
-        paidOrUnpaid: existingIntern.paid_or_unpaid as "Paid" | "Unpaid",
+        paidOrUnpaid: existingIntern.paid_or_unpaid as "Pending" | "Paid",
         mentorName: existingIntern.mentor_name || "",
         documents: {
           aadhar: null,
@@ -622,8 +622,8 @@ export default function AddInternModal({
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Paid">Paid</SelectItem>
-                    <SelectItem value="Unpaid">Unpaid</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.paidOrUnpaid && (
@@ -636,7 +636,9 @@ export default function AddInternModal({
                 <Input
                   id="mentorName"
                   value={internData.mentorName || ""}
-                  onChange={(e) => handleInputChange("mentorName", e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("mentorName", e.target.value)
+                  }
                   placeholder="Enter mentor's name"
                 />
               </div>

@@ -27,6 +27,7 @@ interface User {
 
 export default function LeaveApplicationTeamLead() {
   const { toast } = useToast();
+const [halfDaySession, setHalfDaySession] = useState("");
 
   const [leaveType, setLeaveType] = useState("");
   const [startDate, setStartDate] = useState<Date | undefined>();
@@ -38,10 +39,10 @@ export default function LeaveApplicationTeamLead() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    if (!leaveType || !startDate || !endDate || !reason) {
+    if (leaveType === "Half-day Leave" && !halfDaySession) {
       toast({
-        title: "Missing Fields",
-        description: "Please fill in all required fields",
+        title: "Missing Session",
+        description: "Please select Morning or Afternoon for Half-day Leave",
         variant: "default",
       });
       return;
@@ -84,17 +85,21 @@ export default function LeaveApplicationTeamLead() {
 
       const teamLeadId = teamMember?.team_lead_id || "DEFAULT_LEAD";
 
-         const leaveRequestData = {
-           employee_id: employee.id,
-           employee_name: employee.name || user.email.split("@")[0],
-           employee_email: employee.email_address,
-           team_lead_id: teamLeadId,
-           leave_type: leaveType,
-           start_date: format(startDate, "yyyy-MM-dd"),
-           end_date: format(endDate, "yyyy-MM-dd"),
-           reason: reason,
-           status: "Pending Manager Approval",
-         };
+        const leaveRequestData = {
+          employee_id: employee.id,
+          employee_name: employee.name || user.email.split("@")[0],
+          employee_email: employee.email_address,
+          team_lead_id: teamLeadId,
+          leave_type: leaveType,
+          start_date: format(startDate!, "yyyy-MM-dd"),
+          end_date: format(endDate!, "yyyy-MM-dd"),
+
+          reason: reason,
+          half_day_session:
+            leaveType === "Half-day Leave" ? halfDaySession : null, // ✅ NEW FIELD
+          status: "Pending Manager Approval",
+        };
+
 
       const { data: leaveRequest, error: insertError } = await supabase
         .from("leave_requests")
@@ -144,6 +149,7 @@ export default function LeaveApplicationTeamLead() {
       setLeaveType("");
       setStartDate(undefined);
       setEndDate(undefined);
+      setHalfDaySession("");
       setReason("");
     } catch (error) {
       toast({
@@ -253,6 +259,22 @@ export default function LeaveApplicationTeamLead() {
                 ))}
               </RadioGroup>
             </div>
+            {leaveType === "Half-day Leave" && (
+              <div className="mt-4">
+                <label className="block text-sm mb-1 font-medium">
+                  Select Session
+                </label>
+                <select
+                  className="border rounded px-3 py-2 w-full text-sm"
+                  value={halfDaySession}
+                  onChange={(e) => setHalfDaySession(e.target.value)}
+                >
+                  <option value="">Select session</option>
+                  <option value="Morning">Morning</option>
+                  <option value="Afternoon">Afternoon</option>
+                </select>
+              </div>
+            )}
 
             {/* Date Range */}
             <div className="border p-4 rounded mb-6">

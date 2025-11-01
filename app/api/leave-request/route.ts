@@ -257,6 +257,7 @@ export async function POST(request: NextRequest) {
     start_time,
     end_time,
     reason,
+    half_day_session,
   } = body;
 
   // 1️⃣ Resolve employee UUID
@@ -315,6 +316,7 @@ export async function POST(request: NextRequest) {
       year,
       team_lead_ids, // ✅ Array of team lead IDs
       manager_id,
+      half_day_session,
     },
   ]);
 
