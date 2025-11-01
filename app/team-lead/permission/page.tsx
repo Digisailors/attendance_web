@@ -295,21 +295,40 @@ export default function TeamLeadPermissionPage() {
                   </Popover>
                 </div>
 
+                {/* Start Time */}
                 <div>
                   <label className="block text-sm mb-1">Start Time</label>
                   <Input
                     type="time"
                     value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
+                    onChange={(e) => {
+                      const selectedStart = e.target.value;
+                      setStartTime(selectedStart);
+
+                      // Auto-calculate end time as +1 hour
+                      const [hours, minutes] = selectedStart
+                        .split(":")
+                        .map(Number);
+                      const end = new Date();
+                      end.setHours(hours + 1);
+                      end.setMinutes(minutes);
+
+                      const formattedEnd = end.toTimeString().slice(0, 5); // "HH:MM"
+                      setEndTime(formattedEnd);
+                    }}
                   />
                 </div>
 
+                {/* End Time */}
                 <div>
-                  <label className="block text-sm mb-1">End Time</label>
+                  <label className="block text-sm mb-1">
+                    End Time (Auto 1 Hour)
+                  </label>
                   <Input
                     type="time"
                     value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
+                    readOnly
+                    className="bg-gray-100 cursor-not-allowed"
                   />
                 </div>
               </div>
