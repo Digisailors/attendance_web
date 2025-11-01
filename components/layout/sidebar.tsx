@@ -441,17 +441,27 @@ export function Sidebar({ userType, className }: SidebarProps) {
               collapsed && "justify-center md:justify-start"
             )}
           >
+            {/* Logo Container */}
             <div
               className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center",
-                userTypeInfo.color
+                "w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-gray-100"
               )}
             >
-              <Building2 className="w-4 h-4 text-white" />
+              {/* Replace this with your logo */}
+              <img
+                src="/favicon.png" // <-- your logo path (place in public folder)
+                alt="EMS Logo"
+                className="w-full h-full object-cover"
+              />
             </div>
+
+            {/* Text visible when not collapsed */}
             {(!collapsed || window.innerWidth < 768) && (
               <div className="md:block">
-                <h2 className="font-semibold text-gray-900">EMS</h2>
+                <h2 className="font-semibold text-gray-900">
+                  <span className="text-[#16a34a]">Digi</span>EMS
+                </h2>
+
                 <Badge className="text-xs">{userTypeInfo.label}</Badge>
               </div>
             )}
