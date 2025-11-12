@@ -438,7 +438,6 @@ const fetchLeaveRequests = async () => {
           total_days: getTotalDays(request),
         })
       );
-
       setLeaveRequests(processedRequests);
 
       const total = processedRequests.length;
