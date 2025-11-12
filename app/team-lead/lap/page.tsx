@@ -405,76 +405,69 @@ export default function TeamLeadLeavePermissionRequests() {
     return teamMembers.map((member) => member.employee_id);
   };
 
- const fetchLeaveRequests = async () => {
-   try {
-     setLoading(true);
+const fetchLeaveRequests = async () => {
+  try {
+    setLoading(true);
 
-     const currentDate = new Date();
-     const currentMonth = currentDate.getMonth() + 1;
-     const currentYear = currentDate.getFullYear();
+    const response = await fetch(
+      `/api/team-lead/leave-requests?teamLeadId=${teamLeadId}`
+    );
 
-     const response = await fetch(
-       `/api/team-lead/leave-requests?teamLeadId=${teamLeadId}&month=${currentMonth}&year=${currentYear}`
-     );
+    if (response.ok) {
+      const data = await response.json();
+      const requestsData = data.data || [];
 
-     if (response.ok) {
-       const data = await response.json();
-       const requestsData = data.data || [];
+      // ✅ FILTER LOGIC — same as before
+      const eligibleRequests = requestsData.filter((request: LeaveRequest) => {
+        const isEligible =
+          request.team_lead_ids && request.team_lead_ids.includes(teamLeadId);
 
-       // ✅ UPDATED FILTER LOGIC
-       const eligibleRequests = requestsData.filter((request: LeaveRequest) => {
-         // Check if this team lead is in the team_lead_ids array (eligible to approve)
-         const isEligible =
-           request.team_lead_ids && request.team_lead_ids.includes(teamLeadId);
+        const isPending = ["Pending Team Lead", "Pending"].includes(
+          request.status
+        );
 
-         // Check if request is still pending (not processed yet)
-         const isPending = ["Pending Team Lead", "Pending"].includes(
-           request.status
-         );
+        const processedByMe = request.team_lead_id === teamLeadId;
 
-         // Check if this team lead already processed it
-         const processedByMe = request.team_lead_id === teamLeadId;
+        return (isEligible && isPending) || processedByMe;
+      });
 
-         // Show if: (eligible AND still pending) OR (already processed by this team lead)
-         return (isEligible && isPending) || processedByMe;
-       });
+      const processedRequests = eligibleRequests.map(
+        (request: LeaveRequest) => ({
+          ...request,
+          applied_date: getAppliedDate(request),
+          total_days: getTotalDays(request),
+        })
+      );
 
-       const processedRequests = eligibleRequests.map(
-         (request: LeaveRequest) => ({
-           ...request,
-           applied_date: getAppliedDate(request),
-           total_days: getTotalDays(request),
-         })
-       );
+      setLeaveRequests(processedRequests);
 
-       setLeaveRequests(processedRequests);
+      const total = processedRequests.length;
+      const pending = processedRequests.filter((r: LeaveRequest) =>
+        ["Pending Team Lead", "Pending"].includes(r.status)
+      ).length;
+      const approved = processedRequests.filter(
+        (r: LeaveRequest) =>
+          r.status === "Approved" || r.status === "Pending Manager Approval"
+      ).length;
+      const rejected = processedRequests.filter(
+        (r: LeaveRequest) => r.status === "Rejected"
+      ).length;
 
-       const total = processedRequests.length;
-       const pending = processedRequests.filter((r: LeaveRequest) =>
-         ["Pending Team Lead", "Pending"].includes(r.status)
-       ).length;
-       const approved = processedRequests.filter(
-         (r: LeaveRequest) =>
-           r.status === "Approved" || r.status === "Pending Manager Approval"
-       ).length;
-       const rejected = processedRequests.filter(
-         (r: LeaveRequest) => r.status === "Rejected"
-       ).length;
+      setLeaveStats({ total, pending, approved, rejected });
 
-       setLeaveStats({ total, pending, approved, rejected });
+      console.log(
+        `Eligible leave requests: ${processedRequests.length} for team lead ${teamLeadId}`
+      );
+    } else {
+      console.error("Server responded with:", await response.json());
+    }
+  } catch (error) {
+    console.error("Error fetching leave requests:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
-       console.log(
-         `Eligible leave requests: ${processedRequests.length} for team lead ${teamLeadId}`
-       );
-     } else {
-       console.error("Server responded with:", await response.json());
-     }
-   } catch (error) {
-     console.error("Error fetching leave requests:", error);
-   } finally {
-     setLoading(false);
-   }
- };
 
  // Updated fetchPermissionRequests function (around line 395-445)
  const fetchPermissionRequests = async () => {
