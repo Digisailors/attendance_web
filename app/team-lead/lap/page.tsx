@@ -900,18 +900,19 @@ const fetchLeaveRequests = async () => {
     }
   };
 
-  const filterLeaveRequests = (requests: LeaveRequest[]) => {
-    return requests.filter((request) => {
-      const matchesSearch =
-        request.employee_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        request.leave_type?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "All" || request.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  };
+ const filterLeaveRequests = (requests: LeaveRequest[]) => {
+   return requests.filter((request) => {
+     const matchesSearch =
+       request.employee_name
+         ?.toLowerCase()
+         .includes(searchTerm.toLowerCase()) ||
+       request.leave_type?.toLowerCase().includes(searchTerm.toLowerCase());
+     const matchesStatus =
+       statusFilter === "All" || request.status === statusFilter;
+
+     return matchesSearch && matchesStatus;
+   });
+ };
 
   const filterPermissionRequests = (requests: PermissionRequest[]) => {
     return requests.filter((request) => {

@@ -113,8 +113,6 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const teamLeadId = url.searchParams.get("teamLeadId");
-    const month = url.searchParams.get("month");
-    const year = url.searchParams.get("year");
 
     let query = supabase
       .from("leave_requests")
@@ -124,15 +122,6 @@ export async function GET(request: NextRequest) {
     // Filter by teamLeadId if provided
     if (teamLeadId) {
       query = query.contains("team_lead_ids", [teamLeadId]);
-    }
-
-    // Filter by date if provided
-    if (month && year) {
-      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(month), 0);
-      query = query
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
     }
 
     const { data: leaveRequests, error: leaveError } = await query;
@@ -145,20 +134,20 @@ export async function GET(request: NextRequest) {
     // Manually fetch employee details for each leave request
     const results = [];
     for (const req of leaveRequests || []) {
-      const { data: employee, error: empError } = await supabase
+      const { data: employee } = await supabase
         .from("employees")
         .select(
           "name, id as employee_id, designation, phoneNumber, emailAddress, address"
         )
         .eq("id", req.employee_id)
         .single();
+
       results.push({
         ...req,
         employee: employee || null,
       });
     }
 
-    console.log(`Fetched ${results.length} leave requests`);
     return NextResponse.json({ data: results }, { status: 200 });
   } catch (err: any) {
     console.error("Unexpected server error:", err);
@@ -168,6 +157,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
 
 export async function PATCH(request: NextRequest) {
   try {

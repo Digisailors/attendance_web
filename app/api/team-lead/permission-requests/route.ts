@@ -113,8 +113,6 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const teamLeadId = url.searchParams.get("teamLeadId");
-    const month = url.searchParams.get("month");
-    const year = url.searchParams.get("year");
 
     let query = supabase
       .from("permission_requests")
@@ -126,14 +124,7 @@ export async function GET(request: NextRequest) {
       query = query.contains("team_lead_ids", [teamLeadId]);
     }
 
-    // Filter by date if provided
-    if (month && year) {
-      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(month), 0);
-      query = query
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString());
-    }
+    // 🔥 Month & Year filter completely removed
 
     const { data: requests, error } = await query;
 
@@ -150,6 +141,7 @@ export async function GET(request: NextRequest) {
         )
         .eq("id", req.employee_id)
         .single();
+
       results.push({ ...req, employee: emp || null });
     }
 
@@ -160,6 +152,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
+
 
 // 🟥 PATCH — Team Lead approves/rejects
 export async function PATCH(request: NextRequest) {
