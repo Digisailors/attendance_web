@@ -49,9 +49,9 @@ const getISTTimeString = (isoString: string) => {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const employeeId = params.id;
+  const { id: employeeId } = await params;
   const today = await getISTDate(); // Use server time for IST date
 
   const { data: employee, error } = await supabase
@@ -77,10 +77,10 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const employeeId = params.id;
+    const { id: employeeId } = await params;
     const body = await request.json();
     console.log("Incoming body:", body);
 

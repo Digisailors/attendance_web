@@ -14,10 +14,10 @@ const CODE_COLUMN = "employee_id";
 // Expected payload: { status: "Active" | "Inactive" }
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const rawId = params.id;
+    const { id: rawId } = await params;
     if (!rawId) {
       return NextResponse.json(
         { error: "Missing employee identifier" },
@@ -91,10 +91,10 @@ export async function PATCH(
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const rawId = params.id;
+    const { id: rawId } = await params;
     if (!rawId) {
       return NextResponse.json(
         { error: "Missing employee identifier" },
