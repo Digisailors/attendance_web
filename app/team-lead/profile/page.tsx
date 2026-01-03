@@ -1347,10 +1347,8 @@ export default function TeamLeadProfile() {
                                     {log.status}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-gray-600">
-                                  {log.description.length > 50
-                                    ? log.description.substring(0, 50) + "..."
-                                    : log.description}
+                                <TableCell className="text-gray-600 max-w-md break-words">
+                                  {log.description}
                                 </TableCell>
                               </TableRow>
                             );
