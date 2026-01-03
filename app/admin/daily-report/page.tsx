@@ -63,7 +63,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-
 // Types
 type WorkMode = "Office" | "WFH" | "Hybrid";
 type AttendanceStatus = "Present" | "Absent" | "Late" | "Leave" | "Missed";
