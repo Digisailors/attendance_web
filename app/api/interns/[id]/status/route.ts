@@ -14,10 +14,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const internId = params.id;
+    const { id: internId } = await params;
     const body = await request.json();
     const { status } = body;
 

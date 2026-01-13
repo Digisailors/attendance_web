@@ -15,10 +15,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 // GET - Fetch work logs (all or for a specific date)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const internId = params.id;
+    const { id: internId } = await params;
     const searchParams = request.nextUrl.searchParams;
     const date = searchParams.get("date"); // Optional date parameter
 
@@ -99,10 +99,10 @@ export async function GET(
 // POST - Create or update work log
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const internId = params.id;
+    const { id: internId } = await params;
     const body = await request.json();
     const { checkInTime, checkOutTime, workType, workDescription } = body;
 

@@ -51,10 +51,10 @@ async function deleteFile(filePath: string): Promise<void> {
 // GET - Fetch single intern by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const internId = params.id;
+    const { id: internId } = await params;
 
     console.log("Fetching intern:", internId);
 
@@ -82,12 +82,12 @@ export async function GET(
 // PUT - Update intern (with file upload support)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   console.log("\n=== PUT /api/interns/[id] - START ===");
 
   try {
-    const { id } = params;
+    const { id } = await params;
     const formData = await request.formData();
 
     console.log("Updating intern ID:", id);
@@ -257,12 +257,12 @@ export async function PUT(
 // DELETE - Delete intern and their documents
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   console.log("\n=== DELETE /api/interns/[id] - START ===");
 
   try {
-    const internId = params.id;
+    const { id: internId } = await params;
     console.log("Deleting intern:", internId);
 
     // Fetch intern to get document paths before deletion
