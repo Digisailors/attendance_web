@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
 
 // Helper to validate UUID v4-ish format
 const isUuid = (val: string) =>
@@ -34,8 +43,6 @@ export async function PATCH(
         { status: 400 }
       );
     }
-
-    const supabase = createRouteHandlerClient({ cookies });
 
     // Decide which column to query: id (UUID) or CODE_COLUMN (text)
     let matchColumn: "id" | typeof CODE_COLUMN = "id";
@@ -101,8 +108,6 @@ export async function GET(
         { status: 400 }
       );
     }
-
-    const supabase = createRouteHandlerClient({ cookies });
 
     const matchColumn = isUuid(rawId) ? "id" : CODE_COLUMN;
 
