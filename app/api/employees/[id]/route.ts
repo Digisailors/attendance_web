@@ -143,12 +143,32 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Multiple employees found with same ID" }, { status: 400 })
     }
     
+    const currentRow = Array.isArray(existingEmployee) ? existingEmployee[0] : existingEmployee
+    const newEmployeeId = body.id?.trim?.() ?? body.id
+    
+    // If changing employee_id, ensure it is not already used by another employee
+    let effectiveEmployeeId = currentRow.employee_id
+    if (newEmployeeId && newEmployeeId !== employeeId) {
+      const { data: existingWithNewId } = await supabase
+        .from("employees")
+        .select("id")
+        .eq("employee_id", newEmployeeId)
+        .eq("is_active", true)
+        .maybeSingle()
+      if (!existingWithNewId) {
+        effectiveEmployeeId = newEmployeeId
+      }
+      // else: keep current employee_id to avoid unique constraint
+    } else if (newEmployeeId === employeeId) {
+      effectiveEmployeeId = employeeId
+    }
+    
     // Update employee in database
     console.log("Updating employee...")
     const { data, error } = await supabase
       .from("employees")
       .update({
-        employee_id: body.id,
+        employee_id: effectiveEmployeeId,
         name: body.name,
         designation: body.designation,
         work_mode: body.workMode,
