@@ -253,6 +253,18 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       // Continue with employee deletion even if work log deletion fails
     }
     
+    // Clear approved_by in overtime_requests so FK does not block employee delete
+    console.log("Clearing overtime_requests.approved_by references...")
+    const { error: overtimeClearError } = await supabase
+      .from("overtime_requests")
+      .update({ approved_by: null })
+      .eq("approved_by", existingEmployee.id)
+    
+    if (overtimeClearError) {
+      console.error("Error clearing overtime_requests.approved_by:", overtimeClearError)
+      // Continue with employee deletion; constraint may still block and we'll surface that
+    }
+    
     // Now delete the employee record completely
     console.log("Deleting employee record...")
     const { data, error } = await supabase
